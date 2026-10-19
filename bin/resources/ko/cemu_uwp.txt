@@ -1,0 +1,329 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, 버전 %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu개 중 %zu개 타이틀에 아직 이 종류의 게임 목록 이미지가 없습니다.
+%zu packs across %zu games (LB/RB change game)	%zu개 게임에 대한 %zu개 팩 (LB/RB로 게임 전환)
+(none)	(없음)
+2D box	2D 패키지
+2D box back	2D 패키지 뒷면
+2D cartridge	2D 카트리지
+3D box	3D 패키지
+A Apply    B Cancel	A 적용    B 취소
+A Select    B Back    Menu Close	A 선택    B 뒤로    Menu 닫기
+A file or folder picker is already open	파일 또는 폴더 선택 창이 이미 열려 있습니다
+A title scan is already running	타이틀 검색이 이미 실행 중입니다
+A: activate  B: back/home  D-pad/left stick: move focus	A: 선택  B: 뒤로/홈  십자 버튼/왼쪽 스틱: 초점 이동
+APP Store	APP Store
+Accelerometer	가속도 센서
+Accelerometer sensitivity	가속도 센서 감도
+Account	계정
+Account ID: %s	계정 ID: %s
+Action	동작
+Activated: %s	활성화: %s
+Add another game folder	게임 폴더 추가
+Added to favorites	즐겨찾기에 추가했습니다
+Advanced PPC logging	PPC 상세 로깅
+Always on	항상 켜기
+An unfinished scan is saved; it resumes automatically on the next launch.	완료되지 않은 검색이 저장되었으며 다음 실행 시 자동으로 이어집니다.
+App Store	App Store
+Apply Quick Menu combo	빠른 메뉴 조합 적용
+Artwork	이미지
+Audio latency	오디오 지연
+Backend	백엔드
+CPU mode	CPU 모드
+CPU usage	CPU 사용량
+Can't change the MLC path while a game is running	게임이 실행 중일 때는 MLC 경로를 변경할 수 없습니다
+Cancel	취소
+Cancel installation	설치 취소
+Cancel this installation? The previous installed version will remain unchanged.	설치를 취소할까요? 이미 설치된 버전은 그대로 유지됩니다.
+Cancelling installation...	설치를 취소하는 중...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWP 셸
+Choose side-by-side underlay	좌우 배경 선택
+Choose stacked underlay	상하 배경 선택
+Clear account credentials	계정 정보 지우기
+Clear side-by-side	좌우 배치 초기화
+Clear stacked	상하 배치 초기화
+Close	닫기
+Community	커뮤니티
+Community graphic packs installed	커뮤니티 그래픽 팩을 설치했습니다
+Console language	본체 언어
+Controller Mapping	컨트롤러 매핑
+Controller battery notifications	컨트롤러 배터리 알림
+Controller mapping saved	컨트롤러 매핑을 저장했습니다
+Controller profile notifications	컨트롤러 프로필 알림
+Controllers	컨트롤러
+Could not open the MLC folder picker	MLC 폴더 선택 창을 열 수 없습니다
+Could not open the ScreenScraper media folder picker	ScreenScraper 폴더 선택 창을 열 수 없습니다
+Could not open the game folder picker	게임 폴더 선택 창을 열 수 없습니다
+Could not open the title picker	타이틀 선택 창을 열 수 없습니다
+Could not prepare that MLC folder - is the drive connected and writable?	해당 MLC 폴더를 준비할 수 없습니다. 드라이브가 연결되어 있고 쓰기 가능한지 확인하세요.
+Could not save the nickname	닉네임을 저장할 수 없습니다
+Could not save title metadata	타이틀 메타데이터를 저장할 수 없습니다
+Crash dump	충돌 덤프
+Current game override	현재 게임 설정
+DLC directory was not found	DLC 폴더를 찾을 수 없습니다
+Debug overlay	디버그 오버레이
+Debugger	디버거
+Default	기본값
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	기본값: Gamepad:Menu+View. 사용자 예시: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	대상: %s
+Developer API credentials are missing from this build.	이 빌드에는 개발자 API 자격 증명이 없습니다.
+Discord	Discord
+Display gamma	디스플레이 감마
+Display uses sRGB curve	디스플레이가 sRGB 곡선을 사용
+Download box art	패키지 이미지 내려받기
+Download community packs	커뮤니티 팩 다운로드
+Download fanart backgrounds	팬아트 배경 내려받기
+Download logos	로고 내려받기
+Download metadata	메타데이터 내려받기
+Download screenshots	스크린샷 내려받기
+Download videos	동영상 내려받기
+Downloaded media location	내려받은 이미지 위치
+Downloads	다운로드
+Downscale filter	다운스케일 필터
+Draw calls	드로우 콜
+Dump libcurl requests	libcurl 요청 덤프
+Dump recompiler functions	리컴파일러 함수 덤프
+Dump shaders	셰이더 덤프
+Dump textures	텍스처 덤프
+Emulate Disney Infinity Base	디즈니 인피니티 베이스 에뮬레이션
+Emulate LEGO Dimensions Toy Pad	레고 디멘션즈 토이패드 에뮬레이션
+Emulated USB devices	에뮬레이트된 USB 장치
+Enable Screenscraper	Screenscraper 사용
+Enable Screenscraper first	먼저 Screenscraper를 사용하도록 설정하세요
+Enable intro sound	시작음 사용
+Enabled	활성화
+Every refresh	매 주사마다
+Every second refresh	두 번에 한 번
+Every third refresh	세 번에 한 번
+Exit Cemu	Cemu 종료
+FPS	FPS
+Failed to copy title image	타이틀 이미지를 복사하지 못했습니다
+Failed to save Screenscraper account	Screenscraper 계정을 저장하지 못했습니다
+Failed to save settings	설정을 저장하지 못했습니다
+Fan art	팬아트
+Files: %llu / %llu	파일: %llu / %llu
+Flush log	로그 기록
+Follow interface language	인터페이스 언어 따르기
+Free space: %s	여유 공간: %s
+Friend service notifications	친구 서비스 알림
+Fullscreen scaling	전체 화면 크기 조정
+GDB port	GDB port
+Game directory was not found	게임 폴더를 찾을 수 없습니다
+Game folder added	게임 폴더를 추가했습니다
+Game folder added, but it is not accessible - is the drive connected?	게임 폴더를 추가했지만 접근할 수 없습니다. 드라이브가 연결되어 있나요?
+Game layout	게임 배치
+Game logo	게임 로고
+Game profile saved	게임 프로필을 저장했습니다
+Game-list artwork	게임 목록 이미지
+GamePad	게임패드
+GamePad channels	GamePad 채널
+GamePad device	GamePad 장치
+GamePad only	GamePad만
+GamePad picture in picture	GamePad 화면 속 화면
+GamePad screen	GamePad 화면
+GamePad volume	GamePad 음량
+Games directory	게임 폴더
+Games directory updated	게임 폴더를 업데이트했습니다
+Games directory updated, but it is not accessible - is the drive connected?	게임 폴더를 업데이트했지만 접근할 수 없습니다. 드라이브가 연결되어 있나요?
+Gamma	Gamma
+General	일반
+Global controller profiles saved	공용 컨트롤러 프로필을 저장했습니다
+Global default layout	전체 기본 배치
+Graphic packs reloaded	그래픽 팩을 다시 불러왔습니다
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	자이로 센서
+Gyroscope dead zone	자이로 데드존
+Gyroscope sensitivity	자이로 감도
+Hold stick button	스틱 버튼을 누르는 동안
+Home	홈
+Horizontal pointer sensitivity	포인터 가로 감도
+Input	입력
+Input channels	입력 채널
+Input volume	입력 음량
+Install	설치
+Install size: %s (%llu files)	설치 크기: %s (파일 %llu개)
+Install title, update or DLC	타이틀, 업데이트 또는 DLC 설치
+Installation cancelled	설치를 취소했습니다
+Installation complete	설치를 마쳤습니다
+Installation failed	설치에 실패했습니다
+Installed version %u will be replaced.	설치된 버전 %u을(를) 교체합니다.
+Installing...	설치 중...
+Interface	인터페이스
+Interface language	인터페이스 언어
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	잘못된 조합입니다. 단일 버튼, 중복 버튼, 키보드 및 포인터 단축키는 사용할 수 없습니다. 저장된 조합은 그대로입니다.
+Invert pointer X	포인터 X축 반전
+Invert pointer Y	포인터 Y축 반전
+Keep installing	설치 계속
+Large information artwork	큰 정보 이미지
+Layout Mode	화면 배치 모드
+Layout mode	화면 배치 모드
+Left Stick	왼쪽 스틱
+Left stick	왼쪽 스틱
+Left stick deadzone	왼쪽 스틱 데드존
+Left stick range	왼쪽 스틱 범위
+Logs	로그
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	MLC 경로를 저장했습니다. 사용하려면 Cemu를 다시 시작하세요 (계정과 저장 데이터는 이동하지 않습니다)
+MLC storage	MLC 저장소
+Metadata language	메타데이터 언어
+Metadata saved; another ScreenScraper download is running	메타데이터를 저장했습니다. 다른 ScreenScraper 내려받기가 실행 중입니다
+Metadata saved; sign in to ScreenScraper to download media	메타데이터를 저장했습니다. 이미지를 받으려면 ScreenScraper에 로그인하세요
+Microphone and portal	마이크 및 포털
+Missing	없음
+Native UWP app-container frontend for Cemu.	Cemu를 위한 네이티브 UWP 앱 컨테이너 인터페이스입니다.
+Nearest neighbor	최근접 이웃
+Network service	네트워크 서비스
+Nickname	닉네임
+Nickname saved	닉네임을 저장했습니다
+No Cemu Wiki ID is available	사용할 수 있는 Cemu Wiki ID가 없습니다
+No DLC installed	설치된 DLC가 없습니다
+No bootstrap log available.	부팅 로그가 없습니다.
+No graphic packs are installed in the UWP user data graphicPacks folder.	UWP 사용자 데이터의 graphicPacks 폴더에 설치된 그래픽 팩이 없습니다.
+No graphic packs target this title	이 타이틀을 위한 그래픽 팩이 없습니다
+No log text available.	로그 내용이 없습니다.
+No save data found	저장 데이터를 찾을 수 없습니다
+No shader caches found	셰이더 캐시를 찾을 수 없습니다
+No title image is available to copy	복사할 타이틀 이미지가 없습니다
+No titles to scrape	수집할 타이틀이 없습니다
+No update installed	설치된 업데이트가 없습니다
+None	없음
+Nothing left to resume	이어서 할 작업이 없습니다
+Notification scale	알림 크기
+Notifications	알림
+Online files: %s	온라인 파일: %s
+Open title	타이틀 열기
+Open title file	타이틀 파일 열기
+Overlay	중첩
+Overlay scale	오버레이 크기
+Override application gamma	응용 프로그램 감마 재정의
+Overwrite existing media	기존 파일 덮어쓰기
+Password	비밀번호
+Per-game profile	게임별 프로필
+Permanent storage	영구 저장소
+Persistent ID: %08x	고정 ID: %08x
+Picture in picture	화면 속 화면
+Platform media: %s	플랫폼 이미지: %s
+Platform: Windows UWP	플랫폼: Windows UWP
+Pointer	포인터
+Pointer activation	포인터 활성화
+Pointer speed	포인터 속도
+Pointer stick	포인터 스틱
+Pointer stick dead zone	포인터 스틱 데드존
+Portal device	포털 장치
+Portal volume	포털 음량
+Portuguese	포르투갈어
+Power	전원
+Preferred region	선호 지역
+Quick Menu	빠른 메뉴
+Quick Menu combo reset to Menu + View	빠른 메뉴 조합을 Menu + View로 되돌렸습니다
+Quick Menu combo saved	빠른 메뉴 조합을 저장했습니다
+Quick menu combo	빠른 메뉴 조합
+Quit Game	게임 종료
+RAM usage	RAM 사용량
+Ready	준비됨
+Refresh list	목록 새로 고침
+Refresh logs	로그 새로 고침
+Refresh titles	타이틀 새로 고침
+Refreshing game list	게임 목록을 새로 고치는 중
+Reload packs	팩 다시 불러오기
+Remove	제거
+Removed from favorites	즐겨찾기에서 제거했습니다
+Render upside down	위아래 뒤집어 렌더링
+Renderer	렌더러
+Renderer: Direct3D 12 CoreWindow	렌더러: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	서로 다른 컨트롤러 버튼을 두 개 이상 동시에 눌러야 합니다.
+Reset Quick Menu to Menu + View	빠른 메뉴를 Menu + View로 초기화
+Restart Game	게임 다시 시작
+Restart on enable/preset: %s / %s	사용 설정/프리셋 변경 시 재시작: %s / %s
+Restart the title if this pack needs a full reload	이 팩이 전체 다시 불러오기를 요구하면 타이틀을 다시 시작하세요
+Restart unavailable	다시 시작할 수 없습니다
+Resume scan	검색 재개
+Resuming unfinished Screenscraper scan	완료되지 않은 Screenscraper 검색을 이어서 진행합니다
+Return to Game	게임으로 돌아가기
+Right Stick	오른쪽 스틱
+Right stick	오른쪽 스틱
+Right stick deadzone	오른쪽 스틱 데드존
+Right stick range	오른쪽 스틱 범위
+Rumble strength	진동 세기
+Runtime dumps	런타임 덤프
+Save account credentials	계정 정보 저장
+Save nickname	닉네임 저장
+Scaling	배율
+Screens restored	화면을 되돌렸습니다
+Screens swapped	화면을 바꿨습니다
+Screenscraper	Screenscraper
+Screenscraper account cleared	Screenscraper 계정을 지웠습니다
+Screenscraper account saved	Screenscraper 계정을 저장했습니다
+Screenscraper download is already running	Screenscraper 내려받기가 이미 실행 중입니다
+Screenshot	스크린샷
+Selected account is not a complete online account	선택한 계정은 완전한 온라인 계정이 아닙니다
+Set	설정됨
+Shader compiling notifications	셰이더 컴파일 알림
+Shaders: %s	셰이더: %s
+Shared title media: %s	공유 타이틀 이미지: %s
+Shell theme	화면 테마
+Show controls hint	조작 힌트 표시
+Side by side	나란히
+Side-by-side underlay: %s	나란히 배경: %s
+Sign in to Screenscraper first	먼저 Screenscraper에 로그인하세요
+Stable-input calibration period	정지 상태 보정 시간
+Stacked	위아래로
+Stacked underlay: %s	위아래 배경: %s
+Start Stream	스트리밍 시작
+Status: %s	상태: %s
+Stop Stream	스트리밍 중지
+Stop the running game before installing content.	콘텐츠를 설치하기 전에 실행 중인 게임을 종료하세요.
+Storage	저장 공간
+Storage: %s	저장소: %s
+Stream: working...	스트리밍: 처리 중...
+Swap TV and GamePad screens	TV와 GamePad 화면 바꾸기
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	교체 예시: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	시스템
+TV	TV
+TV channels	TV 채널
+TV device	TV 장치
+TV only	TV만
+TV volume	TV 음량
+Target gamma	목표 감마
+That folder is already in the list	해당 폴더는 이미 목록에 있습니다
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	이 화면은 Cemu UWP 홈 메뉴를 따릅니다. 게임 타일, 측면 레일, 부드러운 시스템 패널, 컨트롤러 우선 탐색으로 구성됩니다.
+This entry cannot be launched	이 항목은 실행할 수 없습니다
+This graphic pack has no description.	이 그래픽 팩에는 설명이 없습니다.
+Title ID	타이틀 ID
+Title ID: %016llX	타이틀 ID: %016llX
+Title image copied	타이틀 이미지를 복사했습니다
+Title information is no longer available	타이틀 정보를 더 이상 사용할 수 없습니다
+Title installed	타이틀을 설치했습니다
+Title screen	타이틀 화면
+Titles	타이틀
+Toggle GamePad display	GamePad 화면 전환
+Treat the mapped Screen control as a toggle instead of a hold action	지정한 화면 조작을 길게 누르기 대신 전환으로 사용
+Trigger deadzone	트리거 데드존
+Trigger range	트리거 범위
+Triggers	트리거
+UWP shell	UWP 셸
+UWP storage	UWP 저장 공간
+Underlays use titleImages/%s/*.png	배경은 titleImages/%s/*.png 를 사용합니다
+Up to %d characters, used as the console profile name	최대 %d자이며 본체 프로필 이름으로 사용됩니다
+Update directory was not found	업데이트 폴더를 찾을 수 없습니다
+Upscale filter	업스케일 필터
+Use motion	모션 사용
+Username	사용자 이름
+VRAM usage	VRAM 사용량
+VSync	수직 동기화
+Version %u is already installed. Continuing will reinstall it.	버전 %u이(가) 이미 설치되어 있습니다. 계속하면 다시 설치합니다.
+Version: %d	버전: %d
+Vertical pointer sensitivity	포인터 세로 감도
+Video	동영상
+Video backgrounds use more storage and bandwidth.	동영상 배경은 저장 공간과 데이터를 더 많이 사용합니다.
+Virtual touch / IR pointer	가상 터치 / IR 포인터
+Who's playing?	누가 플레이하나요?
+Wii Remote extension	Wii 리모컨 확장 기기
+World	월드
+missing or incomplete	없거나 불완전함
+no	아니요
+otp.bin is missing or invalid	otp.bin 이 없거나 올바르지 않습니다
+seeprom.bin is missing or invalid	seeprom.bin 이 없거나 올바르지 않습니다
+valid	정상
+yes	예

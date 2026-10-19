@@ -611,6 +611,10 @@ namespace coreinit
 	void OSSchedulerBegin(sint32 numCPUEmulationThreads);
 	void OSSchedulerEnd();
 	bool OSIsSchedulerActive();
+#if defined(CEMU_UWP)
+	void OSSchedulerSetPaused(bool paused);
+	bool OSSchedulerIsPaused();
+#endif
 
 	// internal
 	void __OSAddReadyThreadToRunQueue(OSThread_t* thread);

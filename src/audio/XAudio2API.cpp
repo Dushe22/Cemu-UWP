@@ -12,8 +12,10 @@
 #include "XAudio2API.h"
 #include "util/helpers/helpers.h"
 
+#if !defined(CEMU_UWP)
 #include <WbemCli.h>
 #include <OleAuto.h>
+#endif
 #include <system_error>
 
 // guid from mmdeviceapi.h
@@ -29,6 +31,15 @@ std::vector<XAudio2API::DeviceDescriptionPtr> XAudio2API::s_devices;
 XAudio2API::XAudio2API(std::wstring device_id, uint32 samplerate, uint32 channels, uint32 samples_per_block, uint32 bits_per_sample)
 	: IAudioAPI(samplerate, channels, samples_per_block, bits_per_sample), m_device_id(std::move(device_id))
 {
+#if defined(CEMU_UWP)
+	HRESULT hres;
+	if (FAILED((hres = XAudio2Create(&m_xaudio, 0, XAUDIO2_DEFAULT_PROCESSOR))))
+		throw std::runtime_error(fmt::format("can't create xaudio device (hres: {:#x})", hres));
+
+	IXAudio2MasteringVoice* mastering_voice;
+	if (FAILED((hres = m_xaudio->CreateMasteringVoice(&mastering_voice, channels, samplerate))))
+		throw std::runtime_error(fmt::format("can't create xaudio mastering voice (hres: {:#x})", hres));
+#else
 	const auto _XAudio2Create = (decltype(&XAudio2Create))GetProcAddress(s_xaudio_dll, "XAudio2Create");
 	if (!_XAudio2Create)
 		throw std::runtime_error("can't find XAudio2Create import");
@@ -41,6 +52,7 @@ XAudio2API::XAudio2API(std::wstring device_id, uint32 samplerate, uint32 channel
 	IXAudio2MasteringVoice* mastering_voice;
 	if (FAILED((hres = m_xaudio->CreateMasteringVoice(&mastering_voice, channels, samplerate, 0, m_device_id.empty() ? nullptr : m_device_id.c_str()))))
 		throw std::runtime_error(fmt::format("can't create xaudio mastering voice (hres: {:#x})", hres));
+#endif
 
 	m_mastering_voice.reset(mastering_voice);
 
@@ -129,6 +141,10 @@ bool XAudio2API::Stop()
 
 bool XAudio2API::InitializeStatic()
 {
+#if defined(CEMU_UWP)
+	RefreshDevices();
+	return true;
+#else
 	if (s_xaudio_dll)
 		return true;
 
@@ -154,18 +170,25 @@ bool XAudio2API::InitializeStatic()
 
 		return false;
 	}
+#endif
 }
 
 void XAudio2API::Destroy()
 {
+#if !defined(CEMU_UWP)
 	if (s_xaudio_dll)
 		FreeLibrary(s_xaudio_dll);
+#endif
 }
 
 const std::vector<XAudio2API::DeviceDescriptionPtr>& XAudio2API::RefreshDevices()
 {
 	s_devices.clear();
 
+#if defined(CEMU_UWP)
+	s_devices.emplace_back(std::make_shared<XAudio2DeviceDescription>(L"Default audio device", L""));
+	return s_devices;
+#else
 	try
 	{
 		Microsoft::WRL::ComPtr<IWbemLocator> wbem_locator;
@@ -246,6 +269,7 @@ const std::vector<XAudio2API::DeviceDescriptionPtr>& XAudio2API::RefreshDevices(
 
 	CoUninitialize();
 	return s_devices;
+#endif
 }
 
 bool XAudio2API::FeedBlock(sint16* data)

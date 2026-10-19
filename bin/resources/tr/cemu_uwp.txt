@@ -1,0 +1,363 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, sürüm %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu oyunun %zu tanesinde henüz bu türde oyun listesi görseli yok.
+%zu packs across %zu games (LB/RB change game)	%zu oyunda %zu paket (LB/RB oyunu değiştirir)
+(none)	(yok)
+2D box	2B kutu
+2D box back	2B kutu arkası
+2D cartridge	2B kartuş
+3D box	3B kutu
+A Apply    B Cancel	A Uygula    B İptal
+A Select    B Back    Menu Close	A Seç    B Geri    Menu Kapat
+A file or folder picker is already open	Zaten açık bir dosya veya klasör seçici var
+A title scan is already running	Zaten bir oyun taraması çalışıyor
+A: activate  B: back/home  D-pad/left stick: move focus	A: seç  B: geri/ana ekran  Yön tuşu/sol çubuk: odağı taşı
+APP Store	APP Store
+Accelerometer	İvmeölçer
+Accelerometer sensitivity	İvmeölçer hassasiyeti
+Account	Hesap
+Account ID: %s	Hesap kimliği: %s
+Action	İşlem
+Activated: %s	Etkin: %s
+Add another game folder	Başka bir oyun klasörü ekle
+Added to favorites	Favorilere eklendi
+Advanced PPC logging	Gelişmiş PPC günlüğü
+Always on	Her zaman açık
+An unfinished scan is saved; it resumes automatically on the next launch.	Tamamlanmamış bir tarama kaydedildi; bir sonraki açılışta otomatik olarak sürdürülür.
+App Store	App Store
+Apply Quick Menu combo	Hızlı menü kombinasyonunu uygula
+Artwork	Görseller
+Async shader compile	Eşzamansız gölgelendirici derleme
+Audio latency	Ses gecikmesi
+Auto	Otomatik
+Backend	Arka uç
+CPU mode	İşlemci modu
+CPU usage	CPU kullanımı
+Can't change the MLC path while a game is running	Bir oyun çalışırken MLC yolu değiştirilemez
+Cancel	İptal
+Cancel installation	Kurulumu iptal et
+Cancel this installation? The previous installed version will remain unchanged.	Bu kurulum iptal edilsin mi? Hâlihazırda kurulu sürüm değişmeden kalır.
+Cancelling installation...	Kurulum iptal ediliyor...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWP arayüzü
+Chinese	Çince
+Choose side-by-side underlay	Yan yana arka planını seç
+Choose stacked underlay	Üst üste arka planını seç
+Clear account credentials	Hesap bilgilerini temizle
+Clear side-by-side	Yan yana düzenini sıfırla
+Clear stacked	Üst üste düzenini sıfırla
+Close	Kapat
+Community	Topluluk
+Community graphic packs installed	Topluluk grafik paketleri kuruldu
+Console language	Konsol dili
+Controller Mapping	Kumanda eşlemesi
+Controller battery notifications	Kumanda pili bildirimleri
+Controller mapping saved	Kumanda eşlemesi kaydedildi
+Controller profile notifications	Kumanda profili bildirimleri
+Controllers	Kumandalar
+Could not open the MLC folder picker	MLC klasör seçici açılamadı
+Could not open the ScreenScraper media folder picker	ScreenScraper klasör seçici açılamadı
+Could not open the game folder picker	Oyun klasörü seçici açılamadı
+Could not open the title picker	Oyun seçici açılamadı
+Could not prepare that MLC folder - is the drive connected and writable?	Bu MLC klasörü hazırlanamadı - sürücü bağlı ve yazılabilir mi?
+Could not save the nickname	Takma ad kaydedilemedi
+Could not save title metadata	Oyun üst verileri kaydedilemedi
+Crash dump	Çökme dökümü
+Current game override	Geçerli oyun ayarı
+Custom	Özel
+DLC directory was not found	DLC klasörü bulunamadı
+Debug	Hata ayıklama
+Debug overlay	Hata ayıklama katmanı
+Debugger	Hata ayıklayıcı
+Default	Varsayılan
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	Varsayılan: Gamepad:Menu+View. Özel örnekler: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Hedef: %s
+Developer API credentials are missing from this build.	Bu sürümde geliştirici API bilgileri eksik.
+Disable screen saver	Ekran koruyucusunu kapat
+Discord	Discord
+Display gamma	Ekran gaması
+Display uses sRGB curve	Ekran sRGB eğrisini kullanıyor
+Download box art	Kapak görsellerini indir
+Download community packs	Topluluk paketlerini indir
+Download fanart backgrounds	Hayran çizimi arka planları indir
+Download logos	Logoları indir
+Download metadata	Üst verileri indir
+Download screenshots	Ekran görüntülerini indir
+Download videos	Videoları indir
+Downloaded media location	İndirilen dosyaların konumu
+Downloads	İndirilenler
+Downscale filter	Küçültme filtresi
+Draw calls	Çizim çağrıları
+Dump libcurl requests	libcurl isteklerini dök
+Dump recompiler functions	Yeniden derleyici işlevlerini dök
+Dump shaders	Gölgelendiricileri dök
+Dump textures	Dokuları dök
+Dutch	Felemenkçe
+Emulate Disney Infinity Base	Disney Infinity tabanını öykün
+Emulate LEGO Dimensions Toy Pad	LEGO Dimensions Toy Pad öykün
+Emulate Skylander Portal	Skylanders portalını öykün
+Emulated USB devices	Öykünülen USB aygıtları
+Enable Screenscraper	Screenscraper'ı etkinleştir
+Enable Screenscraper first	Önce Screenscraper'ı etkinleştirin
+Enable intro sound	Açılış sesini etkinleştir
+Enabled	Etkin
+Europe	Avrupa
+Every refresh	Her yenilemede
+Every second refresh	İki yenilemede bir
+Every third refresh	Üç yenilemede bir
+Exit Cemu	Cemu'dan çık
+FPS	FPS
+Failed to copy title image	Oyun görseli kopyalanamadı
+Failed to save Screenscraper account	Screenscraper hesabı kaydedilemedi
+Failed to save settings	Ayarlar kaydedilemedi
+Fan art	Hayran çizimi
+Files: %llu / %llu	Dosyalar: %llu / %llu
+Flush log	Günlüğü yaz
+Follow interface language	Arayüz dilini izle
+Free space: %s	Boş alan: %s
+French	Fransızca
+Friend service notifications	Arkadaş servisi bildirimleri
+Full	Tam
+Fullscreen scaling	Tam ekran ölçeği
+GDB port	GDB port
+Game directory was not found	Oyun klasörü bulunamadı
+Game folder added	Oyun klasörü eklendi
+Game folder added, but it is not accessible - is the drive connected?	Oyun klasörü eklendi ama erişilemiyor - sürücü bağlı mı?
+Game layout	Oyun düzeni
+Game logo	Oyun logosu
+Game profile saved	Oyun profili kaydedildi
+Game-list artwork	Oyun listesi görselleri
+GamePad	Kumanda
+GamePad channels	GamePad kanalları
+GamePad device	GamePad aygıtı
+GamePad only	Yalnızca GamePad
+GamePad picture in picture	GamePad resim içinde resim
+GamePad screen	GamePad ekranı
+GamePad volume	GamePad ses düzeyi
+Games directory	Oyun klasörü
+Games directory updated	Oyun klasörü güncellendi
+Games directory updated, but it is not accessible - is the drive connected?	Oyun klasörü güncellendi ama erişilemiyor - sürücü bağlı mı?
+Gamma	Gamma
+General	Genel
+German	Almanca
+Global controller profiles saved	Genel kumanda profilleri kaydedildi
+Global default layout	Genel varsayılan düzen
+Graphic packs reloaded	Grafik paketleri yeniden yüklendi
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Jiroskop
+Gyroscope dead zone	Jiroskop ölü bölgesi
+Gyroscope sensitivity	Jiroskop hassasiyeti
+Hold stick button	Çubuk düğmesini basılı tut
+Home	Ana sayfa
+Horizontal pointer sensitivity	Yatay işaretçi hassasiyeti
+Input	Giriş
+Input channels	Giriş kanalları
+Input volume	Giriş ses düzeyi
+Install	Kur
+Install size: %s (%llu files)	Kurulum boyutu: %s (%llu dosya)
+Install title, update or DLC	Oyun, güncelleme veya DLC kur
+Installation cancelled	Kurulum iptal edildi
+Installation complete	Kurulum tamamlandı
+Installation failed	Kurulum başarısız oldu
+Installed	Kurulu
+Installed version %u will be replaced.	Kurulu %u sürümü değiştirilecek.
+Installing...	Kuruluyor...
+Interface	Arayüz
+Interface language	Arayüz dili
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Geçersiz kombinasyon. Tek düğme, yinelenen düğme, klavye ve işaretçi kısayolları kullanılamaz. Kayıtlı kombinasyonunuz değişmedi.
+Invert pointer X	İşaretçinin X eksenini ters çevir
+Invert pointer Y	İşaretçinin Y eksenini ters çevir
+Italian	İtalyanca
+Japan	Japonya
+Japanese	Japonca
+Keep installing	Kuruluma devam et
+Korean	Korece
+Large information artwork	Büyük bilgi görseli
+Layout Mode	Yerleşim modu
+Layout mode	Yerleşim modu
+Left Stick	Sol çubuk
+Left stick	Sol çubuk
+Left stick deadzone	Sol çubuğun ölü bölgesi
+Left stick range	Sol çubuğun aralığı
+Lite	Sade
+Logs	Günlükler
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	MLC yolu kaydedildi - kullanmak için Cemu'yu yeniden başlatın (hesaplar ve kayıtlar taşınmaz)
+MLC storage	MLC depolama
+Metadata language	Üst veri dili
+Metadata saved; another ScreenScraper download is running	Üst veriler kaydedildi; başka bir ScreenScraper indirmesi sürüyor
+Metadata saved; sign in to ScreenScraper to download media	Üst veriler kaydedildi; dosyaları indirmek için ScreenScraper'a giriş yapın
+Microphone and portal	Mikrofon ve portal
+Missing	Yok
+Mono	Mono
+Multi-core recompiler	Çok çekirdekli yeniden derleyici
+Native UWP app-container frontend for Cemu.	Cemu için yerel UWP uygulama kapsayıcısı arayüzü.
+Nearest neighbor	En yakın komşu
+Network service	Ağ servisi
+Nickname	Takma ad
+Nickname saved	Takma ad kaydedildi
+No Cemu Wiki ID is available	Kullanılabilir bir Cemu Wiki kimliği yok
+No DLC installed	Kurulu DLC yok
+No bootstrap log available.	Açılış günlüğü yok.
+No graphic packs are installed in the UWP user data graphicPacks folder.	UWP kullanıcı verilerindeki graphicPacks klasöründe kurulu grafik paketi yok.
+No graphic packs target this title	Bu oyun için grafik paketi yok
+No log text available.	Günlük metni yok.
+No save data found	Kayıt verisi bulunamadı
+No shader caches found	Gölgelendirici önbelleği bulunamadı
+No title image is available to copy	Kopyalanacak bir oyun görseli yok
+No titles to scrape	Taranacak oyun yok
+No update installed	Kurulu güncelleme yok
+None	Yok
+Not installed	Kurulu değil
+Nothing left to resume	Sürdürülecek bir şey kalmadı
+Notification scale	Bildirim boyutu
+Notifications	Bildirimler
+Off	Kapalı
+Offline	Çevrimdışı
+Online files: %s	Çevrimiçi dosyalar: %s
+Open title	Oyun aç
+Open title file	Oyun dosyası aç
+Overlay	Kaplama
+Overlay scale	Katman boyutu
+Override application gamma	Uygulama gamasını geçersiz kıl
+Overwrite existing media	Var olan dosyaların üzerine yaz
+Password	Parola
+Per-game profile	Oyuna özel profil
+Permanent storage	Kalıcı depolama
+Persistent ID: %08x	Kalıcı kimlik: %08x
+Picture in picture	Resim içinde resim
+Platform media: %s	Platform dosyaları: %s
+Platform: Windows UWP	Platform: Windows UWP
+Pointer	İşaretçi
+Pointer activation	İşaretçi etkinleştirme
+Pointer speed	İşaretçi hızı
+Pointer stick	İşaretçi çubuğu
+Pointer stick dead zone	İşaretçi çubuğunun ölü bölgesi
+Portal device	Portal aygıtı
+Portal volume	Portal ses düzeyi
+Portuguese	Portekizce
+Power	Güç
+Preferred region	Tercih edilen bölge
+Quick Menu	Hızlı menü
+Quick Menu combo reset to Menu + View	Hızlı menü kombinasyonu Menu + View olarak sıfırlandı
+Quick Menu combo saved	Hızlı menü kombinasyonu kaydedildi
+Quick menu combo	Hızlı menü kombinasyonu
+Quit Game	Oyunu kapat
+RAM usage	RAM kullanımı
+Ready	Hazır
+Refresh list	Listeyi yenile
+Refresh logs	Günlükleri yenile
+Refresh titles	Oyunları yenile
+Refreshing game list	Oyun listesi yenileniyor
+Region	Bölge
+Reload packs	Paketleri yeniden yükle
+Remove	Kaldır
+Removed from favorites	Favorilerden kaldırıldı
+Render upside down	Baş aşağı işle
+Renderer	İşleyici
+Renderer: Direct3D 12 CoreWindow	İşleyici: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	En az iki farklı kumanda düğmesinin birlikte basılı tutulması gerekir.
+Reset Quick Menu to Menu + View	Hızlı menüyü Menu + View olarak sıfırla
+Restart Game	Oyunu yeniden başlat
+Restart on enable/preset: %s / %s	Etkinleştirmede/ön ayarda yeniden başlatma: %s / %s
+Restart the title if this pack needs a full reload	Bu paket tam yeniden yükleme gerektiriyorsa oyunu yeniden başlatın
+Restart unavailable	Yeniden başlatma kullanılamıyor
+Resume scan	Taramayı sürdür
+Resuming unfinished Screenscraper scan	Tamamlanmamış Screenscraper taraması sürdürülüyor
+Return to Game	Oyuna dön
+Right Stick	Sağ çubuk
+Right stick	Sağ çubuk
+Right stick deadzone	Sağ çubuğun ölü bölgesi
+Right stick range	Sağ çubuğun aralığı
+Rumble strength	Titreşim gücü
+Runtime dumps	Çalışma zamanı dökümleri
+Russian	Rusça
+Save account credentials	Hesap bilgilerini kaydet
+Save nickname	Takma adı kaydet
+Scaling	Ölçekleme
+Screens restored	Ekranlar geri alındı
+Screens swapped	Ekranlar değiştirildi
+Screenscraper	Screenscraper
+Screenscraper account cleared	Screenscraper hesabı temizlendi
+Screenscraper account saved	Screenscraper hesabı kaydedildi
+Screenscraper download is already running	Screenscraper indirmesi zaten sürüyor
+Screenshot	Ekran görüntüsü
+Selected account is not a complete online account	Seçili hesap eksiksiz bir çevrimiçi hesap değil
+Set	Ayarlı
+Settings	Ayarlar
+Shader compiling notifications	Gölgelendirici derleme bildirimleri
+Shaders: %s	Gölgelendiriciler: %s
+Shared title media: %s	Paylaşılan oyun dosyaları: %s
+Shell theme	Arayüz teması
+Show controls hint	Kontrol ipucunu göster
+Side by side	Yan yana
+Side-by-side underlay: %s	Yan yana arka plan: %s
+Sign in to Screenscraper first	Önce Screenscraper'a giriş yapın
+Single-core interpreter	Tek çekirdekli yorumlayıcı
+Single-core recompiler	Tek çekirdekli yeniden derleyici
+Spanish	İspanyolca
+Stable-input calibration period	Durağan giriş kalibrasyon süresi
+Stacked	Üst üste
+Stacked underlay: %s	Üst üste arka plan: %s
+Start Stream	Yayını başlat
+Status: %s	Durum: %s
+Stop Stream	Yayını durdur
+Stop the running game before installing content.	İçerik kurmadan önce çalışan oyunu kapatın.
+Storage	Depolama
+Storage: %s	Depolama: %s
+Stream: working...	Yayın: çalışıyor...
+Surround	Surround
+Swap TV and GamePad screens	TV ve GamePad ekranlarını değiştir
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Değiştirme örnekleri: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	Sistem
+TV	Televizyon
+TV channels	TV kanalları
+TV device	TV aygıtı
+TV only	Yalnızca TV
+TV volume	TV ses düzeyi
+Taiwanese	Tayvanca
+Target gamma	Hedef gama
+That folder is already in the list	Bu klasör zaten listede
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	Düzen, Cemu UWP ana menüsünü yansıtır: oyun kutucukları, yan raylar, yumuşak sistem panelleri ve kumanda öncelikli gezinme.
+This entry cannot be launched	Bu kayıt başlatılamaz
+This graphic pack has no description.	Bu grafik paketinin açıklaması yok.
+Title ID	Oyun kimliği
+Title ID: %016llX	Oyun kimliği: %016llX
+Title Manager	Oyun yöneticisi
+Title image copied	Oyun görseli kopyalandı
+Title information is no longer available	Oyun bilgileri artık kullanılamıyor
+Title installed	Oyun kuruldu
+Title screen	Başlık ekranı
+Titles	Oyunlar
+Toggle GamePad display	GamePad ekranını aç/kapat
+Treat the mapped Screen control as a toggle instead of a hold action	Atanan Ekran denetimini basılı tutmak yerine aç/kapat olarak kullan
+Trigger deadzone	Tetiklerin ölü bölgesi
+Trigger range	Tetiklerin aralığı
+Triggers	Tetikler
+USA	ABD
+UWP shell	UWP arayüzü
+UWP storage	UWP depolama
+Underlays use titleImages/%s/*.png	Arka planlar titleImages/%s/*.png kullanır
+Up to %d characters, used as the console profile name	En fazla %d karakter, konsol profil adı olarak kullanılır
+Update	Güncelleme
+Update directory was not found	Güncelleme klasörü bulunamadı
+Upscale filter	Genişletme filtresi
+Use motion	Hareketi kullan
+Username	Kullanıcı adı
+VRAM usage	VRAM kullanımı
+VSync	VSync
+Version %u is already installed. Continuing will reinstall it.	%u sürümü zaten kurulu. Devam ederseniz yeniden kurulur.
+Version: %d	Sürüm: %d
+Vertical pointer sensitivity	Dikey işaretçi hassasiyeti
+Video	Video
+Video backgrounds use more storage and bandwidth.	Video arka planlar daha fazla depolama ve bant genişliği kullanır.
+Virtual touch / IR pointer	Sanal dokunma / IR işaretçi
+Who's playing?	Kim oynuyor?
+Wii Remote extension	Wii Remote eklentisi
+World	Dünya
+missing or incomplete	eksik veya tamamlanmamış
+no	hayır
+otp.bin is missing or invalid	otp.bin eksik veya geçersiz
+seeprom.bin is missing or invalid	seeprom.bin eksik veya geçersiz
+valid	geçerli
+yes	evet

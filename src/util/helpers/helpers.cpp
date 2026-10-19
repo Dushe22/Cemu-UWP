@@ -7,12 +7,10 @@
 
 #include "config/ActiveSettings.h"
 
-#include <boost/random/uniform_int.hpp>
-
 #include <zlib.h>
 
 
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 #include <TlHelp32.h>
 #endif
 
@@ -116,6 +114,13 @@ typedef struct tagTHREADNAME_INFO
 void SetThreadName(const char* name)
 {
 #if BOOST_OS_WINDOWS
+#if defined(CEMU_UWP)
+	size_t len = strlen(name) * 2 + 1;
+	auto threadDescription = new wchar_t[len];
+	if (boost::nowide::widen(threadDescription, len, name))
+		SetThreadDescription(GetCurrentThread(), threadDescription);
+	delete[] threadDescription;
+#else
 	using SetThreadDescription_t = HRESULT (*)(HANDLE hThread, PCWSTR lpThreadDescription);
 	static SetThreadDescription_t pSetThreadDescription = nullptr;
 	if (!pSetThreadDescription)
@@ -128,7 +133,8 @@ void SetThreadName(const char* name)
 			pSetThreadDescription(GetCurrentThread(), threadDescription);
 		delete[] threadDescription;
 	}
-#ifdef _MSC_VER
+#endif
+#if defined(_MSC_VER) && !defined(CEMU_UWP)
 	THREADNAME_INFO info;
 	info.dwType = 0x1000;
 	info.szName = name;
@@ -155,6 +161,9 @@ void SetThreadName(const char* name)
 #if BOOST_OS_WINDOWS
 std::pair<DWORD, DWORD> GetWindowsVersion()
 {
+#if defined(CEMU_UWP)
+	return { 10, 0 };
+#else
 	using RtlGetVersion_t = LONG(*)(POSVERSIONINFOEXW);
 	static RtlGetVersion_t pRtlGetVersion = nullptr;
 	if(!pRtlGetVersion) 
@@ -164,6 +173,7 @@ std::pair<DWORD, DWORD> GetWindowsVersion()
 	OSVERSIONINFOEXW version_info{};
 	pRtlGetVersion(&version_info);
 	return { version_info.dwMajorVersion, version_info.dwMinorVersion };
+#endif
 }
 
 bool IsWindows81OrGreater()
@@ -183,7 +193,7 @@ fs::path GetParentProcess()
 {
 	fs::path result;
 	
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if(hSnapshot != INVALID_HANDLE_VALUE)
 	{
@@ -417,9 +427,8 @@ std::string GenerateRandomString(const size_t length, const std::string_view cha
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
-     
-        // workaround for static asserts using boost
-        boost::random::uniform_int_distribution<decltype(characters.size())> index_dist(0, characters.size() - 1);
+
+	std::uniform_int_distribution<size_t> index_dist(0, characters.size() - 1);
 	std::generate_n(
 		result.begin(),
 		length,

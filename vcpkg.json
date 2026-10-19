@@ -13,7 +13,8 @@
     "rapidjson",
     {
       "name": "sdl3",
-      "default-features": false
+      "default-features": false,
+      "platform": "!uwp"
     },
     "boost-tokenizer",
     "boost-container",
@@ -27,7 +28,6 @@
     "boost-ptr-container",
     "boost-property-tree",
     "boost-static-string",
-    "boost-random",
     {
       "name": "fmt",
       "version>=": "12.1.0"
@@ -38,10 +38,23 @@
       "name": "glslang",
       "default-features": false
     },
+    {
+      "name": "d3dx12",
+      "platform": "windows"
+    },
+    {
+      "name": "directx-dxc",
+      "platform": "windows & !uwp"
+    },
+    {
+      "name": "d3d12-memory-allocator",
+      "platform": "windows"
+    },
     "zstd",
     {
       "name": "wxwidgets",
       "default-features": false,
+      "platform": "!uwp",
       "features": [
         "debug-support"
       ]
@@ -67,7 +80,10 @@
         "zip"
       ]
     },
-    "libusb"
+    {
+      "name": "libusb",
+      "platform": "!uwp"
+    }
   ],
   "overrides": [
     {

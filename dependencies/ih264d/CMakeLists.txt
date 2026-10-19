@@ -1,4 +1,4 @@
-﻿cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required (VERSION 3.8)
 
 project ("ih264d")
 
@@ -119,11 +119,15 @@ add_library (ih264d
 
 if (CMAKE_OSX_ARCHITECTURES)
 set(IH264D_ARCHITECTURE ${CMAKE_OSX_ARCHITECTURES})
+elseif(CMAKE_SYSTEM_PROCESSOR)
+set(IH264D_ARCHITECTURE ${CMAKE_SYSTEM_PROCESSOR})
+elseif(CMAKE_VS_PLATFORM_NAME)
+set(IH264D_ARCHITECTURE ${CMAKE_VS_PLATFORM_NAME})
 else()
 set(IH264D_ARCHITECTURE ${CMAKE_SYSTEM_PROCESSOR})
 endif()
 
-if (IH264D_ARCHITECTURE STREQUAL "x86_64" OR IH264D_ARCHITECTURE STREQUAL "amd64" OR IH264D_ARCHITECTURE STREQUAL "AMD64")
+if (IH264D_ARCHITECTURE STREQUAL "x86_64" OR IH264D_ARCHITECTURE STREQUAL "amd64" OR IH264D_ARCHITECTURE STREQUAL "AMD64" OR IH264D_ARCHITECTURE STREQUAL "x64")
 set(LIBAVCDEC_X86_INCLUDES "common/x86" "decoder/x86")
 include_directories("common/" "decoder/" ${LIBAVCDEC_X86_INCLUDES})
 target_sources(ih264d PRIVATE
@@ -194,7 +198,7 @@ message(FATAL_ERROR "ih264d unknown architecture: ${IH264D_ARCHITECTURE}")
 endif()
 
 if(MSVC)
-set_property(TARGET ih264d PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET ih264d PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 # tune settings for slightly better performance
 target_compile_options(ih264d PRIVATE $<$<CONFIG:Release,RelWithDebInfo>:/Oi>) # enable intrinsic functions

@@ -128,6 +128,13 @@ if (ENABLE_VULKAN)
   )
 endif()
 
+if (ENABLE_D3D12)
+  target_sources(CemuWxGui PRIVATE
+    canvas/D3D12Canvas.cpp
+    canvas/D3D12Canvas.h
+  )
+endif()
+
 if (ENABLE_METAL)
   target_sources(CemuWxGui PRIVATE
     canvas/MetalCanvas.cpp
@@ -142,7 +149,7 @@ if (ENABLE_BLUEZ)
   )
 endif()
 
-set_property(TARGET CemuWxGui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuWxGui PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 cemu_use_precompiled_header(CemuWxGui)
 

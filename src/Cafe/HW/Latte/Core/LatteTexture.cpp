@@ -1253,6 +1253,7 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 	// handle graphic pack overwrite rules
 	for (const auto& gp : GraphicPack2::GetActiveGraphicPacks())
 	{
+		const bool applyResolutionRules = !gp->SkipsResolutionRules();
 		for (const auto& rule : gp->GetTextureRules())
 		{
 			if (!rule.filter_settings.format_whitelist.empty() && std::find(rule.filter_settings.format_whitelist.begin(), rule.filter_settings.format_whitelist.end(), (uint32)format) == rule.filter_settings.format_whitelist.end())
@@ -1278,24 +1279,27 @@ LatteTexture::LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddre
 			if (rule.filter_settings.inMEM1 == GraphicPack2::TextureRule::FILTER_SETTINGS::MEM1_FILTER::INSIDE && !mmuRange_MEM1.containsAddress(this->physAddress))
 				continue;
 
-			this->overwriteInfo.width = width;
-			this->overwriteInfo.height = height;
-			this->overwriteInfo.depth = depth;
+			if (applyResolutionRules)
+			{
+				this->overwriteInfo.width = width;
+				this->overwriteInfo.height = height;
+				this->overwriteInfo.depth = depth;
 
-			if (rule.overwrite_settings.width != -1)
-			{
-				this->overwriteInfo.hasResolutionOverwrite = true;
-				this->overwriteInfo.width = rule.overwrite_settings.width;
-			}
-			if (rule.overwrite_settings.height != -1)
-			{
-				this->overwriteInfo.hasResolutionOverwrite = true;
-				this->overwriteInfo.height = rule.overwrite_settings.height;
-			}
-			if (rule.overwrite_settings.depth != -1)
-			{
-				this->overwriteInfo.hasResolutionOverwrite = true;
-				this->overwriteInfo.depth = rule.overwrite_settings.depth;
+				if (rule.overwrite_settings.width != -1)
+				{
+					this->overwriteInfo.hasResolutionOverwrite = true;
+					this->overwriteInfo.width = rule.overwrite_settings.width;
+				}
+				if (rule.overwrite_settings.height != -1)
+				{
+					this->overwriteInfo.hasResolutionOverwrite = true;
+					this->overwriteInfo.height = rule.overwrite_settings.height;
+				}
+				if (rule.overwrite_settings.depth != -1)
+				{
+					this->overwriteInfo.hasResolutionOverwrite = true;
+					this->overwriteInfo.depth = rule.overwrite_settings.depth;
+				}
 			}
 			if (rule.overwrite_settings.format != -1)
 			{

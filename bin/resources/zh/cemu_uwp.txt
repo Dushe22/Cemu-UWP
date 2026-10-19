@@ -1,0 +1,329 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s，版本 %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu 个游戏中有 %zu 个还没有此类型的游戏列表图。
+%zu packs across %zu games (LB/RB change game)	%zu 个补丁包，覆盖 %zu 个游戏（LB/RB 切换游戏）
+(none)	（无）
+2D box	2D 包装盒
+2D box back	2D 包装盒背面
+2D cartridge	2D 卡带
+3D box	3D 包装盒
+A Apply    B Cancel	A 应用    B 取消
+A Select    B Back    Menu Close	A 选择    B 返回    Menu 关闭
+A file or folder picker is already open	已经打开了文件或文件夹选择器
+A title scan is already running	已经在扫描游戏
+A: activate  B: back/home  D-pad/left stick: move focus	A：确定  B：返回/主页  十字键/左摇杆：移动焦点
+APP Store	APP Store
+Accelerometer	加速度传感器
+Accelerometer sensitivity	加速度传感器灵敏度
+Account	帐户
+Account ID: %s	账号 ID：%s
+Action	操作
+Activated: %s	已启用：%s
+Add another game folder	添加其他游戏文件夹
+Added to favorites	已加入收藏
+Advanced PPC logging	PPC 详细日志
+Always on	始终开启
+An unfinished scan is saved; it resumes automatically on the next launch.	已保存未完成的扫描，下次启动时会自动继续。
+App Store	App Store
+Apply Quick Menu combo	应用快捷菜单组合键
+Artwork	图片
+Audio latency	音频延迟
+Backend	后端
+CPU mode	CPU 模式
+CPU usage	CPU 使用率
+Can't change the MLC path while a game is running	游戏运行时无法更改 MLC 路径
+Cancel	取消
+Cancel installation	取消安装
+Cancel this installation? The previous installed version will remain unchanged.	要取消这次安装吗？已安装的版本将保持不变。
+Cancelling installation...	正在取消安装……
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWP 界面
+Choose side-by-side underlay	选择并排背景
+Choose stacked underlay	选择上下背景
+Clear account credentials	清除账户凭据
+Clear side-by-side	重置并排布局
+Clear stacked	重置上下布局
+Close	关闭
+Community	社区
+Community graphic packs installed	已安装社区图形包
+Console language	主机语言
+Controller Mapping	手柄映射
+Controller battery notifications	手柄电量通知
+Controller mapping saved	已保存手柄映射
+Controller profile notifications	手柄配置通知
+Controllers	手柄
+Could not open the MLC folder picker	无法打开 MLC 文件夹选择器
+Could not open the ScreenScraper media folder picker	无法打开 ScreenScraper 文件夹选择器
+Could not open the game folder picker	无法打开游戏文件夹选择器
+Could not open the title picker	无法打开游戏选择器
+Could not prepare that MLC folder - is the drive connected and writable?	无法准备该 MLC 文件夹——驱动器是否已连接且可写入？
+Could not save the nickname	无法保存昵称
+Could not save title metadata	无法保存游戏元数据
+Crash dump	崩溃时转储
+Current game override	当前游戏设置
+DLC directory was not found	未找到 DLC 目录
+Debug overlay	调试叠加层
+Debugger	调试器
+Default	默认
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	默认：Gamepad:Menu+View。自定义示例：Gamepad:LB+RB、Gamepad:View+Y
+Destination: %s	目标位置：%s
+Developer API credentials are missing from this build.	此版本缺少开发者 API 凭据。
+Discord	Discord
+Display gamma	显示器伽马
+Display uses sRGB curve	显示器使用 sRGB 曲线
+Download box art	下载封面图
+Download community packs	下载社区补丁包
+Download fanart backgrounds	下载同人插画背景
+Download logos	下载标志
+Download metadata	下载元数据
+Download screenshots	下载截图
+Download videos	下载视频
+Downloaded media location	下载文件的位置
+Downloads	下载
+Downscale filter	缩小过滤器
+Draw calls	绘制调用
+Dump libcurl requests	转储 libcurl 请求
+Dump recompiler functions	转储重编译器函数
+Dump shaders	转储着色器
+Dump textures	转储纹理
+Emulate Disney Infinity Base	模拟迪士尼无限底座
+Emulate LEGO Dimensions Toy Pad	模拟乐高次元玩具板
+Emulated USB devices	模拟 USB 设备
+Enable Screenscraper	启用 Screenscraper
+Enable Screenscraper first	请先启用 Screenscraper
+Enable intro sound	启用启动音效
+Enabled	已启用
+Every refresh	每次刷新
+Every second refresh	每两次刷新
+Every third refresh	每三次刷新
+Exit Cemu	退出 Cemu
+FPS	帧速率
+Failed to copy title image	无法复制游戏图片
+Failed to save Screenscraper account	无法保存 Screenscraper 账号
+Failed to save settings	无法保存设置
+Fan art	同人插画
+Files: %llu / %llu	文件：%llu / %llu
+Flush log	写入日志
+Follow interface language	跟随界面语言
+Free space: %s	可用空间：%s
+Friend service notifications	好友服务通知
+Fullscreen scaling	全屏幕缩放选项
+GDB port	GDB port
+Game directory was not found	未找到游戏目录
+Game folder added	已添加游戏文件夹
+Game folder added, but it is not accessible - is the drive connected?	已添加游戏文件夹，但无法访问——驱动器是否已连接？
+Game layout	游戏布局
+Game logo	游戏标志
+Game profile saved	已保存游戏配置
+Game-list artwork	游戏列表图片
+GamePad	GamePad
+GamePad channels	GamePad 声道
+GamePad device	GamePad 设备
+GamePad only	仅 GamePad
+GamePad picture in picture	GamePad 画中画
+GamePad screen	GamePad 屏幕
+GamePad volume	GamePad 音量
+Games directory	游戏目录
+Games directory updated	已更新游戏目录
+Games directory updated, but it is not accessible - is the drive connected?	已更新游戏目录，但无法访问——驱动器是否已连接？
+Gamma	Gamma
+General	常规
+Global controller profiles saved	已保存通用手柄配置
+Global default layout	全局默认布局
+Graphic packs reloaded	已重新加载图形包
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	陀螺仪
+Gyroscope dead zone	陀螺仪死区
+Gyroscope sensitivity	陀螺仪灵敏度
+Hold stick button	按住摇杆按键时
+Home	主页
+Horizontal pointer sensitivity	指针水平灵敏度
+Input	输入
+Input channels	输入声道
+Input volume	输入音量
+Install	安装
+Install size: %s (%llu files)	安装大小：%s（%llu 个文件）
+Install title, update or DLC	安装游戏、更新或 DLC
+Installation cancelled	已取消安装
+Installation complete	安装完成
+Installation failed	安装失败
+Installed version %u will be replaced.	将替换已安装的版本 %u。
+Installing...	正在安装……
+Interface	界面
+Interface language	界面语言
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	组合无效。不允许使用单个按键、重复按键以及键盘或指针快捷键。已保存的组合保持不变。
+Invert pointer X	反转指针 X 轴
+Invert pointer Y	反转指针 Y 轴
+Keep installing	继续安装
+Large information artwork	大信息图
+Layout Mode	画面布局模式
+Layout mode	画面布局模式
+Left Stick	左摇杆
+Left stick	左摇杆
+Left stick deadzone	左摇杆死区
+Left stick range	左摇杆范围
+Logs	日志
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	已保存 MLC 路径——重启 Cemu 后生效（账号和存档不会移动）
+MLC storage	MLC 存储
+Metadata language	元数据语言
+Metadata saved; another ScreenScraper download is running	已保存元数据；另一个 ScreenScraper 下载正在进行
+Metadata saved; sign in to ScreenScraper to download media	已保存元数据；登录 ScreenScraper 后可下载图片
+Microphone and portal	麦克风与传送门
+Missing	缺失
+Native UWP app-container frontend for Cemu.	面向 Cemu 的原生 UWP 应用容器界面。
+Nearest neighbor	最近邻
+Network service	网络服务
+Nickname	昵称
+Nickname saved	已保存昵称
+No Cemu Wiki ID is available	没有可用的 Cemu Wiki ID
+No DLC installed	未安装 DLC
+No bootstrap log available.	没有启动日志。
+No graphic packs are installed in the UWP user data graphicPacks folder.	UWP 用户数据的 graphicPacks 文件夹中没有安装图形包。
+No graphic packs target this title	没有针对此游戏的图形包
+No log text available.	没有日志内容。
+No save data found	未找到存档
+No shader caches found	未找到着色器缓存
+No title image is available to copy	没有可复制的游戏图片
+No titles to scrape	没有可抓取的游戏
+No update installed	未安装更新
+None	无
+Nothing left to resume	没有可继续的任务
+Notification scale	通知大小
+Notifications	通知
+Online files: %s	联机文件：%s
+Open title	打开游戏
+Open title file	打开游戏文件
+Overlay	游戏内覆盖
+Overlay scale	叠加层大小
+Override application gamma	覆盖应用程序伽马
+Overwrite existing media	覆盖已有文件
+Password	密码
+Per-game profile	按游戏配置
+Permanent storage	永久存储
+Persistent ID: %08x	持久 ID：%08x
+Picture in picture	画中画
+Platform media: %s	平台图片：%s
+Platform: Windows UWP	平台：Windows UWP
+Pointer	指针
+Pointer activation	指针启用方式
+Pointer speed	指针速度
+Pointer stick	指针摇杆
+Pointer stick dead zone	指针摇杆死区
+Portal device	底座设备
+Portal volume	底座音量
+Portuguese	葡萄牙语
+Power	电源
+Preferred region	首选地区
+Quick Menu	快捷菜单
+Quick Menu combo reset to Menu + View	快捷菜单组合已重置为 Menu + View
+Quick Menu combo saved	已保存快捷菜单组合
+Quick menu combo	快捷菜单组合
+Quit Game	退出游戏
+RAM usage	内存使用
+Ready	就绪
+Refresh list	刷新列表
+Refresh logs	刷新日志
+Refresh titles	刷新游戏
+Refreshing game list	正在刷新游戏列表
+Reload packs	重新加载补丁包
+Remove	移除
+Removed from favorites	已从收藏中移除
+Render upside down	上下颠倒渲染
+Renderer	渲染器
+Renderer: Direct3D 12 CoreWindow	渲染器：Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	需要同时按住至少两个不同的手柄按键。
+Reset Quick Menu to Menu + View	将快捷菜单重置为 Menu + View
+Restart Game	重新启动游戏
+Restart on enable/preset: %s / %s	启用/切换预设时重启：%s / %s
+Restart the title if this pack needs a full reload	如果此补丁包需要完全重新加载，请重启游戏
+Restart unavailable	无法重启
+Resume scan	继续扫描
+Resuming unfinished Screenscraper scan	正在继续未完成的 Screenscraper 扫描
+Return to Game	返回游戏
+Right Stick	右摇杆
+Right stick	右摇杆
+Right stick deadzone	右摇杆死区
+Right stick range	右摇杆范围
+Rumble strength	振动强度
+Runtime dumps	运行时转储
+Save account credentials	保存账户凭据
+Save nickname	保存昵称
+Scaling	缩放
+Screens restored	已还原画面
+Screens swapped	已交换画面
+Screenscraper	Screenscraper
+Screenscraper account cleared	已清除 Screenscraper 账号
+Screenscraper account saved	已保存 Screenscraper 账号
+Screenscraper download is already running	Screenscraper 下载已在进行
+Screenshot	截图
+Selected account is not a complete online account	所选账号不是完整的联机账号
+Set	已设置
+Shader compiling notifications	着色器编译通知
+Shaders: %s	着色器：%s
+Shared title media: %s	共享游戏图片：%s
+Shell theme	界面主题
+Show controls hint	显示操作提示
+Side by side	左右并排
+Side-by-side underlay: %s	左右并排背景：%s
+Sign in to Screenscraper first	请先登录 Screenscraper
+Stable-input calibration period	静止校准时长
+Stacked	上下排列
+Stacked underlay: %s	上下排列背景：%s
+Start Stream	开始推流
+Status: %s	状态：%s
+Stop Stream	停止推流
+Stop the running game before installing content.	安装内容前请先关闭正在运行的游戏。
+Storage	存储
+Storage: %s	存储：%s
+Stream: working...	推流：处理中……
+Swap TV and GamePad screens	交换电视与 GamePad 画面
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	交换示例：Gamepad:View+Y、Keyboard:Escape、Pointer:RightClick
+System	系统
+TV	TV 端
+TV channels	电视声道
+TV device	电视设备
+TV only	仅电视
+TV volume	电视音量
+Target gamma	目标伽马
+That folder is already in the list	该文件夹已在列表中
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	布局参照 Cemu UWP 主菜单：游戏磁贴、侧边栏、柔和的系统面板，以及以手柄为主的导航方式。
+This entry cannot be launched	此条目无法启动
+This graphic pack has no description.	此图形包没有描述。
+Title ID	游戏 ID
+Title ID: %016llX	游戏 ID：%016llX
+Title image copied	已复制游戏图片
+Title information is no longer available	游戏信息已不可用
+Title installed	已安装游戏
+Title screen	标题画面
+Titles	游戏
+Toggle GamePad display	切换 GamePad 画面
+Treat the mapped Screen control as a toggle instead of a hold action	将映射的“画面”操作视为切换而非长按
+Trigger deadzone	扳机死区
+Trigger range	扳机范围
+Triggers	扳机
+UWP shell	UWP 界面
+UWP storage	UWP 存储
+Underlays use titleImages/%s/*.png	背景使用 titleImages/%s/*.png
+Up to %d characters, used as the console profile name	最多 %d 个字符，用作主机的用户名
+Update directory was not found	未找到更新目录
+Upscale filter	放大过滤器
+Use motion	使用体感
+Username	用户名
+VRAM usage	显存使用
+VSync	垂直同步
+Version %u is already installed. Continuing will reinstall it.	版本 %u 已安装。继续将重新安装。
+Version: %d	版本：%d
+Vertical pointer sensitivity	指针垂直灵敏度
+Video	视频
+Video backgrounds use more storage and bandwidth.	视频背景会占用更多存储空间和流量。
+Virtual touch / IR pointer	虚拟触摸 / 红外指针
+Who's playing?	谁在玩？
+Wii Remote extension	Wii 遥控器扩展
+World	世界
+missing or incomplete	缺失或不完整
+no	否
+otp.bin is missing or invalid	otp.bin 缺失或无效
+seeprom.bin is missing or invalid	seeprom.bin 缺失或无效
+valid	正常
+yes	是

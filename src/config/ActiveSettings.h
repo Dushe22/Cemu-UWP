@@ -61,6 +61,10 @@ public:
 	static bool IsCustomMlcPath();
 	static bool IsCommandLineMlcPath();
 
+	[[nodiscard]] static fs::path GetGraphicPacksPath();
+	template <typename ...TArgs>
+	[[nodiscard]] static fs::path GetGraphicPacksPath(TArgs&&... args){ return GetPath(GetGraphicPacksPath(), std::forward<TArgs>(args)...); };
+
 	// get mlc path to default cemu root dir/mlc01
 	[[nodiscard]] static fs::path GetDefaultMLCPath();
 

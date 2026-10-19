@@ -1,0 +1,355 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, versjon %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu av %zu titler mangler fortsatt omslag av denne typen til spillisten.
+%zu packs across %zu games (LB/RB change game)	%zu pakker for %zu spill (LB/RB bytter spill)
+(none)	(ingen)
+2D box	2D-eske
+2D box back	Baksiden av 2D-esken
+2D cartridge	2D-kassett
+3D box	3D-eske
+A Apply    B Cancel	A Bruk    B Avbryt
+A Select    B Back    Menu Close	A Velg    B Tilbake    Menu Lukk
+A file or folder picker is already open	En fil- eller mappevelger er allerede åpen
+A title scan is already running	Et tittelsøk pågår allerede
+A: activate  B: back/home  D-pad/left stick: move focus	A: aktiver  B: tilbake/hjem  Styrekors/venstre stikke: flytt fokus
+APP Store	APP Store
+Accelerometer	Akselerometer
+Accelerometer sensitivity	Akselerometerets følsomhet
+Account	Konto
+Account ID: %s	Konto-ID: %s
+Action	Handling
+Activated: %s	Aktivert: %s
+Add another game folder	Legg til enda en spillmappe
+Added to favorites	Lagt til i favoritter
+Advanced PPC logging	Avansert PPC-logging
+Always on	Alltid på
+An unfinished scan is saved; it resumes automatically on the next launch.	Et uferdig søk er lagret, og det fortsetter automatisk ved neste oppstart.
+App Store	App Store
+Apply Quick Menu combo	Bruk hurtigmenyens kombinasjon
+Artwork	Bilder
+Async shader compile	Asynkron shader-kompilering
+Audio latency	Lydforsinkelse
+Auto	Automatisk
+Backend	Backend
+CPU mode	CPU-modus
+CPU usage	CPU-bruk
+Can't change the MLC path while a game is running	MLC-banen kan ikke endres mens et spill kjører
+Cancel	Avbryt
+Cancel installation	Avbryt installasjonen
+Cancel this installation? The previous installed version will remain unchanged.	Avbryte denne installasjonen? Versjonen som allerede er installert, blir uendret.
+Cancelling installation...	Avbryter installasjonen ...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWP-skall
+Chinese	Kinesisk
+Choose side-by-side underlay	Velg bakgrunn side ved side
+Choose stacked underlay	Velg stablet bakgrunn
+Clear account credentials	Tøm kontoopplysninger
+Clear side-by-side	Tilbakestill side ved side
+Clear stacked	Tilbakestill stablet
+Close	Lukk
+Community	Fellesskap
+Community graphic packs installed	Grafikkpakker fra fellesskapet installert
+Console language	Konsollspråk
+Controller Mapping	Kontrolleroppsett
+Controller battery notifications	Varsler om kontrollerbatteri
+Controller mapping saved	Kontrolleroppsett lagret
+Controller profile notifications	Varsler om kontrollerprofiler
+Controllers	Kontrollere
+Could not open the MLC folder picker	Kunne ikke åpne MLC-mappevelgeren
+Could not open the ScreenScraper media folder picker	Kunne ikke åpne ScreenScrapers mappevelger
+Could not open the game folder picker	Kunne ikke åpne spillmappevelgeren
+Could not open the title picker	Kunne ikke åpne tittelvelgeren
+Could not prepare that MLC folder - is the drive connected and writable?	Kunne ikke klargjøre MLC-mappen - er stasjonen tilkoblet og skrivbar?
+Could not save the nickname	Kunne ikke lagre kallenavnet
+Could not save title metadata	Kunne ikke lagre tittelens metadata
+Crash dump	Krasj dump
+Current game override	Innstilling for gjeldende spill
+Custom	Egendefinert
+DLC directory was not found	Fant ikke DLC-mappen
+Debug overlay	Feilsøkingsoverlegg
+Debugger	Feilsøker
+Default	Standard
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	Standard: Gamepad:Menu+View. Egne eksempler: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Mål: %s
+Developer API credentials are missing from this build.	Denne versjonen mangler API-legitimasjon for utviklere.
+Disable screen saver	Slå av skjermsparer
+Discord	Discord
+Display gamma	Skjermgamma
+Display uses sRGB curve	Skjermen bruker sRGB-kurven
+Download box art	Last ned omslag
+Download community packs	Last ned fellesskapspakker
+Download fanart backgrounds	Last ned fanart-bakgrunner
+Download logos	Last ned logoer
+Download metadata	Last ned metadata
+Download screenshots	Last ned skjermbilder
+Download videos	Last ned videoer
+Downloaded media location	Plassering for nedlastede filer
+Downloads	Nedlastinger
+Downscale filter	Nedskaleringsfilter
+Draw calls	Tegnekall
+Dump libcurl requests	Eksporter libcurl-forespørsler
+Dump recompiler functions	Eksporter rekompilatorfunksjoner
+Dump shaders	Eksporter shadere
+Dump textures	Eksporter teksturer
+Dutch	Nederlandsk
+Emulate Disney Infinity Base	Emuler Disney Infinity-basen
+Emulate LEGO Dimensions Toy Pad	Emuler LEGO Dimensions Toy Pad
+Emulate Skylander Portal	Emuler Skylanders-portalen
+Emulated USB devices	Emulerte USB-enheter
+Enable Screenscraper	Slå på Screenscraper
+Enable Screenscraper first	Slå på Screenscraper først
+Enable intro sound	Slå på oppstartslyd
+Enabled	Aktivert
+Europe	Europa
+Every refresh	Hver oppdatering
+Every second refresh	Annenhver oppdatering
+Every third refresh	Hver tredje oppdatering
+Exit Cemu	Avslutt Cemu
+FPS	FPS
+Failed to copy title image	Kunne ikke kopiere tittelbildet
+Failed to save Screenscraper account	Kunne ikke lagre Screenscraper-kontoen
+Failed to save settings	Kunne ikke lagre innstillingene
+Fan art	Fanart
+Files: %llu / %llu	Filer: %llu / %llu
+Flush log	Skriv loggen
+Follow interface language	Følg grensesnittspråket
+Free space: %s	Ledig plass: %s
+French	Fransk
+Friend service notifications	Varsler fra venntjenesten
+Fullscreen scaling	Fullskjermskalering
+GDB port	GDB port
+Game directory was not found	Fant ikke spillmappen
+Game folder added	Spillmappe lagt til
+Game folder added, but it is not accessible - is the drive connected?	Spillmappe lagt til, men den er ikke tilgjengelig - er stasjonen tilkoblet?
+Game layout	Spilloppsett
+Game logo	Spillogo
+Game profile saved	Spillprofil lagret
+Game-list artwork	Bilder i spillisten
+GamePad	Håndkontroller
+GamePad channels	GamePad-kanaler
+GamePad device	GamePad-enhet
+GamePad only	Bare GamePad
+GamePad picture in picture	GamePad som bilde i bilde
+GamePad screen	GamePad-skjerm
+GamePad volume	GamePad-volum
+Games directory	Spillmappe
+Games directory updated	Spillmappen oppdatert
+Games directory updated, but it is not accessible - is the drive connected?	Spillmappen oppdatert, men den er ikke tilgjengelig - er stasjonen tilkoblet?
+Gamma	Gamma
+General	Generelt
+German	Tysk
+Global controller profiles saved	Globale kontrollerprofiler lagret
+Global default layout	Globalt standardoppsett
+Graphic packs reloaded	Grafikkpakker lastet inn på nytt
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Gyroskop
+Gyroscope dead zone	Gyroskopets dødsone
+Gyroscope sensitivity	Gyroskopets følsomhet
+Hold stick button	Hold inne stikkeknappen
+Home	Hjem
+Horizontal pointer sensitivity	Vannrett pekerfølsomhet
+Input	Inndata
+Input channels	Inngangskanaler
+Input volume	Inngangsvolum
+Install	Installer
+Install size: %s (%llu files)	Installasjonsstørrelse: %s (%llu filer)
+Install title, update or DLC	Installer tittel, oppdatering eller DLC
+Installation cancelled	Installasjonen ble avbrutt
+Installation complete	Installasjonen er fullført
+Installation failed	Installasjonen mislyktes
+Installed	Installert
+Installed version %u will be replaced.	Den installerte versjonen %u blir erstattet.
+Installing...	Installerer ...
+Interface	Grensesnitt
+Interface language	Grensesnittspråk
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Ugyldig kombinasjon. Enkeltknapper, gjentatte knapper og snarveier for tastatur eller peker er ikke tillatt. Den lagrede kombinasjonen er uendret.
+Invert pointer X	Inverter pekerens X-akse
+Invert pointer Y	Inverter pekerens Y-akse
+Italian	Italiensk
+Japan	Japan
+Japanese	Japansk
+Keep installing	Fortsett å installere
+Korean	Koreansk
+Large information artwork	Stort informasjonsbilde
+Layout Mode	Oppsettmodus
+Layout mode	Oppsettmodus
+Left Stick	Venstre stikke
+Left stick	Venstre stikke
+Left stick deadzone	Dødsone for venstre stikke
+Left stick range	Utslag for venstre stikke
+Logs	Logger
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	MLC-banen er lagret - start Cemu på nytt for å bruke den (kontoer og lagringsfiler flyttes ikke)
+MLC storage	MLC-lagring
+Metadata language	Språk for metadata
+Metadata saved; another ScreenScraper download is running	Metadata lagret, men en annen ScreenScraper-nedlasting pågår
+Metadata saved; sign in to ScreenScraper to download media	Metadata lagret, logg på ScreenScraper for å laste ned filer
+Microphone and portal	Mikrofon og portal
+Missing	Mangler
+Multi-core recompiler	Flerkjerners rekompilator
+Native UWP app-container frontend for Cemu.	Innebygd UWP-appcontainergrensesnitt for Cemu.
+Nearest neighbor	Nærmeste nabo
+Network service	Nettverkstjeneste
+Nickname	Kallenavn
+Nickname saved	Kallenavn lagret
+No Cemu Wiki ID is available	Ingen Cemu Wiki-ID er tilgjengelig
+No DLC installed	Ingen DLC installert
+No bootstrap log available.	Ingen oppstartslogg tilgjengelig.
+No graphic packs are installed in the UWP user data graphicPacks folder.	Ingen grafikkpakker er installert i mappen graphicPacks under UWP-brukerdata.
+No graphic packs target this title	Ingen grafikkpakker gjelder denne tittelen
+No log text available.	Ingen loggtekst tilgjengelig.
+No save data found	Fant ingen lagringsfiler
+No shader caches found	Fant ingen shader-cacher
+No title image is available to copy	Det finnes ikke noe tittelbilde å kopiere
+No titles to scrape	Ingen titler å hente data for
+No update installed	Ingen oppdatering installert
+None	Ingen
+Not installed	Ikke installert
+Nothing left to resume	Det er ikke mer å fortsette med
+Notification scale	Størrelse på varsler
+Notifications	Notifikasjoner
+Offline	Frakoblet
+Online files: %s	Nettfiler: %s
+Open title	Åpne tittel
+Open title file	Åpne tittelfil
+Overlay	Overlegg
+Overlay scale	Overleggsstørrelse
+Override application gamma	Overstyr programmets gamma
+Overwrite existing media	Overskriv eksisterende filer
+Password	Passord
+Per-game profile	Profil per spill
+Permanent storage	Permanent lagring
+Persistent ID: %08x	Varig ID: %08x
+Picture in picture	Bilde i bilde
+Platform media: %s	Plattformfiler: %s
+Platform: Windows UWP	Plattform: Windows UWP
+Pointer	Peker
+Pointer activation	Aktivering av pekeren
+Pointer speed	Pekerhastighet
+Pointer stick	Pekerstikke
+Pointer stick dead zone	Dødsone for pekerstikken
+Portal device	Portalenhet
+Portal volume	Portalvolum
+Portuguese	Portugisisk
+Power	Av/på
+Preferred region	Foretrukket region
+Quick Menu	Hurtigmeny
+Quick Menu combo reset to Menu + View	Hurtigmenykombinasjonen tilbakestilt til Menu + View
+Quick Menu combo saved	Hurtigmenykombinasjonen lagret
+Quick menu combo	Hurtigmenykombinasjon
+Quit Game	Avslutt spillet
+RAM usage	RAM-bruk
+Ready	Klar
+Refresh list	Oppdater listen
+Refresh logs	Oppdater loggene
+Refresh titles	Oppdater titlene
+Refreshing game list	Oppdaterer spillisten
+Region	Region
+Reload packs	Last inn pakkene på nytt
+Remove	Fjern
+Removed from favorites	Fjernet fra favoritter
+Render upside down	Tegn opp ned
+Renderer	Renderer
+Renderer: Direct3D 12 CoreWindow	Renderer: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Krever at minst to forskjellige kontrollerknapper holdes inne samtidig.
+Reset Quick Menu to Menu + View	Tilbakestill hurtigmenyen til Meny + Vis
+Restart Game	Start spillet på nytt
+Restart on enable/preset: %s / %s	Omstart ved aktivering/forhåndsinnstilling: %s / %s
+Restart the title if this pack needs a full reload	Start tittelen på nytt hvis pakken må lastes helt inn igjen
+Restart unavailable	Omstart er ikke tilgjengelig
+Resume scan	Gjenoppta skanningen
+Resuming unfinished Screenscraper scan	Fortsetter uferdig Screenscraper-søk
+Return to Game	Tilbake til spillet
+Right Stick	Høyre stikke
+Right stick	Høyre stikke
+Right stick deadzone	Dødsone for høyre stikke
+Right stick range	Utslag for høyre stikke
+Rumble strength	Vibrasjonsstyrke
+Runtime dumps	Kjøretidsdumper
+Russian	Russisk
+Save account credentials	Lagre kontoopplysninger
+Save nickname	Lagre kallenavn
+Scaling	Skalering
+Screens restored	Skjermene tilbakestilt
+Screens swapped	Skjermene byttet
+Screenscraper	Screenscraper
+Screenscraper account cleared	Screenscraper-kontoen tømt
+Screenscraper account saved	Screenscraper-kontoen lagret
+Screenscraper download is already running	En Screenscraper-nedlasting pågår allerede
+Screenshot	Skjermbilde
+Selected account is not a complete online account	Den valgte kontoen er ikke en fullstendig nettkonto
+Set	Angitt
+Shader compiling notifications	Varsler om shaderkompilering
+Shaders: %s	Shadere: %s
+Shared title media: %s	Delte tittelfiler: %s
+Shell theme	Grensesnittstema
+Show controls hint	Vis kontrollhint
+Side by side	Side ved side
+Side-by-side underlay: %s	Bakgrunn side ved side: %s
+Sign in to Screenscraper first	Logg på Screenscraper først
+Single-core interpreter	Enkjerners tolker
+Single-core recompiler	Enkjerners rekompilator
+Spanish	Spansk
+Stable-input calibration period	Kalibreringstid i ro
+Stacked	Stablet
+Stacked underlay: %s	Bakgrunn stablet: %s
+Start Stream	Start strømmen
+Status: %s	Status: %s
+Stop Stream	Stopp strømmen
+Stop the running game before installing content.	Avslutt spillet som kjører før du installerer innhold.
+Storage	Lagring
+Storage: %s	Lagring: %s
+Stream: working...	Strøm: arbeider ...
+Swap TV and GamePad screens	Bytt TV- og GamePad-skjerm
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Eksempler på bytte: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	System
+TV	TV
+TV channels	TV-kanaler
+TV device	TV-enhet
+TV only	Bare TV
+TV volume	TV-volum
+Taiwanese	Taiwansk
+Target gamma	Målgamma
+That folder is already in the list	Den mappen er allerede i listen
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	Oppsettet følger startmenyen i Cemu UWP: spillfliser, sidelister, myke systempaneler og navigasjon tilpasset kontroller.
+This entry cannot be launched	Denne oppføringen kan ikke startes
+This graphic pack has no description.	Denne grafikkpakken har ingen beskrivelse.
+Title ID	Tittel-ID
+Title ID: %016llX	Tittel-ID: %016llX
+Title Manager	Titteladministrasjon
+Title image copied	Tittelbilde kopiert
+Title information is no longer available	Tittelinformasjonen er ikke lenger tilgjengelig
+Title installed	Tittel installert
+Title screen	Tittelskjerm
+Titles	Titler
+Toggle GamePad display	Slå GamePad-skjermen av eller på
+Treat the mapped Screen control as a toggle instead of a hold action	Bruk den tilordnede Skjerm-knappen som veksling i stedet for å holdes inne
+Trigger deadzone	Dødsone for avtrekkerne
+Trigger range	Utslag for avtrekkerne
+Triggers	Avtrekkere
+USA	USA
+UWP shell	UWP-skall
+UWP storage	UWP-lagring
+Underlays use titleImages/%s/*.png	Bakgrunner bruker titleImages/%s/*.png
+Up to %d characters, used as the console profile name	Opptil %d tegn, brukes som konsollens profilnavn
+Update directory was not found	Fant ikke oppdateringsmappen
+Upscale filter	Oppskaleringsfilter
+Use motion	Bruk bevegelsesstyring
+Username	Brukernavn
+VRAM usage	VRAM bruk
+VSync	VSync
+Version %u is already installed. Continuing will reinstall it.	Versjon %u er allerede installert. Fortsetter du, blir den installert på nytt.
+Version: %d	Versjon: %d
+Vertical pointer sensitivity	Loddrett pekerfølsomhet
+Video	Video
+Video backgrounds use more storage and bandwidth.	Videobakgrunner bruker mer lagring og båndbredde.
+Virtual touch / IR pointer	Virtuell berøring / IR-peker
+Who's playing?	Hvem spiller?
+Wii Remote extension	Wii Remote-tilbehør
+World	Verden
+missing or incomplete	mangler eller er ufullstendige
+no	nei
+otp.bin is missing or invalid	otp.bin mangler eller er ugyldig
+seeprom.bin is missing or invalid	seeprom.bin mangler eller er ugyldig
+valid	gyldige
+yes	ja

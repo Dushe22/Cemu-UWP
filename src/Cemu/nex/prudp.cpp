@@ -4,8 +4,6 @@
 #include <bitset>
 #include <random>
 
-#include <boost/random/uniform_int.hpp>
-
 static void KSA(unsigned char* key, int keyLen, unsigned char* S)
 {
 	for (int i = 0; i < RC4_N; i++)
@@ -74,9 +72,8 @@ uint32 prudpGetMSTimestamp()
 }
 
 std::mt19937_64 prudpRG(GetTickCount());
-// workaround for static asserts when using uniform_int_distribution (see https://github.com/cemu-project/Cemu/issues/48)
-boost::random::uniform_int_distribution<int> prudpRandomDistribution8(0, 0xFF);
-boost::random::uniform_int_distribution<int> prudpRandomDistributionPortGen(0, 10000);
+std::uniform_int_distribution<int> prudpRandomDistribution8(0, 0xFF);
+std::uniform_int_distribution<int> prudpRandomDistributionPortGen(0, 10000);
 
 uint8 prudp_generateRandomU8()
 {

@@ -2,8 +2,10 @@
 
 #if BOOST_OS_WINDOWS
 #include "XAudio2API.h"
+#if !defined(CEMU_UWP)
 #include "XAudio27API.h"
 #include "DirectSoundAPI.h"
+#endif
 #endif
 #include "config/CemuConfig.h"
 #if HAS_CUBEB
@@ -79,10 +81,14 @@ void IAudioAPI::InitializeStatic()
 	s_audioDelay = GetConfig().audio_delay;
 
 #if BOOST_OS_WINDOWS
+#if !defined(CEMU_UWP)
 	s_availableApis[DirectSound] = true;
+#endif
 	s_availableApis[XAudio2] = XAudio2API::InitializeStatic();
+#if !defined(CEMU_UWP)
 	if (!s_availableApis[XAudio2]) // don't try to initialize the older lib if the newer version is available
 		s_availableApis[XAudio27] = XAudio27API::InitializeStatic();
+#endif
 #endif
 #if HAS_CUBEB
 	s_availableApis[Cubeb] = CubebAPI::InitializeStatic();
@@ -141,6 +147,7 @@ AudioAPIPtr IAudioAPI::CreateDevice(AudioAPI api, const DeviceDescriptionPtr& de
 	switch (api)
 	{
 #if BOOST_OS_WINDOWS
+#if !defined(CEMU_UWP)
 	case DirectSound:
 	{
 		const auto tmp = std::dynamic_pointer_cast<DirectSoundAPI::DirectSoundDeviceDescription>(device);
@@ -151,6 +158,7 @@ AudioAPIPtr IAudioAPI::CreateDevice(AudioAPI api, const DeviceDescriptionPtr& de
 		const auto tmp = std::dynamic_pointer_cast<XAudio27API::XAudio27DeviceDescription>(device);
 		return std::make_unique<XAudio27API>(tmp->GetDeviceId(), samplerate, channels, samples_per_block, bits_per_sample);
 	}
+#endif
 	case XAudio2:
 	{
 		const auto tmp = std::dynamic_pointer_cast<XAudio2API::XAudio2DeviceDescription>(device);
@@ -177,6 +185,7 @@ std::vector<IAudioAPI::DeviceDescriptionPtr> IAudioAPI::GetDevices(AudioAPI api)
 	switch (api)
 	{
 #if BOOST_OS_WINDOWS
+#if !defined(CEMU_UWP)
 	case DirectSound:
 	{
 		return DirectSoundAPI::GetDevices();
@@ -185,6 +194,7 @@ std::vector<IAudioAPI::DeviceDescriptionPtr> IAudioAPI::GetDevices(AudioAPI api)
 	{
 		return XAudio27API::GetDevices();
 	}
+#endif
 	case XAudio2:
 	{
 		return XAudio2API::GetDevices();

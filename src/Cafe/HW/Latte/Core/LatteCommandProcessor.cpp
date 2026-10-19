@@ -153,6 +153,32 @@ private:
 
 void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx);
 
+namespace
+{
+	std::atomic<uint32> s_cpWait{ (uint32)LatteCPWait::None };
+	std::atomic<uint32> s_cpWaitAddress{};
+	std::atomic<uint32> s_cpWaitValue{};
+	std::atomic<sint64> s_cpWaitSince{};
+
+	void LatteCP_setWait(LatteCPWait wait, uint32 address = 0, uint32 value = 0)
+	{
+		s_cpWaitAddress.store(address, std::memory_order_relaxed);
+		s_cpWaitValue.store(value, std::memory_order_relaxed);
+		s_cpWaitSince.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+		s_cpWait.store((uint32)wait, std::memory_order_release);
+	}
+}
+
+LatteCPWaitInfo LatteCP_GetWaitInfo()
+{
+	LatteCPWaitInfo info;
+	info.wait = (LatteCPWait)s_cpWait.load(std::memory_order_acquire);
+	info.address = s_cpWaitAddress.load(std::memory_order_relaxed);
+	info.value = s_cpWaitValue.load(std::memory_order_relaxed);
+	info.sinceTicks = s_cpWaitSince.load(std::memory_order_relaxed);
+	return info;
+}
+
 // called whenever the GPU runs out of commands or hits a wait condition (semaphores, HLE waits)
 void LatteCP_signalEnterWait()
 {
@@ -168,13 +194,28 @@ void LatteCP_signalEnterWait()
 uint32 LatteCP_readU32Deprc()
 {
 	// no display list active
+	bool waiting = false;
 	while (true)
 	{
 		uint32 cmdWord;
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
+		{
+			if (waiting)
+				LatteCP_setWait(LatteCPWait::None);
 			return cmdWord;
+		}
+		if (!waiting)
+		{
+			LatteCP_setWait(LatteCPWait::Commands);
+			waiting = true;
+		}
 
-		g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
+		{
+#if defined(CEMU_UWP)
+			std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+			g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
+		}
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
 		// no command data available, spin in a busy loop for a bit then check again
 		for (sint32 busy = 0; busy < 80; busy++)
@@ -184,12 +225,15 @@ uint32 LatteCP_readU32Deprc()
 		LatteThread_HandleOSScreen(); // check if new frame was presented via OSScreen API
 
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
+		{
+			LatteCP_setWait(LatteCPWait::None);
 			return cmdWord;
+		}
 		if (Latte_GetStopSignal())
 			LatteThread_Exit();
 
 		// still no command data available, do some other tasks
-		LatteTiming_HandleTimedVsync();
+		LatteTiming_HandleTimedVsync(true);
 		LatteAsyncCommands_checkAndExecute();
 		std::this_thread::yield();
 		performanceMonitor.gpuTime_idleTime.endMeasuring();
@@ -321,6 +365,20 @@ void LatteCP_itSetRegistersGeneric_handleSpecialRanges(uint32 registerStartIndex
 	}
 }
 
+// hardware ignores writes outside the register file, applying them here would corrupt emulator memory
+static bool LatteCP_isRegisterWriteInRange(uint32 registerBase, uint32 registerOffset, uint32 nWords, LatteCMDPtr cmd)
+{
+	if (registerOffset < (LATTE_MAX_REGISTER - registerBase) && nWords <= (LATTE_MAX_REGISTER - registerBase - registerOffset))
+		return true;
+	static uint32 s_logCount = 0;
+	if (s_logCount < 16)
+	{
+		s_logCount++;
+		cemuLog_log(LogType::Force, "GX2 register write out of range: base=0x{:x} offset=0x{:x} count={} packet=0x{:08x}", registerBase, registerOffset, nWords, memory_getVirtualOffsetFromPointer((void*)(cmd - 2)));
+	}
+	return false;
+}
+
 template<uint32 TRegisterBase>
 LatteCMDPtr LatteCP_itSetRegistersGeneric(LatteCMDPtr cmd, uint32 nWords)
 {
@@ -329,9 +387,8 @@ LatteCMDPtr LatteCP_itSetRegistersGeneric(LatteCMDPtr cmd, uint32 nWords)
 	uint32 registerIndex = TRegisterBase + registerOffset;
 	uint32 registerStartIndex = registerIndex;
 	uint32 registerEndIndex = registerStartIndex + nWords;
-#ifdef CEMU_DEBUG_ASSERT
-	cemu_assert_debug((registerIndex + nWords) <= LATTE_MAX_REGISTER);
-#endif
+	if (!LatteCP_isRegisterWriteInRange(TRegisterBase, registerOffset, nWords, cmd))
+		return cmd + nWords;
 	uint32* __restrict outputReg = (uint32*)(LatteGPUState.contextRegister + registerIndex);
 	if (LatteGPUState.contextControl0 == 0x80000077)
 	{
@@ -380,7 +437,8 @@ bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, TRegRangeCal
 	const uint32 registerIndex = TRegisterBase + registerOffset;
 	const uint32 registerStartIndex = registerIndex;
 	const uint32 registerEndIndex = registerStartIndex + nWords - 1;
-	cemu_assert_debug((registerIndex + nWords) <= LATTE_MAX_REGISTER);
+	if (!LatteCP_isRegisterWriteInRange(TRegisterBase, registerOffset, nWords, cmd))
+		return false;
 
 	uint32* outputReg = (uint32*)(LatteGPUState.contextRegister + registerIndex);
 	bool hasRegChange = false;
@@ -479,6 +537,11 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 	if ((word0 & 0x10) != 0)
 	{
 		// wait for memory address
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+		const uint64 diagnosticWaitTicksBefore = performanceMonitor.gpuTime_fenceTime.getCurrentSumForDiagnostics();
+		const uint64 diagnosticVblanksBefore = LatteUwpGetDiagnosticVblankCount();
+		const uint32 diagnosticInitial = _swapEndianU32(*fencePtr) & fenceMask;
+#endif
 		performanceMonitor.gpuTime_fenceTime.beginMeasuring();
 		while (true)
 		{
@@ -527,15 +590,36 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 				assert_dbg();
 			if (!stalls)
 			{
-				g_renderer->NotifyLatteCommandProcessorIdle();
+				{
+#if defined(CEMU_UWP)
+					std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+					g_renderer->NotifyLatteCommandProcessorIdle();
+				}
+				LatteCP_setWait(LatteCPWait::GuestMemory, physAddr, fenceValue);
 				stalls = true;
 			}
 
 			// check if any GPU events happened
-			LatteTiming_HandleTimedVsync();
+			LatteTiming_HandleTimedVsync(true);
 			LatteAsyncCommands_checkAndExecute();
 		}
+		if (stalls)
+			LatteCP_setWait(LatteCPWait::None);
 		performanceMonitor.gpuTime_fenceTime.endMeasuring();
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+		LatteUwpTimingDiagnostics::GuestWait diagnosticWait;
+		diagnosticWait.durationUs = PPCTimer_tscToMicroseconds(
+			performanceMonitor.gpuTime_fenceTime.getCurrentSumForDiagnostics() - diagnosticWaitTicksBefore);
+		diagnosticWait.vblanks = LatteUwpGetDiagnosticVblankCount() - diagnosticVblanksBefore;
+		diagnosticWait.address = physAddr;
+		diagnosticWait.mask = fenceMask;
+		diagnosticWait.compareOp = compareOp;
+		diagnosticWait.reference = fenceValue;
+		diagnosticWait.initial = diagnosticInitial;
+		diagnosticWait.finalValue = _swapEndianU32(*fencePtr) & fenceMask;
+		LatteUwpRecordGuestWait(diagnosticWait, stalls);
+#endif
 	}
 	else
 	{
@@ -896,6 +980,22 @@ LatteCMDPtr LatteCP_itHLECopySurfaceNew(LatteCMDPtr cmd, uint32 nWords)
 	return cmd;
 }
 
+LatteCMDPtr LatteCP_itHLEExpandDepthBuffer(LatteCMDPtr cmd, uint32 nWords)
+{
+	cemu_assert_debug(nWords == 8);
+	MPTR depthBufferMPTR = LatteReadCMD();
+	auto depthBufferFormat = (Latte::E_GX2SURFFMT)LatteReadCMD();
+	uint32 width = LatteReadCMD();
+	uint32 height = LatteReadCMD();
+	uint32 pitch = LatteReadCMD();
+	uint32 viewMip = LatteReadCMD();
+	uint32 viewFirstSlice = LatteReadCMD();
+	uint32 viewNumSlices = LatteReadCMD();
+	if (g_renderer)
+		g_renderer->NotifyDepthBufferExpanded(depthBufferMPTR, depthBufferFormat, width, height, pitch, viewMip, viewFirstSlice, viewNumSlices);
+	return cmd;
+}
+
 LatteCMDPtr LatteCP_itHLEClearColorDepthStencil(LatteCMDPtr cmd, uint32 nWords)
 {
 	cemu_assert_debug(nWords == 23);
@@ -971,7 +1071,7 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 			break;
 		}
 		// check if any GPU events happened
-		LatteTiming_HandleTimedVsync();
+		LatteTiming_HandleTimedVsync(true);
 		std::this_thread::yield();
 	}
 	return cmd;
@@ -1180,6 +1280,15 @@ void LatteCP_processCommandBuffer_continuousDrawPass(DrawPassContext& drawPassCt
 
 void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 {
+#if defined(CEMU_UWP) && defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
+	LatteUwpVblankBoundaryCadence vblankBoundaryCadence;
+#endif
+#if defined(CEMU_UWP)
+	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+	LatteUwpCommandBatchScope diagnosticBatch;
+#endif
 	while (true)
 	{
 		LatteCMDPtr cmd, cmdStart, cmdEnd;
@@ -1384,6 +1493,11 @@ void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 					LatteCP_itHLECopySurfaceNew(cmdData, nWords);
 					break;
 				}
+				case IT_HLE_EXPAND_DEPTH_BUFFER:
+				{
+					LatteCP_itHLEExpandDepthBuffer(cmdData, nWords);
+					break;
+				}
 				case IT_HLE_SAMPLE_TIMER:
 				{
 					LatteCP_itHLESampleTimer(cmdData, nWords);
@@ -1451,6 +1565,22 @@ void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 				LatteCP_dumpCommandBufferError(cmdStart, cmdEnd, cmd);
 				cemu_assert_debug(false);
 			}
+#if defined(CEMU_UWP) && defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
+			if (vblankBoundaryCadence.ShouldCheckTimer())
+			{
+				cemu_assert_debug(!drawPassCtx.isWithinDrawPass());
+				if (!drawPassCtx.isWithinDrawPass() && LatteUwpIsVblankBoundaryExperimentEnabled())
+				{
+#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+					const uint64 vblanksBeforeBoundaryCheck = LatteUwpGetDiagnosticVblankCount();
+#endif
+					LatteTiming_HandleTimedVsync(false);
+#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+					LatteUwpRecordBoundaryTimerCheck(LatteUwpGetDiagnosticVblankCount() - vblanksBeforeBoundaryCheck);
+#endif
+				}
+			}
+#endif
 		}
 		cemu_assert_debug(cmd == cmdEnd);
 	}
@@ -1684,6 +1814,12 @@ void LatteCP_ProcessRingbuffer()
 			case IT_HLE_COPY_SURFACE_NEW:
 			{
 				LatteCP_itHLECopySurfaceNew(cmd, nWords);
+				timerRecheck += CP_TIMER_RECHECK / 128;
+				break;
+			}
+			case IT_HLE_EXPAND_DEPTH_BUFFER:
+			{
+				LatteCP_itHLEExpandDepthBuffer(cmd, nWords);
 				timerRecheck += CP_TIMER_RECHECK / 128;
 				break;
 			}
@@ -1969,6 +2105,11 @@ void LatteCP_DebugPrintCmdBuffer(uint32be* bufferPtr, uint32 size)
 			case IT_HLE_COPY_SURFACE_NEW:
 			{
 				cemuLog_log(LogType::Force, "{} IT_HLE_COPY_SURFACE_NEW", strPrefix);
+				break;
+			}
+			case IT_HLE_EXPAND_DEPTH_BUFFER:
+			{
+				cemuLog_log(LogType::Force, "{} IT_HLE_EXPAND_DEPTH_BUFFER", strPrefix);
 				break;
 			}
 			case IT_HLE_SAMPLE_TIMER:

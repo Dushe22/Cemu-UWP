@@ -1,8 +1,34 @@
 #include "Common/windows/FileStream_win32.h"
 
+namespace
+{
+HANDLE CemuCreateFile(const wchar_t* path, DWORD desiredAccess, DWORD shareMode, DWORD creationDisposition)
+{
+#if defined(CEMU_UWP)
+	// Windows refuses paths past MAX_PATH unless they use the extended-length form, and some game saves go past it
+	// (Mario Kart 8's highlight reels reach about 300 characters under LocalState)
+	std::wstring extendedPath;
+	const size_t length = wcslen(path);
+	if (length >= MAX_PATH && path[1] == L':')
+	{
+		extendedPath.reserve(length + 4);
+		extendedPath = L"\\\\?\\";
+		extendedPath.append(path, length);
+		std::replace(extendedPath.begin() + 4, extendedPath.end(), L'/', L'\\');
+		path = extendedPath.c_str();
+	}
+	CREATEFILE2_EXTENDED_PARAMETERS params{};
+	params.dwSize = sizeof(params);
+	return CreateFile2(path, desiredAccess, shareMode, creationDisposition, &params);
+#else
+	return CreateFileW(path, desiredAccess, shareMode, NULL, creationDisposition, 0, 0);
+#endif
+}
+}
+
 FileStream* FileStream::openFile(std::string_view path)
 {
-	HANDLE hFile = CreateFileW(boost::nowide::widen(path.data(), path.size()).c_str(), FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
+	HANDLE hFile = CemuCreateFile(boost::nowide::widen(path.data(), path.size()).c_str(), FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -10,7 +36,7 @@ FileStream* FileStream::openFile(std::string_view path)
 
 FileStream* FileStream::openFile(const wchar_t* path, bool allowWrite)
 {
-	HANDLE hFile = CreateFileW(path, allowWrite ? (FILE_GENERIC_READ | FILE_GENERIC_WRITE) : FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, 0);
+	HANDLE hFile = CemuCreateFile(path, allowWrite ? (FILE_GENERIC_READ | FILE_GENERIC_WRITE) : FILE_GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -23,7 +49,7 @@ FileStream* FileStream::openFile2(const fs::path& path, bool allowWrite)
 
 FileStream* FileStream::createFile(const wchar_t* path)
 {
-	HANDLE hFile = CreateFileW(path, FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, 0);
+	HANDLE hFile = CemuCreateFile(path, FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, CREATE_ALWAYS);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -32,7 +58,7 @@ FileStream* FileStream::createFile(const wchar_t* path)
 FileStream* FileStream::createFile(std::string_view path)
 {
 	auto w = boost::nowide::widen(path.data(), path.size());
-	HANDLE hFile = CreateFileW(w.c_str(), FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, 0, 0);
+	HANDLE hFile = CemuCreateFile(w.c_str(), FILE_GENERIC_READ | FILE_GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, CREATE_ALWAYS);
 	if (hFile == INVALID_HANDLE_VALUE)
 		return nullptr;
 	return new FileStream(hFile);
@@ -66,17 +92,16 @@ std::optional<std::vector<uint8>> FileStream::LoadIntoMemory(const fs::path& pat
 
 void FileStream::SetPosition(uint64 pos)
 {
-	LONG posHigh = (LONG)(pos >> 32);
-	LONG posLow = (LONG)(pos);
-	SetFilePointer(m_hFile, posLow, &posHigh, FILE_BEGIN);
+	LARGE_INTEGER distance{};
+	distance.QuadPart = pos;
+	SetFilePointerEx(m_hFile, distance, nullptr, FILE_BEGIN);
 }
 
 uint64 FileStream::GetSize()
 {
-	DWORD fileSizeHigh = 0;
-	DWORD fileSizeLow = 0;
-	fileSizeLow = GetFileSize(m_hFile, &fileSizeHigh);
-	return ((uint64)fileSizeHigh << 32) | (uint64)fileSizeLow;
+	LARGE_INTEGER fileSize{};
+	GetFileSizeEx(m_hFile, &fileSize);
+	return (uint64)fileSize.QuadPart;
 }
 
 bool FileStream::SetEndOfFile()
@@ -86,9 +111,9 @@ bool FileStream::SetEndOfFile()
 
 void FileStream::extract(std::vector<uint8>& data)
 {
-	DWORD fileSize = GetFileSize(m_hFile, nullptr);
+	DWORD fileSize = (DWORD)std::min<uint64>(GetSize(), std::numeric_limits<DWORD>::max());
 	data.resize(fileSize);
-	SetFilePointer(m_hFile, 0, 0, FILE_BEGIN);
+	SetPosition(0);
 	DWORD bt;
 	ReadFile(m_hFile, data.data(), fileSize, &bt, nullptr);
 }

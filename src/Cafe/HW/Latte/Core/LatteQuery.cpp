@@ -5,6 +5,8 @@
 #include "Cafe/HW/Latte/Core/LatteQueryObject.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
+#include <algorithm>
+
 #define GPU7_QUERY_TYPE_OCCLUSION	(1)
 
 uint64 queryEventCounter = 1;
@@ -210,3 +212,47 @@ void LatteQuery_CancelActiveGPU7Queries()
 void LatteQuery_Init()
 {
 }
+
+#if defined(CEMU_UWP)
+bool LatteQuery_HasPendingCompletions()
+{
+	return !list_queriesInFlight.empty();
+}
+
+void LatteQuery_CancelAllForTitle()
+{
+	std::vector<LatteQueryObject*> queries;
+	queries.reserve(list_queriesInFlight.size() + (_currentlyActiveRendererQuery ? 1 : 0));
+	if (_currentlyActiveRendererQuery)
+		queries.emplace_back(_currentlyActiveRendererQuery);
+	for (auto* query : list_queriesInFlight)
+	{
+		if (query && std::find(queries.begin(), queries.end(), query) == queries.end())
+			queries.emplace_back(query);
+	}
+
+	_currentlyActiveRendererQuery = nullptr;
+	list_queriesInFlight.clear();
+	for (auto* query : queries)
+	{
+		if (g_renderer)
+			g_renderer->occlusionQuery_destroy(query);
+	}
+
+	const size_t guestQueryCount = list_activeGX2Queries2.size();
+	for (auto* query : list_activeGX2Queries2)
+		free(query);
+	list_activeGX2Queries2.clear();
+	queryEventCounter = 1;
+	latestQueryFinishedEventId = 0;
+	checkQueriesCounter = 0;
+
+	if (!queries.empty() || guestQueryCount != 0)
+	{
+		cemuLog_log(LogType::Force,
+			"D3D12 UWP: cancelled {} renderer and {} guest occlusion queries during title shutdown.",
+			queries.size(),
+			guestQueryCount);
+	}
+}
+#endif

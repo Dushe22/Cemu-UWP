@@ -1,7 +1,31 @@
 #include "Cafe/OS/common/OSCommon.h"
 #include "coreinit_Scheduler.h"
 
+#if defined(CEMU_UWP) && BOOST_OS_WINDOWS
+#include <processthreadsapi.h>
+
+namespace
+{
+DWORD GetSchedulerLockTlsIndex()
+{
+	static const DWORD index = TlsAlloc();
+	cemu_assert(index != TLS_OUT_OF_INDEXES);
+	return index;
+}
+
+sint32 GetSchedulerLockCount()
+{
+	return (sint32)(intptr_t)TlsGetValue(GetSchedulerLockTlsIndex());
+}
+
+void SetSchedulerLockCount(sint32 count)
+{
+	cemu_assert_debug(TlsSetValue(GetSchedulerLockTlsIndex(), (void*)(intptr_t)count));
+}
+}
+#else
 thread_local sint32 s_schedulerLockCount = 0;
+#endif
 
 #if BOOST_OS_WINDOWS
 #include <synchapi.h>
@@ -18,13 +42,23 @@ void __OSLockScheduler(void* obj)
 #else
 	pthread_mutex_lock(&s_ptmSchedulerLock);
 #endif
+#if defined(CEMU_UWP) && BOOST_OS_WINDOWS
+	const sint32 schedulerLockCount = GetSchedulerLockCount() + 1;
+	SetSchedulerLockCount(schedulerLockCount);
+	cemu_assert_debug(schedulerLockCount <= 1); // >= 2 should not happen. Scheduler lock does not allow recursion
+#else
 	s_schedulerLockCount++;
 	cemu_assert_debug(s_schedulerLockCount <= 1); // >= 2 should not happen. Scheduler lock does not allow recursion
+#endif
 }
 
 bool __OSHasSchedulerLock()
 {
+#if defined(CEMU_UWP) && BOOST_OS_WINDOWS
+	return GetSchedulerLockCount() > 0;
+#else
 	return s_schedulerLockCount > 0;
+#endif
 }
 
 bool __OSTryLockScheduler(void* obj)
@@ -37,7 +71,11 @@ bool __OSTryLockScheduler(void* obj)
 #endif
 	if (r)
 	{
+#if defined(CEMU_UWP) && BOOST_OS_WINDOWS
+		SetSchedulerLockCount(GetSchedulerLockCount() + 1);
+#else
 		s_schedulerLockCount++;
+#endif
 		return true;
 	}
 	return false;
@@ -45,8 +83,14 @@ bool __OSTryLockScheduler(void* obj)
 
 void __OSUnlockScheduler(void* obj)
 {
+#if defined(CEMU_UWP) && BOOST_OS_WINDOWS
+	const sint32 schedulerLockCount = GetSchedulerLockCount() - 1;
+	SetSchedulerLockCount(schedulerLockCount);
+	cemu_assert_debug(schedulerLockCount >= 0);
+#else
 	s_schedulerLockCount--;
 	cemu_assert_debug(s_schedulerLockCount >= 0);
+#endif
 #if BOOST_OS_WINDOWS
 	LeaveCriticalSection(&s_csSchedulerLock);
 #else

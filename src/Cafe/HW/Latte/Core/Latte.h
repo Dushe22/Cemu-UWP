@@ -49,6 +49,11 @@ struct LatteGPUState_t
 	// temporary (replace with proper solution later)
 	bool tvBufferUsesSRGB;
 	bool drcBufferUsesSRGB;
+	MPTR tvScanBufferAddr = MPTR_NULL;
+	uint32 tvScanBufferSize = 0;
+	MPTR drcScanBufferAddr = MPTR_NULL;
+	uint32 drcScanBufferSize = 0;
+	uint32 lastTVScanBufferCopyFrame = 0; // frameCounter of the last copy into the TV scan buffer
 	float tvGamma = 0.0f;
 	float drcGamma = 0.0f;
 	// draw state
@@ -141,6 +146,10 @@ bool LatteTextureReadback_Update(bool forceStart = false);
 void LatteTextureReadback_NotifyTextureDeletion(LatteTexture* texture);
 void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish);
 bool LatteTextureReadback_ReadbackToLinearBlocking(LatteTextureView* sourceView, uint8* dstPtr, uint32 dstWidth, uint32 dstHeight, uint32 dstPitch);
+#if defined(CEMU_UWP)
+void LatteTextureReadback_CancelAllForTitle();
+bool LatteTextureReadback_HasPendingCompletions();
+#endif
 
 // query
 
@@ -150,6 +159,10 @@ void LatteQuery_EndOcclusionQuery(MPTR queryMPTR);
 void LatteQuery_UpdateFinishedQueries();
 void LatteQuery_UpdateFinishedQueriesForceFinishAll();
 void LatteQuery_CancelActiveGPU7Queries();
+#if defined(CEMU_UWP)
+void LatteQuery_CancelAllForTitle();
+bool LatteQuery_HasPendingCompletions();
+#endif
 
 // streamout
 
@@ -161,11 +174,29 @@ void LatteStreamout_FinishDrawcall(bool useDirectMemoryMode);
 // timing
 
 void LatteTiming_Init();
-void LatteTiming_HandleTimedVsync();
+void LatteTiming_HandleTimedVsync(bool isCommandProcessorWaiting = false);
 
 // command processor
 
 void LatteCP_ProcessRingbuffer();
+
+// what the command processor is blocked on, for stall diagnostics
+enum class LatteCPWait : uint32
+{
+	None,
+	Commands,
+	GuestMemory,
+};
+
+struct LatteCPWaitInfo
+{
+	LatteCPWait wait;
+	uint32 address;
+	uint32 value;
+	sint64 sinceTicks; // steady_clock ticks
+};
+
+LatteCPWaitInfo LatteCP_GetWaitInfo();
 
 // buffer cache
 
@@ -182,7 +213,12 @@ void LatteRenderTarget_updateViewport();
 #define catchOpenGLError()
 
 // Latte emulation control
+#if defined(CEMU_UWP)
+bool Latte_Start();
+bool Latte_WaitForGPUInit();
+#else
 void Latte_Start();
+#endif
 void Latte_Stop();
 bool Latte_GetStopSignal(); // returns true if stop was requested or if in stopped state
 void LatteThread_Exit();

@@ -203,6 +203,8 @@ namespace GX2
 	{
 		Latte::E_GX2SURFFMT surfaceFormat = (Latte::E_GX2SURFFMT)_surfaceFormat;
 		LatteGPUState.tvBufferUsesSRGB = HAS_FLAG(surfaceFormat, Latte::E_GX2SURFFMT::FMT_BIT_SRGB);
+		LatteGPUState.tvScanBufferAddr = memory_getVirtualOffsetFromPointer(imageBuffePtr);
+		LatteGPUState.tvScanBufferSize = imageBufferSize;
 		// todo - actually allocate a scanbuffer
 	}
 

@@ -112,12 +112,25 @@ GameProfileWindow::GameProfileWindow(wxWindow* parent, uint64_t title_id)
 
 		first_row->Add(new wxStaticText(panel, wxID_ANY, _("Graphics API")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
 
-		wxString gapi_values[] = { "", "OpenGL", "Vulkan",
-#ifdef ENABLE_METAL
-            "Metal"
+		std::vector<wxString> gapi_values = { "" };
+		m_graphic_api_map = { std::nullopt };
+#ifdef ENABLE_OPENGL
+		gapi_values.emplace_back("OpenGL");
+		m_graphic_api_map.emplace_back(GraphicAPI::kOpenGL);
 #endif
-		};
-		m_graphic_api = new wxChoice(panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, (int)std::size(gapi_values), gapi_values);
+#ifdef ENABLE_VULKAN
+		gapi_values.emplace_back("Vulkan");
+		m_graphic_api_map.emplace_back(GraphicAPI::kVulkan);
+#endif
+#ifdef ENABLE_METAL
+		gapi_values.emplace_back("Metal");
+		m_graphic_api_map.emplace_back(GraphicAPI::kMetal);
+#endif
+#ifdef ENABLE_D3D12
+		gapi_values.emplace_back("Direct3D 12");
+		m_graphic_api_map.emplace_back(GraphicAPI::kDirect3D12);
+#endif
+		m_graphic_api = new wxChoice(panel, wxID_ANY, wxDefaultPosition, wxDefaultSize, (int)gapi_values.size(), gapi_values.data());
 		first_row->Add(m_graphic_api, 0, wxALL, 5);
 
 		first_row->Add(new wxStaticText(panel, wxID_ANY, _("Shader multiplication accuracy")), 0, wxALIGN_CENTER_VERTICAL | wxALL, 5);
@@ -294,7 +307,17 @@ void GameProfileWindow::ApplyProfile()
 	if (!m_game_profile.m_graphics_api.has_value())
 		m_graphic_api->SetSelection(0); // selecting ""
 	else
-		m_graphic_api->SetSelection(1 + m_game_profile.m_graphics_api.value()); // "", OpenGL, Vulkan, Metal
+	{
+		m_graphic_api->SetSelection(0);
+		for (size_t i = 1; i < m_graphic_api_map.size(); ++i)
+		{
+			if (m_graphic_api_map[i] == m_game_profile.m_graphics_api)
+			{
+				m_graphic_api->SetSelection(i);
+				break;
+			}
+		}
+	}
 	m_shader_mul_accuracy->SetSelection((int)m_game_profile.m_accurateShaderMul);
 #ifdef ENABLE_METAL
 	m_shader_fast_math->SetSelection((int)m_game_profile.m_shaderFastMath);
@@ -371,7 +394,7 @@ void GameProfileWindow::SaveProfile()
 	if (m_graphic_api->GetSelection() == 0)
 		m_game_profile.m_graphics_api = {};
 	else
-		m_game_profile.m_graphics_api = (GraphicAPI)(m_graphic_api->GetSelection() - 1);  // "", OpenGL, Vulkan, Metal
+		m_game_profile.m_graphics_api = m_graphic_api_map[m_graphic_api->GetSelection()];
 
 	// controller
 	for (int i = 0; i < 8; ++i)

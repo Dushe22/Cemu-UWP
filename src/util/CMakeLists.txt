@@ -71,7 +71,14 @@ add_library(CemuUtil
 )
 
 if(WIN32)
-	target_sources(CemuUtil PRIVATE Fiber/FiberWin.cpp)
+	if(ENABLE_UWP)
+		if(NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+			message(FATAL_ERROR "CEMU_UWP currently requires the MSVC x64 UWP fiber backend")
+		endif()
+		target_sources(CemuUtil PRIVATE Fiber/FiberUwp.cpp)
+	else()
+		target_sources(CemuUtil PRIVATE Fiber/FiberWin.cpp)
+	endif()
 	target_sources(CemuUtil PRIVATE MemMapper/MemMapperWin.cpp)
 	target_sources(CemuUtil PRIVATE SystemInfo/SystemInfoWin.cpp)
 elseif(UNIX)
@@ -87,7 +94,7 @@ else()
 	target_sources(CemuUtil PRIVATE SystemInfo/SystemInfoStub.cpp)
 endif()
 
-set_property(TARGET CemuUtil PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuUtil PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 cemu_use_precompiled_header(CemuUtil)
 

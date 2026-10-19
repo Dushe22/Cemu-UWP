@@ -1,0 +1,13 @@
+# Interface strings that only exist in this build.
+# One "source<TAB>translation" pair per line; untranslated lines fall back to English.
+Interface language	
+Nickname	
+Save nickname	
+Start Stream	
+Stop Stream	
+Pointer stick	
+Pointer activation	
+Hold stick button	
+Always on	
+Right stick	
+Left stick	

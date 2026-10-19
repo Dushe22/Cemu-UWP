@@ -128,6 +128,18 @@ namespace H264
 	{
 		if (!ptr || length < 4 || !offsetOut)
 			return H264DEC_STATUS::INVALID_PARAM;
+#if defined(CEMU_UWP)
+		for (uint32 i = 0; i + 3 <= length; ++i)
+		{
+			const uint32 startCodeLength = NALInputBitstream::GetStartCodeLength(ptr + i, length - i);
+			if (startCodeLength == 0 || i + startCodeLength >= length)
+				continue;
+			if ((ptr[i + startCodeLength] & 0x9F) != 7)
+				continue;
+			*offsetOut = i > 0 ? i - 1 : 0;
+			return H264DEC_STATUS::SUCCESS;
+		}
+#else
 		for (uint32 i = 0; i < length - 4; ++i)
 		{
 			uint8 b = ptr[i];
@@ -154,6 +166,7 @@ namespace H264
 
 			return H264DEC_STATUS::SUCCESS;
 		}
+#endif
 		return H264DEC_STATUS::BAD_STREAM;
 	}
 
@@ -162,6 +175,19 @@ namespace H264
 		if (!ptr || length < 4 || !offsetOut)
 			return H264DEC_STATUS::INVALID_PARAM;
 
+#if defined(CEMU_UWP)
+		for (uint32 i = 0; i + 3 <= length; ++i)
+		{
+			const uint32 startCodeLength = NALInputBitstream::GetStartCodeLength(ptr + i, length - i);
+			if (startCodeLength == 0 || i + startCodeLength >= length)
+				continue;
+			const uint8 nalType = ptr[i + startCodeLength] & 0x9F;
+			if (nalType != 5 && nalType != 7 && nalType != 8)
+				continue;
+			*offsetOut = i > 0 ? i - 1 : 0;
+			return H264DEC_STATUS::SUCCESS;
+		}
+#else
 		for (uint32 i = 0; i < length - 4; ++i)
 		{
 			uint8 b = ptr[i];
@@ -188,6 +214,7 @@ namespace H264
 
 			return H264DEC_STATUS::SUCCESS;
 		}
+#endif
 		return H264DEC_STATUS::BAD_STREAM;
 	}
 
@@ -304,6 +331,23 @@ namespace H264
 			return H264DEC_STATUS::INVALID_PARAM;
 		uint8* cur = stream + offset;
 		uint8* end = stream + streamSize;
+#if defined(CEMU_UWP)
+		while (cur < end)
+		{
+			const uint32 startCodeLength = NALInputBitstream::GetStartCodeLength(cur, (uint32)(end - cur));
+			if (startCodeLength == 0 || cur + startCodeLength >= end)
+			{
+				cur++;
+				continue;
+			}
+			const uint8 nalHeader = cur[startCodeLength];
+			if ((nalHeader & 0x1F) != 7)
+			{
+				cur++;
+				continue;
+			}
+			uint8* spsStart = cur + startCodeLength + 1;
+#else
 		while (cur < end-2)
 		{
 			// check for start code
@@ -325,6 +369,7 @@ namespace H264
 				continue;
 			}
 			uint8* spsStart = cur + 2;
+#endif
 			uint32 spsLength = (uint32)(end - spsStart);
 			H264Dec_SeqParameterSet psp;
 			RBSPInputBitstream rbspStream(spsStart, spsLength, false);
@@ -635,7 +680,11 @@ namespace H264
 
 	uint32 H264DECExecute(void* workMemory, void* imageOutput)
 	{
+#if defined(CEMU_UWP)
+		cemuLog_log(LogType::H264, "H264DECExecute(): [BEGIN]");
+#else
 		cemuLog_log(LogType::Force, "H264DECExecute(): [BEGIN]");
+#endif
 		BenchmarkTimer bt;
 		bt.Start();
 		H264Context* ctx = (H264Context*)workMemory;
@@ -696,17 +745,20 @@ namespace H264
 		data += offset;
 		maxLength -= offset;
 
-		NALInputBitstream nalStream(data, maxLength);
-
-		if (nalStream.hasError())
-		{
-			cemu_assert_debug(false);
-			return H264DEC_STATUS::BAD_STREAM;
-		}
-
 		// search for start code
 		sint32 startCodeOffset = 0;
 		bool hasStartcode = false;
+#if defined(CEMU_UWP)
+		while (startCodeOffset + 3 <= (sint32)maxLength)
+		{
+			if (NALInputBitstream::GetStartCodeLength(data + startCodeOffset, maxLength - startCodeOffset) != 0)
+			{
+				hasStartcode = true;
+				break;
+			}
+			startCodeOffset++;
+		}
+#else
 		while (startCodeOffset < (sint32)(maxLength - 3))
 		{
 			if (data[startCodeOffset + 0] == 0x00 && data[startCodeOffset + 1] == 0x00 && data[startCodeOffset + 2] == 0x01)
@@ -716,10 +768,15 @@ namespace H264
 			}
 			startCodeOffset++;
 		}
+#endif
 		if (hasStartcode == false)
 			return H264DEC_STATUS::BAD_STREAM;
 		data += startCodeOffset;
 		maxLength -= startCodeOffset;
+
+		NALInputBitstream nalStream(data, maxLength);
+		if (nalStream.hasError())
+			return H264DEC_STATUS::BAD_STREAM;
 
 		// parse NAL data
 		while (true)
@@ -773,8 +830,10 @@ namespace H264
 				break;
 			default:
 				cemuLog_logDebug(LogType::Force, "Unsupported NAL unit type {}", nal_unit_type);
+#if !defined(CEMU_UWP)
 				cemu_assert_unimplemented();
 				// todo
+#endif
 				break;
 			}
 		}

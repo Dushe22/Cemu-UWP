@@ -14,4 +14,6 @@ uint32 GetProcessorCount();
 uint64 QueryRamUsage();
 void QueryProcTime(uint64 &out_now, uint64 &out_user, uint64 &out_kernel);
 void QueryProcTime(ProcessorTime &out);
+#if !defined(CEMU_UWP)
 void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out);
+#endif

@@ -332,6 +332,7 @@ void gx2Export_GX2CopySurface(PPCInterpreter_t* hCPU)
 	uint32 dstMip = hCPU->gpr[7];
 	uint32 dstSlice = hCPU->gpr[8];
 	gx2Surface_GX2CopySurface(srcSurface, srcMip, srcSlice, dstSurface, dstMip, dstSlice);
+	gx2SubmitScanBufferCopy(srcSurface, srcMip, srcSlice, dstSurface, dstMip, dstSlice);
 	osLib_returnFromFunction(hCPU, 0);
 }
 
@@ -395,6 +396,13 @@ void gx2Export_GX2CopySurfaceEx(PPCInterpreter_t* hCPU)
 		{
 			// special case in which GX2CopySurfaceEx acts like GX2CopySurface()
 			gx2Surface_GX2CopySurface(srcSurface, srcMip, srcSlice, dstSurface, dstMip, dstSlice);
+			// rect copies are 1:1, so only a copy that fills the whole destination is presented
+			const sint32 dstPointX = (sint32)_swapEndianU32((uint32)rectDst[i].x);
+			const sint32 dstPointY = (sint32)_swapEndianU32((uint32)rectDst[i].y);
+			const uint32 dstMipWidth = std::max<uint32>((uint32)dstSurface->width >> dstMip, 1);
+			const uint32 dstMipHeight = std::max<uint32>((uint32)dstSurface->height >> dstMip, 1);
+			if (dstPointX == 0 && dstPointY == 0 && (uint32)rectWidth == dstMipWidth && (uint32)rectHeight == dstMipHeight)
+				gx2SubmitScanBufferCopy(srcSurface, srcMip, srcSlice, dstSurface, dstMip, dstSlice);
 		}
 	}
 

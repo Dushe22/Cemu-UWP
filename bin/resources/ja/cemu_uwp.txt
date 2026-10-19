@@ -1,0 +1,333 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s、バージョン %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu 件中 %zu 件のタイトルには、この種類のゲームリスト用画像がまだありません。
+%zu packs across %zu games (LB/RB change game)	%zu 件のパックが %zu 本のゲームに対応 (LB/RB でゲームを切り替え)
+(none)	(なし)
+2D box	2Dパッケージ
+2D box back	2Dパッケージ裏面
+2D cartridge	2Dカートリッジ
+3D box	3Dパッケージ
+A Apply    B Cancel	A 適用    B キャンセル
+A Select    B Back    Menu Close	A 決定    B 戻る    Menu 閉じる
+A file or folder picker is already open	ファイルまたはフォルダーの選択画面をすでに開いています
+A title scan is already running	タイトルの検索はすでに実行中です
+A: activate  B: back/home  D-pad/left stick: move focus	A: 決定  B: 戻る/ホーム  十字ボタン/左スティック: カーソル移動
+APP Store	APP Store
+Accelerometer	加速度センサー
+Accelerometer sensitivity	加速度センサーの感度
+Account	アカウント
+Account ID: %s	アカウントID: %s
+Action	操作
+Activated: %s	有効: %s
+Add another game folder	ゲームフォルダーを追加
+Added to favorites	お気に入りに追加しました
+Advanced PPC logging	PPCの詳細ログ
+Always on	常にオン
+An unfinished scan is saved; it resumes automatically on the next launch.	未完了の検索を保存しました。次回の起動時に自動で再開します。
+App Store	App Store
+Apply Quick Menu combo	クイックメニューの組み合わせを適用
+Artwork	画像
+Audio latency	音声の遅延
+Backend	バックエンド
+CPU mode	CPUモード
+CPU usage	CPU の使用率
+Can't change the MLC path while a game is running	ゲームの実行中はMLCのパスを変更できません
+Cancel	キャンセル
+Cancel installation	インストールを中止
+Cancel this installation? The previous installed version will remain unchanged.	インストールを中止しますか？すでにインストール済みのバージョンは変更されません。
+Cancelling installation...	インストールを中止しています...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWPシェル
+Choose side-by-side underlay	左右分割の背景を選択
+Choose stacked underlay	上下分割の背景を選択
+Clear account credentials	アカウント情報を消去
+Clear side-by-side	左右分割をリセット
+Clear stacked	上下分割をリセット
+Close	閉じる
+Community	コミュニティ
+Community graphic packs installed	コミュニティのグラフィックパックをインストールしました
+Console language	本体の言語
+Controller Mapping	コントローラー設定
+Controller battery notifications	コントローラー電池の通知
+Controller mapping saved	コントローラー設定を保存しました
+Controller profile notifications	コントローラープロファイルの通知
+Controllers	コントローラー
+Could not open the MLC folder picker	MLCフォルダーの選択画面を開けませんでした
+Could not open the ScreenScraper media folder picker	ScreenScraperのフォルダー選択画面を開けませんでした
+Could not open the game folder picker	ゲームフォルダーの選択画面を開けませんでした
+Could not open the title picker	タイトルの選択画面を開けませんでした
+Could not prepare that MLC folder - is the drive connected and writable?	そのMLCフォルダーを準備できませんでした。ドライブが接続され、書き込み可能か確認してください。
+Could not save the nickname	ニックネームを保存できませんでした
+Could not save title metadata	タイトルのメタデータを保存できませんでした
+Crash dump	クラッシュ ダンプ
+Current game override	現在のゲームの設定
+Custom	カスタム
+DLC directory was not found	DLCのフォルダーが見つかりませんでした
+Debug overlay	デバッグオーバーレイ
+Debugger	デバッガー
+Default	デフォルト
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	既定: Gamepad:Menu+View。カスタム例: Gamepad:LB+RB、Gamepad:View+Y
+Destination: %s	保存先: %s
+Developer API credentials are missing from this build.	このビルドには開発者APIの認証情報が含まれていません。
+Disable screen saver	スクリーンセーバーを無効にする
+Discord	Discord
+Display gamma	ディスプレイのガンマ
+Display uses sRGB curve	ディスプレイはsRGBカーブを使用
+Download box art	パッケージ画像を取得
+Download community packs	コミュニティパックをダウンロード
+Download fanart backgrounds	ファンアート背景を取得
+Download logos	ロゴを取得
+Download metadata	メタデータを取得
+Download screenshots	スクリーンショットを取得
+Download videos	動画を取得
+Downloaded media location	ダウンロードした画像の保存先
+Downloads	ダウンロード
+Downscale filter	ダウン スケール フィルター
+Draw calls	ドローコール
+Dump libcurl requests	libcurlリクエストを出力
+Dump recompiler functions	リコンパイラ関数を出力
+Dump shaders	シェーダーを出力
+Dump textures	テクスチャを出力
+Emulate Disney Infinity Base	ディズニー インフィニティ ベースをエミュレート
+Emulate LEGO Dimensions Toy Pad	レゴ ディメンションズ トイパッドをエミュレート
+Emulate Skylander Portal	スカイランダーズのポータルをエミュレート
+Emulated USB devices	エミュレートされたUSB機器
+Enable Screenscraper	Screenscraperを有効にする
+Enable Screenscraper first	先にScreenscraperを有効にしてください
+Enable intro sound	起動音を有効にする
+Enabled	有効
+Every refresh	毎リフレッシュ
+Every second refresh	2回に1回のリフレッシュ
+Every third refresh	3回に1回のリフレッシュ
+Exit Cemu	Cemuを終了
+FPS	FPS
+Failed to copy title image	タイトル画像をコピーできませんでした
+Failed to save Screenscraper account	Screenscraperのアカウントを保存できませんでした
+Failed to save settings	設定を保存できませんでした
+Fan art	ファンアート
+Files: %llu / %llu	ファイル: %llu / %llu
+Flush log	ログを書き出す
+Follow interface language	表示言語に合わせる
+Free space: %s	空き容量: %s
+Friend service notifications	フレンドサービスの通知
+Fullscreen scaling	全画面表示の拡大縮小
+GDB port	GDB port
+Game directory was not found	ゲームのフォルダーが見つかりませんでした
+Game folder added	ゲームフォルダーを追加しました
+Game folder added, but it is not accessible - is the drive connected?	ゲームフォルダーを追加しましたが、アクセスできません。ドライブは接続されていますか？
+Game layout	ゲームの画面配置
+Game logo	ゲームロゴ
+Game profile saved	ゲームプロファイルを保存しました
+Game-list artwork	ゲーム一覧の画像
+GamePad	GamePad
+GamePad channels	GamePadチャンネル
+GamePad device	GamePadのデバイス
+GamePad only	GamePadのみ
+GamePad picture in picture	GamePadをピクチャインピクチャ
+GamePad screen	GamePad画面
+GamePad volume	GamePadの音量
+Games directory	ゲームフォルダー
+Games directory updated	ゲームフォルダーを更新しました
+Games directory updated, but it is not accessible - is the drive connected?	ゲームフォルダーを更新しましたが、アクセスできません。ドライブは接続されていますか？
+Gamma	Gamma
+General	全般
+Global controller profiles saved	共通のコントローラープロファイルを保存しました
+Global default layout	全体の既定の配置
+Graphic packs reloaded	グラフィックパックを再読み込みしました
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	ジャイロセンサー
+Gyroscope dead zone	ジャイロの遊び
+Gyroscope sensitivity	ジャイロの感度
+Hold stick button	スティックボタンを押している間
+Home	ホーム
+Horizontal pointer sensitivity	ポインターの水平感度
+Input	入力
+Input channels	入力チャンネル
+Input volume	入力音量
+Install	インストール
+Install size: %s (%llu files)	インストールサイズ: %s (%llu ファイル)
+Install title, update or DLC	タイトル・更新・DLCをインストール
+Installation cancelled	インストールを中止しました
+Installation complete	インストールが完了しました
+Installation failed	インストールに失敗しました
+Installed version %u will be replaced.	インストール済みのバージョン %u を置き換えます。
+Installing...	インストール中...
+Interface	インターフェース
+Interface language	インターフェースの言語
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	無効な組み合わせです。単独のボタン、重複したボタン、キーボードやポインターのショートカットは使用できません。保存済みの組み合わせは変更されていません。
+Invert pointer X	ポインターのX軸を反転
+Invert pointer Y	ポインターのY軸を反転
+Keep installing	インストールを続行
+Large information artwork	大きな情報画像
+Layout Mode	画面配置モード
+Layout mode	画面配置モード
+Left Stick	左スティック
+Left stick	左スティック
+Left stick deadzone	左スティックの遊び
+Left stick range	左スティックの範囲
+Logs	ログ
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	MLCのパスを保存しました。使用するにはCemuを再起動してください (アカウントとセーブデータは移動しません)
+MLC storage	MLCストレージ
+Metadata language	メタデータの言語
+Metadata saved; another ScreenScraper download is running	メタデータを保存しました。別のScreenScraperダウンロードが実行中です
+Metadata saved; sign in to ScreenScraper to download media	メタデータを保存しました。画像を取得するにはScreenScraperにサインインしてください
+Microphone and portal	マイクとポータル
+Missing	なし
+Native UWP app-container frontend for Cemu.	Cemu用のネイティブUWPアプリコンテナー インターフェイスです。
+Nearest neighbor	ニアレストネイバー
+Network service	ネットワークサービス
+Nickname	ニックネーム
+Nickname saved	ニックネームを保存しました
+No Cemu Wiki ID is available	利用できるCemu WikiのIDがありません
+No DLC installed	DLCはインストールされていません
+No bootstrap log available.	起動ログはありません。
+No graphic packs are installed in the UWP user data graphicPacks folder.	UWPユーザーデータのgraphicPacksフォルダーにグラフィックパックがインストールされていません。
+No graphic packs target this title	このタイトルに対応するグラフィックパックはありません
+No log text available.	ログの内容がありません。
+No save data found	セーブデータが見つかりません
+No shader caches found	シェーダーキャッシュが見つかりません
+No title image is available to copy	コピーできるタイトル画像がありません
+No titles to scrape	取得対象のタイトルがありません
+No update installed	アップデートはインストールされていません
+None	なし
+Nothing left to resume	再開できるものはありません
+Notification scale	通知の大きさ
+Notifications	通知
+Offline	オフライン
+Online files: %s	オンライン用ファイル: %s
+Open title	タイトルを開く
+Open title file	タイトルファイルを開く
+Overlay	オーバーレイ
+Overlay scale	オーバーレイの大きさ
+Override application gamma	アプリのガンマを上書きする
+Overwrite existing media	既存のファイルを上書きする
+Password	パスワード
+Per-game profile	ゲームごとのプロファイル
+Permanent storage	永続ストレージ
+Persistent ID: %08x	永続ID: %08x
+Picture in picture	ピクチャインピクチャ
+Platform media: %s	プラットフォームの画像: %s
+Platform: Windows UWP	プラットフォーム: Windows UWP
+Pointer	ポインター
+Pointer activation	ポインターの操作方法
+Pointer speed	ポインターの速さ
+Pointer stick	ポインターのスティック
+Pointer stick dead zone	ポインタースティックの遊び
+Portal device	ポータルのデバイス
+Portal volume	ポータルの音量
+Portuguese	ポルトガル語
+Power	電源
+Preferred region	優先する地域
+Quick Menu	クイックメニュー
+Quick Menu combo reset to Menu + View	クイックメニューの組み合わせをMenu + Viewに戻しました
+Quick Menu combo saved	クイックメニューの組み合わせを保存しました
+Quick menu combo	クイックメニューの組み合わせ
+Quit Game	ゲームを終了
+RAM usage	RAM 使用量
+Ready	準備完了
+Refresh list	一覧を更新
+Refresh logs	ログを更新
+Refresh titles	タイトルを更新
+Refreshing game list	ゲームリストを更新しています
+Reload packs	パックを再読み込み
+Remove	削除
+Removed from favorites	お気に入りから削除しました
+Render upside down	上下反転して描画
+Renderer	レンダラー
+Renderer: Direct3D 12 CoreWindow	レンダラー: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	異なるコントローラーのボタンを2つ以上同時に押し続ける必要があります。
+Reset Quick Menu to Menu + View	クイックメニューをMenu + Viewに戻す
+Restart Game	ゲームを再起動
+Restart on enable/preset: %s / %s	有効化時/プリセット変更時の再起動: %s / %s
+Restart the title if this pack needs a full reload	このパックに完全な再読み込みが必要な場合はタイトルを再起動してください
+Restart unavailable	再起動できません
+Resume scan	スキャンを再開
+Resuming unfinished Screenscraper scan	未完了のScreenscraper検索を再開しています
+Return to Game	ゲームに戻る
+Right Stick	右スティック
+Right stick	右スティック
+Right stick deadzone	右スティックの遊び
+Right stick range	右スティックの範囲
+Rumble strength	振動の強さ
+Runtime dumps	実行時ダンプ
+Save account credentials	アカウント情報を保存
+Save nickname	ニックネームを保存
+Scaling	スケーリング
+Screens restored	画面を元に戻しました
+Screens swapped	画面を入れ替えました
+Screenscraper	Screenscraper
+Screenscraper account cleared	Screenscraperのアカウントを削除しました
+Screenscraper account saved	Screenscraperのアカウントを保存しました
+Screenscraper download is already running	Screenscraperのダウンロードはすでに実行中です
+Screenshot	スクリーンショット
+Selected account is not a complete online account	選択したアカウントは完全なオンラインアカウントではありません
+Set	設定済み
+Shader compiling notifications	シェーダーコンパイルの通知
+Shaders: %s	シェーダー: %s
+Shared title media: %s	共有タイトル画像: %s
+Shell theme	画面テーマ
+Show controls hint	操作ヒントを表示
+Side by side	左右に並べる
+Side-by-side underlay: %s	左右に並べる背景: %s
+Sign in to Screenscraper first	先にScreenscraperにサインインしてください
+Stable-input calibration period	静止時のキャリブレーション時間
+Stacked	上下に並べる
+Stacked underlay: %s	上下に並べる背景: %s
+Start Stream	配信を開始
+Status: %s	状態: %s
+Stop Stream	配信を停止
+Stop the running game before installing content.	コンテンツをインストールする前に実行中のゲームを終了してください。
+Storage	ストレージ
+Storage: %s	ストレージ: %s
+Stream: working...	配信: 処理中...
+Swap TV and GamePad screens	TVとGamePadの画面を入れ替える
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	入れ替えの例: Gamepad:View+Y、Keyboard:Escape、Pointer:RightClick
+System	システム
+TV	TV
+TV channels	TVチャンネル
+TV device	TVのデバイス
+TV only	TVのみ
+TV volume	TVの音量
+Target gamma	目標ガンマ
+That folder is already in the list	そのフォルダーはすでに一覧にあります
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	この画面はCemu UWPのホームメニューに合わせています。ゲームタイル、サイドレール、やわらかなシステムパネル、コントローラー優先の操作で構成されています。
+This entry cannot be launched	この項目は起動できません
+This graphic pack has no description.	このグラフィックパックには説明がありません。
+Title ID	タイトルID
+Title ID: %016llX	タイトルID: %016llX
+Title image copied	タイトル画像をコピーしました
+Title information is no longer available	タイトルの情報は利用できなくなりました
+Title installed	タイトルをインストールしました
+Title screen	タイトル画面
+Titles	タイトル
+Toggle GamePad display	GamePadの画面を切り替える
+Treat the mapped Screen control as a toggle instead of a hold action	割り当てた「画面」操作を長押しではなく切り替えとして扱う
+Trigger deadzone	トリガーの遊び
+Trigger range	トリガーの範囲
+Triggers	トリガー
+UWP shell	UWPシェル
+UWP storage	UWPストレージ
+Underlays use titleImages/%s/*.png	背景には titleImages/%s/*.png を使用します
+Up to %d characters, used as the console profile name	最大 %d 文字。本体のプロファイル名として使われます
+Update directory was not found	アップデートのフォルダーが見つかりませんでした
+Upscale filter	アップスケールフィルター
+Use motion	モーションを使う
+Username	ユーザー名
+VRAM usage	VRAM 使用量
+VSync	垂直同期
+Version %u is already installed. Continuing will reinstall it.	バージョン %u はすでにインストールされています。続行すると再インストールします。
+Version: %d	バージョン: %d
+Vertical pointer sensitivity	ポインターの垂直感度
+Video	動画
+Video backgrounds use more storage and bandwidth.	動画の背景はストレージと通信量を多く使います。
+Virtual touch / IR pointer	仮想タッチ / IRポインター
+Who's playing?	プレイするのは誰？
+Wii Remote extension	Wii Remoteの拡張機器
+World	ワールド
+missing or incomplete	なし、または不完全
+no	いいえ
+otp.bin is missing or invalid	otp.bin がないか無効です
+seeprom.bin is missing or invalid	seeprom.bin がないか無効です
+valid	有効
+yes	はい

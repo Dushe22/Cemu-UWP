@@ -7,6 +7,7 @@
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompilerInternal.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompilerInstructions.h"
+#include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteUniformColorProof.h"
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
@@ -1083,6 +1084,12 @@ void _LatteDecompiler_Process(LatteDecompilerShaderContext* shaderContext, uint8
 			LatteDecompiler_emitMSLShader(shaderContext, shaderContext->shader);
 #endif
 		}
+		if (g_renderer->GetType() == RendererAPI::Direct3D12)
+		{
+#ifdef ENABLE_D3D12
+			LatteDecompiler_emitHLSLShader(shaderContext, shaderContext->shader);
+#endif
+		}
 	}
 	LatteDecompiler_cleanup(shaderContext);
 	// fast access
@@ -1102,6 +1109,9 @@ void LatteDecompiler_InitContext(LatteDecompilerShaderContext& dCtx, const Latte
 
 void LatteDecompiler_DecompileVertexShader(uint64 shaderBaseHash, uint32* contextRegisters, uint8* programData, uint32 programSize, struct LatteFetchShader* fetchShader, LatteDecompilerOptions& options, LatteDecompilerOutput_t* output)
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope shaderCompileScope(LatteUwpHitchOp::ShaderCompile);
+#endif
 	cemu_assert_debug(fetchShader);
 	cemu_assert_debug((programSize & 3) == 0);
 	performanceMonitor.gpuTime_shaderCreate.beginMeasuring();
@@ -1127,6 +1137,9 @@ void LatteDecompiler_DecompileVertexShader(uint64 shaderBaseHash, uint32* contex
 
 void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* contextRegisters, uint8* programData, uint32 programSize, uint8* gsCopyProgramData, uint32 gsCopyProgramSize, uint32 vsRingParameterCount, LatteDecompilerOptions& options, LatteDecompilerOutput_t* output)
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope shaderCompileScope(LatteUwpHitchOp::ShaderCompile);
+#endif
 	cemu_assert_debug((programSize & 3) == 0);
 	performanceMonitor.gpuTime_shaderCreate.beginMeasuring();
 	// prepare decompiler context
@@ -1158,6 +1171,9 @@ void LatteDecompiler_DecompileGeometryShader(uint64 shaderBaseHash, uint32* cont
 
 void LatteDecompiler_DecompilePixelShader(uint64 shaderBaseHash, uint32* contextRegisters, uint8* programData, uint32 programSize, LatteDecompilerOptions& options, LatteDecompilerOutput_t* output)
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope shaderCompileScope(LatteUwpHitchOp::ShaderCompile);
+#endif
 	cemu_assert_debug((programSize & 3) == 0);
 	performanceMonitor.gpuTime_shaderCreate.beginMeasuring();
 	// prepare decompiler context
@@ -1176,6 +1192,10 @@ void LatteDecompiler_DecompilePixelShader(uint64 shaderBaseHash, uint32* context
 	}
 	// parse & compile
 	_LatteDecompiler_Process(&shaderContext, programData, programSize);
+	// alpha test injects a discard, so it also disqualifies the proof
+	shader->pixelColorOutputIsUniform = !shader->hasError && !shader->depthMask &&
+		!shaderContext.contextRegistersNew->SX_ALPHA_TEST_CONTROL.get_ALPHA_TEST_ENABLE() &&
+		LatteUniformColorProof::IsUniformColorProgram(programData, programSize);
 	performanceMonitor.gpuTime_shaderCreate.endMeasuring();
 }
 

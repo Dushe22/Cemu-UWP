@@ -12,6 +12,9 @@
 #ifdef ENABLE_VULKAN
 #include "wxgui/canvas/VulkanCanvas.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "wxgui/canvas/D3D12Canvas.h"
+#endif
 #ifdef ENABLE_METAL
 #include "wxgui/canvas/MetalCanvas.h"
 #endif
@@ -82,6 +85,10 @@ void PadViewFrame::InitializeRenderCanvas()
 		#ifdef ENABLE_VULKAN
 		if (ActiveSettings::GetGraphicsAPI() == kVulkan)
 			m_render_canvas = new VulkanCanvas(this, wxSize(854, 480), false);
+		#endif
+		#ifdef ENABLE_D3D12
+		if (ActiveSettings::GetGraphicsAPI() == kDirect3D12)
+			m_render_canvas = new D3D12Canvas(this, wxSize(854, 480), false);
 		#endif
 		#ifdef ENABLE_OPENGL
 		if (ActiveSettings::GetGraphicsAPI() == kOpenGL)

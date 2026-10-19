@@ -1,6 +1,9 @@
 #pragma once
 
+#include <condition_variable>
 #include <mutex>
+
+struct _FileCacheAsyncWriter;
 
 class FileCache
 {
@@ -46,6 +49,8 @@ public:
 	bool DeleteFile(const FileName&& name);
 	bool GetFile(const FileName&& name, std::vector<uint8>& dataOut);
 	bool GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut);
+	bool GetUncompressedFileByIndexBounded(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut, size_t maxBytes);
+	bool GetUncompressedFileInfoByIndexBounded(sint32 index, uint64& name1, uint64& name2, uint32& size, size_t maxBytes);
 	bool HasFile(const FileName&& name);
 
 	sint32 GetFileCount();
@@ -53,6 +58,8 @@ public:
 	sint32 GetMaximumFileIndex();
 
 private:
+	friend struct _FileCacheAsyncWriter;
+
 	struct FileTableEntry
 	{
 		enum FLAGS : uint8
@@ -79,6 +86,7 @@ private:
 	void fileCache_updateFiletable(sint32 extraEntriesToAllocate);
 	void _addFileInternal(uint64 name1, uint64 name2, const uint8* fileData, sint32 fileSize, bool noCompression);
 	bool _getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut);
+	void asyncWriteFinished();
 
 	class FileStream* fileStream{};
 	uint64 dataOffset{};
@@ -93,4 +101,8 @@ private:
 	bool enableCompression{true};
 
 	std::recursive_mutex mutex;
+	std::mutex asyncWriteMutex;
+	std::condition_variable asyncWriteCondition;
+	uint32 asyncWritesPending{};
+	bool acceptingAsyncWrites{true};
 };

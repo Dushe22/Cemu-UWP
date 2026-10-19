@@ -6,6 +6,18 @@
 
 /* FSCVirtualFile implementation for HostFS */
 
+namespace
+{
+	uint32 HostLastError()
+	{
+#if BOOST_OS_WINDOWS
+		return (uint32)GetLastError();
+#else
+		return (uint32)errno;
+#endif
+	}
+}
+
 FSCVirtualFile_Host::~FSCVirtualFile_Host()
 {
 	if (m_type == FSC_TYPE_FILE)
@@ -175,14 +187,14 @@ FSCVirtualFile* FSCVirtualFile_Host::OpenFile(const fs::path& path, FSC_ACCESS_F
 				cemu_assert_debug(writeAccessRequested);
 				fs = FileStream::createFile2(path);
 				if (!fs)
-					cemuLog_log(LogType::Force, "FSC: File create failed for {}", _pathToUtf8(path));
+					cemuLog_log(LogType::Force, "FSC: File create failed for {} (error {})", _pathToUtf8(path), HostLastError());
 			}
 		}
 		else if (HAS_FLAG(accessFlags, FSC_ACCESS_FLAG::FILE_ALWAYS_CREATE))
 		{
 			fs = FileStream::createFile2(path);
 			if (!fs)
-				cemuLog_log(LogType::Force, "FSC: File create failed for {}", _pathToUtf8(path));
+				cemuLog_log(LogType::Force, "FSC: File create failed for {} (error {})", _pathToUtf8(path), HostLastError());
 		}
 		else
 		{
@@ -218,6 +230,25 @@ FSCVirtualFile* FSCVirtualFile_Host::OpenFile(const fs::path& path, FSC_ACCESS_F
 
 /* Device implementation */
 
+namespace
+{
+	// Windows refuses paths past MAX_PATH (248 for directories) unless they use the extended-length form,
+	// and some game saves go past it; file opens get the same treatment in FileStream
+	fs::path HostFilesystemPath(std::string_view path)
+	{
+		fs::path hostPath = _utf8ToPath(path);
+#if BOOST_OS_WINDOWS
+		std::wstring native = hostPath.wstring();
+		if (native.size() >= 248 && native.size() > 2 && native[1] == L':')
+		{
+			std::replace(native.begin(), native.end(), L'/', L'\\');
+			return fs::path(L"\\\\?\\" + native);
+		}
+#endif
+		return hostPath;
+	}
+}
+
 class fscDeviceHostFSC : public fscDeviceC
 {
 public:
@@ -231,7 +262,7 @@ public:
 
 	bool fscDeviceCreateDir(std::string_view path, void* ctx, sint32* fscStatus) override
 	{
-		fs::path dirPath = _utf8ToPath(path);
+		fs::path dirPath = HostFilesystemPath(path);
 		if (fs::exists(dirPath))
 		{
 			if (!fs::is_directory(dirPath))
@@ -250,7 +281,7 @@ public:
 	bool fscDeviceRemoveFileOrDir(std::string_view path, void* ctx, sint32* fscStatus) override
 	{
 		*fscStatus = FSC_STATUS_OK;
-		fs::path _path = _utf8ToPath(path);
+		fs::path _path = HostFilesystemPath(path);
 		std::error_code ec;
 		if (!fs::exists(_path, ec))
 		{
@@ -268,8 +299,8 @@ public:
 	bool fscDeviceRename(std::string_view srcPath, std::string_view dstPath, void* ctx, sint32* fscStatus) override
 	{
 		*fscStatus = FSC_STATUS_OK;
-		fs::path _srcPath = _utf8ToPath(srcPath);
-		fs::path _dstPath = _utf8ToPath(dstPath);
+		fs::path _srcPath = HostFilesystemPath(srcPath);
+		fs::path _dstPath = HostFilesystemPath(dstPath);
 		std::error_code ec;
 		if (!fs::exists(_srcPath, ec))
 		{

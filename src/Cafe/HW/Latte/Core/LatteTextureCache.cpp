@@ -1,6 +1,9 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#endif
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/cpu_features.h"
 
@@ -308,6 +311,8 @@ void LatteTexture_Delete(LatteTexture* texture)
 {
 	LatteTC_UnregisterTexture(texture);
 	LatteMRT::NotifyTextureDeletion(texture);
+	if (g_renderer)
+		g_renderer->NotifyTextureDeletion(texture);
 	LatteTextureReadback_NotifyTextureDeletion(texture);
 	LatteTexture_DeleteTextureRelations(texture);
 	// delete views
@@ -377,6 +382,9 @@ void LatteTexture_RefreshInfoCache();
  */
 void LatteTC_CleanupUnusedTextures()
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope textureCleanupScope(LatteUwpHitchOp::TextureCleanup);
+#endif
 	static size_t currentScanIndex = 0;
 	uint32 currentTick = GetTickCount();
 	sint32 maxDelete = 10;

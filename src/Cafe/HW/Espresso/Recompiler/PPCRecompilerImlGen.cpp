@@ -946,6 +946,22 @@ bool PPCRecompilerImlGen_SUBFZE(ppcImlGenContext_t* ppcImlGenContext, uint32 opc
 	return true;
 }
 
+bool PPCRecompilerImlGen_SUBFME(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
+{
+	// d = ~a + 0xFFFFFFFF + ca;
+	sint32 rD, rA, rB;
+	PPC_OPC_TEMPL_XO(opcode, rD, rA, rB);
+	IMLReg regA = _GetRegGPR(ppcImlGenContext, rA);
+	IMLReg regD = _GetRegGPR(ppcImlGenContext, rD);
+	IMLReg regTmp = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 0);
+	IMLReg regCa = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_XER_CA);
+	ppcImlGenContext->emitInst().make_r_r(PPCREC_IML_OP_NOT, regTmp, regA);
+	ppcImlGenContext->emitInst().make_r_r_s32_carry(PPCREC_IML_OP_ADD_WITH_CARRY, regD, regTmp, -1, regCa);
+	if (opcode & PPC_OPC_RC)
+		PPCImlGen_UpdateCR0(ppcImlGenContext, regD);
+	return true;
+}
+
 bool PPCRecompilerImlGen_SUBFC(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
 {
 	// d = ~a + b + 1;
@@ -2312,6 +2328,15 @@ bool PPCRecompiler_decodePPCInstruction(ppcImlGenContext_t* ppcImlGenContext)
 		case 86:
 			// DCBF -> No-Op
 			break;
+		case 246:
+			// DCBTST -> No-Op
+			break;
+		case 278:
+			// DCBT -> No-Op
+			break;
+		case 470:
+			// DCBI -> No-Op
+			break;
 		case 87: // LBZX
 			PPCRecompilerImlGen_LOAD_INDEXED(ppcImlGenContext, opcode, 8, false, true, false);
 			break;
@@ -2360,6 +2385,10 @@ bool PPCRecompiler_decodePPCInstruction(ppcImlGenContext_t* ppcImlGenContext)
 			break;
 		case 215: // STBX
 			if (!PPCRecompilerImlGen_STORE_INDEXED(ppcImlGenContext, opcode, 8, true, false))
+				unsupportedInstructionFound = true;
+			break;
+		case 232:
+			if (PPCRecompilerImlGen_SUBFME(ppcImlGenContext, opcode) == false)
 				unsupportedInstructionFound = true;
 			break;
 		case 234:

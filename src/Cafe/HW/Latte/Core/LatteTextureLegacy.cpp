@@ -1,6 +1,9 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#endif
 
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
@@ -38,6 +41,9 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 
 void LatteTexture_ReloadData(LatteTexture* tex)
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope textureReloadScope(LatteUwpHitchOp::TextureReload);
+#endif
 	tex->reloadCount++;
 	for(sint32 mip=0; mip<tex->mipLevels; mip++)
 	{

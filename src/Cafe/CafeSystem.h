@@ -30,6 +30,11 @@ namespace CafeSystem
 	PREPARE_STATUS_CODE PrepareForegroundTitleFromStandaloneRPX(const fs::path& path);
 	void LaunchForegroundTitle();
 	bool IsTitleRunning();
+#if defined(CEMU_UWP)
+	// allocation-free so it can be called from std::bad_alloc handlers
+	void RecordLaunchError(std::string_view message) noexcept;
+	bool ConsumeLaunchError(std::string& message);
+#endif
 
 	bool GetOverrideArgStr(std::vector<std::string>& args);
 	void SetOverrideArgs(std::span<std::string> args);

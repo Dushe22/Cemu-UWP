@@ -64,6 +64,9 @@ add_subdirectory(util)
 add_subdirectory(imgui)
 add_subdirectory(resource)
 
+if(ENABLE_UWP)
+	add_subdirectory(uwp)
+else()
 add_executable(CemuBin
 	main.cpp
 	mainLLE.cpp
@@ -92,7 +95,7 @@ endif()
 
 string(TIMESTAMP CURRENT_YEAR "%Y" UTC)
 
-set_property(TARGET CemuBin PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuBin PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 set_property(TARGET CemuBin PROPERTY WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>)
 set(OUTPUT_NAME "Cemu_$<LOWER_CASE:$<CONFIG>>")
 
@@ -228,4 +231,5 @@ endif()
 
 if (BSD)
 	target_link_libraries(CemuBin PRIVATE execinfo SPIRV-Tools SPIRV-Tools-opt)
+endif()
 endif()

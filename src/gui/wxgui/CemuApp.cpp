@@ -6,6 +6,9 @@
 #ifdef ENABLE_VULKAN
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#endif
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "config/ActiveSettings.h"
 #include "config/LaunchSettings.h"
@@ -366,6 +369,9 @@ bool CemuApp::OnInit()
 #endif
 	#ifdef ENABLE_VULKAN
 	InitializeGlobalVulkan();
+	#endif
+	#ifdef ENABLE_D3D12
+	InitializeGlobalD3D12();
 	#endif
 
 	Bind(wxEVT_ACTIVATE_APP, &CemuApp::ActivateApp, this);

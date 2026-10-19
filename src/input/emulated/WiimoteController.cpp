@@ -56,7 +56,66 @@ bool WiimoteController::set_default_mapping(const std::shared_ptr<ControllerBase
 			{kButtonId_Nunchuck_Left, kAxisXN},
 			{kButtonId_Nunchuck_Right, kAxisXP},
 		};
+		break;
 	}
+#if defined(CEMU_UWP)
+	case InputAPI::WGIGamepad:
+	{
+		mapping =
+		{
+			{kButtonId_A, kButton12},
+			{kButtonId_B, kButton13},
+			{kButtonId_1, kButton14},
+			{kButtonId_2, kButton15},
+
+			{kButtonId_Home, kButton6},
+			{kButtonId_Plus, kButton4},
+			{kButtonId_Minus, kButton5},
+
+			{kButtonId_Up, kButton0},
+			{kButtonId_Down, kButton1},
+			{kButtonId_Left, kButton2},
+			{kButtonId_Right, kButton3},
+
+			{kButtonId_Nunchuck_Z, kTriggerXP},
+			{kButtonId_Nunchuck_C, kButton8},
+			{kButtonId_Nunchuck_Up, kAxisYP},
+			{kButtonId_Nunchuck_Down, kAxisYN},
+			{kButtonId_Nunchuck_Left, kAxisXN},
+			{kButtonId_Nunchuck_Right, kAxisXP},
+		};
+		break;
+	}
+#if HAS_DSU
+	case InputAPI::DSUClient:
+	{
+		mapping =
+		{
+			{kButtonId_A, kButton14},
+			{kButtonId_B, kButton13},
+			{kButtonId_1, kButton15},
+			{kButtonId_2, kButton12},
+
+			{kButtonId_Home, kButton17},
+			{kButtonId_Plus, kButton3},
+			{kButtonId_Minus, kButton0},
+
+			{kButtonId_Up, kButton4},
+			{kButtonId_Down, kButton6},
+			{kButtonId_Left, kButton7},
+			{kButtonId_Right, kButton5},
+
+			{kButtonId_Nunchuck_Z, kTriggerXP},
+			{kButtonId_Nunchuck_C, kButton10},
+			{kButtonId_Nunchuck_Up, kAxisYP},
+			{kButtonId_Nunchuck_Down, kAxisYN},
+			{kButtonId_Nunchuck_Left, kAxisXN},
+			{kButtonId_Nunchuck_Right, kAxisXP},
+		};
+		break;
+	}
+#endif
+#endif
 	}
 
 	bool mapping_updated = false;

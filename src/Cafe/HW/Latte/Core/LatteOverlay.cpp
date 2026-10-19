@@ -12,6 +12,10 @@
 
 #include "input/InputManager.h"
 #include "util/SystemInfo/SystemInfo.h"
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "input/emulated/VPADController.h"
+#endif
 
 #include <cinttypes>
 
@@ -21,13 +25,17 @@ struct OverlayStats
 
 	int processor_count = 1;
 	ProcessorTime processor_time_cemu;
+#if !defined(CEMU_UWP)
 	std::vector<ProcessorTime> processor_times;
+#endif
 
 	double fps{};
 	uint32 draw_calls_per_frame{};
 	uint32 fast_draw_calls_per_frame{};
 	float cpu_usage{}; // cemu cpu usage in %
+#if !defined(CEMU_UWP)
 	std::vector<float> cpu_per_core; // global cpu usage in % per core
+#endif
 	uint32 ram_usage{}; // ram usage in MB
 
 	int vramUsage{}, vramTotal{}; // vram usage in mb
@@ -73,12 +81,20 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 	auto& config = GetConfig();
 
 	const auto font = ImGui_GetFont(fontSize);
+	if (!font || !font->ContainerAtlas || !font->ContainerAtlas->IsBuilt())
+		return;
 	ImGui::PushFont(font);
 
 	const ImVec4 color = ImGui::ColorConvertU32ToFloat4(config.overlay.text_color);
 	ImGui::PushStyleColor(ImGuiCol_Text, color);
 	// stats overlay
-	if (config.overlay.fps || config.overlay.drawcalls || config.overlay.cpu_usage || config.overlay.cpu_per_core_usage || config.overlay.ram_usage)
+	if (config.overlay.fps || config.overlay.drawcalls || config.overlay.cpu_usage || config.overlay.ram_usage
+#if defined(CEMU_UWP)
+		|| config.overlay.vram_usage || config.overlay.debug
+#else
+		|| config.overlay.cpu_per_core_usage
+#endif
+		)
 	{
 		ImGui::SetNextWindowPos(position, ImGuiCond_Always, pivot);
 		ImGui::SetNextWindowBgAlpha(kBackgroundAlpha);
@@ -93,6 +109,7 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 			if (config.overlay.cpu_usage)
 				ImGui::Text("CPU: %.2lf%%", g_state.cpu_usage);
 
+#if !defined(CEMU_UWP)
 			if (config.overlay.cpu_per_core_usage)
 			{
 				for (sint32 i = 0; i < g_state.processor_count; ++i)
@@ -100,6 +117,7 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 					ImGui::Text("CPU #%d: %.2lf%%", i + 1, g_state.cpu_per_core[i]);
 				}
 			}
+#endif
 
 			if (config.overlay.ram_usage)
 				ImGui::Text("RAM: %dMB", g_state.ram_usage);
@@ -131,6 +149,8 @@ void LatteOverlay_RenderNotifications(ImVec2& position, ImVec2& pivot, sint32 di
 	auto& config = GetConfig();
 
 	const auto font = ImGui_GetFont(fontSize);
+	if (!font || !font->ContainerAtlas || !font->ContainerAtlas->IsBuilt())
+		return;
 	ImGui::PushFont(font);
 
 	const ImVec4 color = ImGui::ColorConvertU32ToFloat4(config.notification.text_color);
@@ -563,12 +583,50 @@ void LatteOverlay_render(bool pad_view)
 	}
 }
 
+#if defined(CEMU_UWP)
+// marks where the GamePad touch is or will land on the GamePad picture
+void LatteOverlay_renderTouchCursor()
+{
+	if (!GetConfig().uwp_display.touch_cursor.GetValue())
+		return;
+	const auto vpad = InputManager::instance().get_vpad_controller(0);
+	if (!vpad)
+		return;
+	const auto cursor = vpad->get_pointer_cursor();
+	if (!cursor)
+		return;
+	auto* renderer = dynamic_cast<D3D12Renderer*>(g_renderer.get());
+	sint32 x = 0, y = 0, width = 0, height = 0;
+	if (!renderer || !renderer->GetScreenOutputRect(true, x, y, width, height))
+		return;
+
+	const ImVec2 center{ (float)x + cursor->position.x * (float)width, (float)y + cursor->position.y * (float)height };
+	const float radius = std::max(7.0f, (float)height / 36.0f);
+	const float stroke = std::max(2.0f, radius / 5.0f);
+	// both screen passes draw the cursor so it stays above whichever picture is drawn last; opaque colours keep the repeat invisible
+	const ImU32 shadow = IM_COL32(0, 0, 0, 255);
+	const ImU32 colour = cursor->touching ? IM_COL32(72, 196, 255, 255) : IM_COL32(255, 255, 255, 255);
+	ImDrawList* draw = ImGui::GetForegroundDrawList();
+	draw->AddCircle(center, radius, shadow, 32, stroke + 2.0f);
+	draw->AddCircle(center, radius, colour, 32, stroke);
+	draw->AddCircleFilled(center, cursor->touching ? radius * 0.5f + 1.0f : stroke + 1.0f, shadow, 24);
+	draw->AddCircleFilled(center, cursor->touching ? radius * 0.5f : stroke, colour, 24);
+}
+#endif
+
 void LatteOverlay_init()
 {
 	g_state.processor_count = GetProcessorCount();
+#if defined(CEMU_UWP)
+	// app containers may not report a hardware thread count
+	if (g_state.processor_count <= 0)
+		g_state.processor_count = 1;
+#endif
 
+#if !defined(CEMU_UWP)
 	g_state.processor_times.resize(g_state.processor_count);
 	g_state.cpu_per_core.resize(g_state.processor_count);
+#endif
 }
 
 static void UpdateStats_CemuCpu()
@@ -576,13 +634,34 @@ static void UpdateStats_CemuCpu()
 	ProcessorTime now;
 	QueryProcTime(now);
 	
+#if defined(CEMU_UWP)
+	const uint64 previousTotal = g_state.processor_time_cemu.total();
+	const uint64 currentTotal = now.total();
+	const uint64 previousWork = g_state.processor_time_cemu.work();
+	const uint64 currentWork = now.work();
+	if (previousTotal == 0 || currentTotal <= previousTotal || currentWork < previousWork)
+	{
+		g_state.cpu_usage = 0.0f;
+	}
+	else
+	{
+		double cpu = ProcessorTime::Compare(g_state.processor_time_cemu, now);
+		cpu /= g_state.processor_count;
+		g_state.cpu_usage = static_cast<float>(cpu * 100.0);
+	}
+
+	if (currentTotal != 0)
+		g_state.processor_time_cemu = now;
+#else
 	double cpu = ProcessorTime::Compare(g_state.processor_time_cemu, now);
 	cpu /= g_state.processor_count;
 	
 	g_state.cpu_usage = cpu * 100;
 	g_state.processor_time_cemu = now;
+#endif
 }
 
+#if !defined(CEMU_UWP)
 static void UpdateStats_CpuPerCore()
 {
 	std::vector<ProcessorTime> now(g_state.processor_count);
@@ -596,6 +675,7 @@ static void UpdateStats_CpuPerCore()
 		g_state.processor_times[i] = now[i];
 	}
 }
+#endif
 
 void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls)
 {
@@ -606,7 +686,9 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
 	g_state.draw_calls_per_frame = drawcalls;
 	g_state.fast_draw_calls_per_frame = fastDrawcalls;
 	UpdateStats_CemuCpu();
+#if !defined(CEMU_UWP)
 	UpdateStats_CpuPerCore();
+#endif
 
 	// update ram
 	g_state.ram_usage = (QueryRamUsage() / 1000) / 1000;

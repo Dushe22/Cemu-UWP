@@ -207,7 +207,7 @@ namespace GX2
 
 	void GX2WaitForFlip()
 	{
-		if ((sint32)(_swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) == _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE)))
+		if ((sint32)(_swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) - _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE)) <= 0)
 			return; // dont wait if no flip is requested
 		__OSLockScheduler();
 		g_flipThreadQueue.GetPtr()->queueAndWait(coreinit::OSGetCurrentThread());

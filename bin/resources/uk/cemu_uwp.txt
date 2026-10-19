@@ -1,0 +1,351 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, версія %u
+%zu of %zu titles have no game-list artwork of this type yet.	У %zu з %zu ігор ще немає зображення цього типу для списку ігор.
+%zu packs across %zu games (LB/RB change game)	%zu пакетів для %zu ігор (LB/RB змінює гру)
+(none)	(немає)
+2D box	Коробка 2D
+2D box back	Зворотний бік коробки 2D
+2D cartridge	Картридж 2D
+3D box	Коробка 3D
+A Apply    B Cancel	A Застосувати    B Скасувати
+A Select    B Back    Menu Close	A Вибрати    B Назад    Menu Закрити
+A file or folder picker is already open	Вікно вибору файлу або теки вже відкрите
+A title scan is already running	Пошук ігор уже виконується
+A: activate  B: back/home  D-pad/left stick: move focus	A: вибрати  B: назад/на головну  Хрестовина/лівий стик: переміщення
+APP Store	APP Store
+Accelerometer	Акселерометр
+Accelerometer sensitivity	Чутливість акселерометра
+Account	Обліковий запис
+Account ID: %s	Ідентифікатор облікового запису: %s
+Action	Дія
+Activated: %s	Увімкнено: %s
+Add another game folder	Додати ще одну теку з іграми
+Added to favorites	Додано до вибраного
+Advanced PPC logging	Розширене журналювання PPC
+Always on	Завжди увімкнено
+An unfinished scan is saved; it resumes automatically on the next launch.	Незавершений пошук збережено; він продовжиться автоматично під час наступного запуску.
+App Store	App Store
+Apply Quick Menu combo	Застосувати комбінацію швидкого меню
+Artwork	Зображення
+Audio latency	Затримка звуку
+Auto	Автоматично
+Backend	Бекенд
+CPU mode	Режим процесора
+CPU usage	Використання CPU
+Can't change the MLC path while a game is running	Не можна змінити шлях MLC, поки запущено гру
+Cancel	Скасувати
+Cancel installation	Скасувати встановлення
+Cancel this installation? The previous installed version will remain unchanged.	Скасувати встановлення? Уже встановлена версія залишиться без змін.
+Cancelling installation...	Скасування встановлення...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Оболонка Cemu UWP
+Chinese	Китайська
+Choose side-by-side underlay	Вибрати тло для режиму поруч
+Choose stacked underlay	Вибрати тло для режиму згори
+Clear account credentials	Очистити дані облікового запису
+Clear side-by-side	Скинути режим поруч
+Clear stacked	Скинути режим згори
+Close	Закрити
+Community	Спільнота
+Community graphic packs installed	Пакети графіки спільноти встановлено
+Console language	Мова консолі
+Controller Mapping	Призначення кнопок
+Controller battery notifications	Сповіщення про заряд контролера
+Controller mapping saved	Призначення кнопок збережено
+Controller profile notifications	Сповіщення про профілі контролера
+Controllers	Контролери
+Could not open the MLC folder picker	Не вдалося відкрити вибір теки MLC
+Could not open the ScreenScraper media folder picker	Не вдалося відкрити вибір теки ScreenScraper
+Could not open the game folder picker	Не вдалося відкрити вибір теки з іграми
+Could not open the title picker	Не вдалося відкрити вибір гри
+Could not prepare that MLC folder - is the drive connected and writable?	Не вдалося підготувати цю теку MLC - диск під’єднано й доступний для запису?
+Could not save the nickname	Не вдалося зберегти прізвисько
+Could not save title metadata	Не вдалося зберегти метадані гри
+Crash dump	Дамп пам'яті
+Current game override	Налаштування поточної гри
+DLC directory was not found	Теку DLC не знайдено
+Debug overlay	Оверлей налагодження
+Debugger	Налагоджувач
+Default	За замовчуванням
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	За замовчуванням: Gamepad:Menu+View. Власні приклади: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Призначення: %s
+Developer API credentials are missing from this build.	У цій збірці немає даних API розробника.
+Discord	Discord
+Display gamma	Гама екрана
+Display uses sRGB curve	Екран використовує криву sRGB
+Download box art	Завантажувати обкладинки
+Download community packs	Завантажити пакети спільноти
+Download fanart backgrounds	Завантажувати фанатські тла
+Download logos	Завантажувати логотипи
+Download metadata	Завантажувати метадані
+Download screenshots	Завантажувати знімки екрана
+Download videos	Завантажувати відео
+Downloaded media location	Розташування завантажених файлів
+Downloads	Завантаження
+Downscale filter	Фільтр зменшення масштабу
+Draw calls	Виклики малювання
+Dump libcurl requests	Вивантажувати запити libcurl
+Dump recompiler functions	Вивантажувати функції рекомпілятора
+Dump shaders	Вивантажувати шейдери
+Dump textures	Вивантажувати текстури
+Dutch	Нідерландська
+Emulate Disney Infinity Base	Емулювати базу Disney Infinity
+Emulate LEGO Dimensions Toy Pad	Емулювати Toy Pad LEGO Dimensions
+Emulate Skylander Portal	Емулювати портал Skylanders
+Emulated USB devices	Емульовані USB-пристрої
+Enable Screenscraper	Увімкнути Screenscraper
+Enable Screenscraper first	Спершу увімкніть Screenscraper
+Enable intro sound	Увімкнути звук запуску
+Enabled	Увімкнено
+Europe	Європа
+Every refresh	Кожне оновлення
+Every second refresh	Кожне друге оновлення
+Every third refresh	Кожне третє оновлення
+Exit Cemu	Вийти з Cemu
+FPS	FPS
+Failed to copy title image	Не вдалося скопіювати зображення гри
+Failed to save Screenscraper account	Не вдалося зберегти обліковий запис Screenscraper
+Failed to save settings	Не вдалося зберегти налаштування
+Fan art	Фан-арт
+Files: %llu / %llu	Файли: %llu / %llu
+Flush log	Записати журнал
+Follow interface language	Як мова інтерфейсу
+Free space: %s	Вільно: %s
+French	Французька
+Friend service notifications	Сповіщення служби друзів
+Fullscreen scaling	Масштабування на повний екран
+GDB port	GDB port
+Game directory was not found	Теку гри не знайдено
+Game folder added	Теку з іграми додано
+Game folder added, but it is not accessible - is the drive connected?	Теку з іграми додано, але вона недоступна - диск під’єднано?
+Game layout	Розкладка гри
+Game logo	Логотип гри
+Game profile saved	Профіль гри збережено
+Game-list artwork	Зображення списку ігор
+GamePad	Геймпад
+GamePad channels	Канали GamePad
+GamePad device	Пристрій GamePad
+GamePad only	Лише GamePad
+GamePad picture in picture	GamePad «картинка в картинці»
+GamePad screen	Екран GamePad
+GamePad volume	Гучність GamePad
+Games directory	Тека ігор
+Games directory updated	Теку з іграми оновлено
+Games directory updated, but it is not accessible - is the drive connected?	Теку з іграми оновлено, але вона недоступна - диск під’єднано?
+Gamma	Gamma
+General	Загальні
+German	Німецька
+Global controller profiles saved	Загальні профілі контролерів збережено
+Global default layout	Загальна розкладка за замовчуванням
+Graphic packs reloaded	Пакети графіки перезавантажено
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Гіроскоп
+Gyroscope dead zone	Мертва зона гіроскопа
+Gyroscope sensitivity	Чутливість гіроскопа
+Hold stick button	Утримувати кнопку стика
+Home	Головна
+Horizontal pointer sensitivity	Чутливість вказівника по горизонталі
+Input	Керування
+Input channels	Вхідні канали
+Input volume	Гучність входу
+Install	Встановити
+Install size: %s (%llu files)	Розмір встановлення: %s (файлів: %llu)
+Install title, update or DLC	Встановити гру, оновлення або DLC
+Installation cancelled	Встановлення скасовано
+Installation complete	Встановлення завершено
+Installation failed	Не вдалося встановити
+Installed	Встановлено
+Installed version %u will be replaced.	Встановлену версію %u буде замінено.
+Installing...	Встановлення...
+Interface	Інтерфейс
+Interface language	Мова інтерфейсу
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Неприпустиме поєднання. Поодинокі та повторювані кнопки, а також сполучення клавіатури й вказівника не дозволені. Збережене поєднання не змінилося.
+Invert pointer X	Інвертувати вісь X вказівника
+Invert pointer Y	Інвертувати вісь Y вказівника
+Italian	Італійська
+Japan	Японія
+Japanese	Японська
+Keep installing	Продовжити встановлення
+Korean	Корейська
+Large information artwork	Велике інформаційне зображення
+Layout Mode	Режим розташування
+Layout mode	Режим розташування
+Left Stick	Лівий стик
+Left stick	Лівий стик
+Left stick deadzone	Мертва зона лівого стика
+Left stick range	Діапазон лівого стика
+Logs	Журнали
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	Шлях MLC збережено - перезапустіть Cemu, щоб його використати (облікові записи та збереження не переносяться)
+MLC storage	Сховище MLC
+Metadata language	Мова метаданих
+Metadata saved; another ScreenScraper download is running	Метадані збережено; уже виконується інше завантаження ScreenScraper
+Metadata saved; sign in to ScreenScraper to download media	Метадані збережено; увійдіть у ScreenScraper, щоб завантажити файли
+Microphone and portal	Мікрофон і портал
+Missing	Відсутній
+Multi-core recompiler	Багатоядерний рекомпілятор
+Native UWP app-container frontend for Cemu.	Рідна оболонка Cemu в контейнері застосунків UWP.
+Nearest neighbor	Найближчий сусід
+Network service	Мережева служба
+Nickname	Нікнейм
+Nickname saved	Прізвисько збережено
+No Cemu Wiki ID is available	Ідентифікатор Cemu Wiki недоступний
+No DLC installed	DLC не встановлено
+No bootstrap log available.	Журнал запуску недоступний.
+No graphic packs are installed in the UWP user data graphicPacks folder.	У теці graphicPacks користувацьких даних UWP немає встановлених пакетів графіки.
+No graphic packs target this title	Для цієї гри немає пакетів графіки
+No log text available.	Текст журналу недоступний.
+No save data found	Збережень не знайдено
+No shader caches found	Кешів шейдерів не знайдено
+No title image is available to copy	Немає зображення гри для копіювання
+No titles to scrape	Немає ігор для завантаження даних
+No update installed	Оновлення не встановлено
+None	Немає
+Not installed	Не встановлено
+Nothing left to resume	Продовжувати нічого
+Notification scale	Розмір сповіщень
+Notifications	Сповіщення
+Off	Вимкнено
+Offline	Поза мережею
+Online files: %s	Мережеві файли: %s
+Open title	Відкрити гру
+Open title file	Відкрити файл гри
+Overlay	Оверлей
+Overlay scale	Розмір оверлея
+Override application gamma	Перевизначити гаму застосунку
+Overwrite existing media	Перезаписувати наявні файли
+Password	Пароль
+Per-game profile	Профіль для гри
+Permanent storage	Постійне сховище
+Persistent ID: %08x	Постійний ідентифікатор: %08x
+Picture in picture	Картинка в картинці
+Platform media: %s	Файли платформи: %s
+Platform: Windows UWP	Платформа: Windows UWP
+Pointer	Вказівник
+Pointer activation	Увімкнення вказівника
+Pointer speed	Швидкість вказівника
+Pointer stick	Стик вказівника
+Pointer stick dead zone	Мертва зона стика вказівника
+Portal device	Пристрій порталу
+Portal volume	Гучність порталу
+Portuguese	Португальська
+Power	Живлення
+Preferred region	Бажаний регіон
+Quick Menu	Швидке меню
+Quick Menu combo reset to Menu + View	Поєднання швидкого меню скинуто на Menu + View
+Quick Menu combo saved	Поєднання швидкого меню збережено
+Quick menu combo	Поєднання швидкого меню
+Quit Game	Закрити гру
+RAM usage	Використання ОЗУ
+Ready	Готово
+Refresh list	Оновити список
+Refresh logs	Оновити журнали
+Refresh titles	Оновити ігри
+Refreshing game list	Оновлення списку ігор
+Reload packs	Перезавантажити пакети
+Remove	Видалити
+Removed from favorites	Вилучено з вибраного
+Render upside down	Малювати догори дриґом
+Renderer	Рендерер
+Renderer: Direct3D 12 CoreWindow	Рендеринг: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Потрібно одночасно утримувати щонайменше дві різні кнопки контролера.
+Reset Quick Menu to Menu + View	Скинути швидке меню на Menu + View
+Restart Game	Перезапустити гру
+Restart on enable/preset: %s / %s	Перезапуск під час увімкнення/зміни пресета: %s / %s
+Restart the title if this pack needs a full reload	Перезапустіть гру, якщо цьому пакету потрібне повне перезавантаження
+Restart unavailable	Перезапуск недоступний
+Resume scan	Продовжити сканування
+Resuming unfinished Screenscraper scan	Продовження незавершеного пошуку Screenscraper
+Return to Game	Повернутися до гри
+Right Stick	Правий стик
+Right stick	Правий стик
+Right stick deadzone	Мертва зона правого стика
+Right stick range	Діапазон правого стика
+Rumble strength	Сила вібрації
+Runtime dumps	Дампи під час роботи
+Russian	Російська
+Save account credentials	Зберегти дані облікового запису
+Save nickname	Зберегти нікнейм
+Scaling	Масштабування
+Screens restored	Екрани відновлено
+Screens swapped	Екрани поміняно місцями
+Screenscraper	Screenscraper
+Screenscraper account cleared	Обліковий запис Screenscraper очищено
+Screenscraper account saved	Обліковий запис Screenscraper збережено
+Screenscraper download is already running	Завантаження Screenscraper уже виконується
+Screenshot	Знімок екрана
+Selected account is not a complete online account	Вибраний обліковий запис не є повноцінним мережевим
+Set	Задано
+Shader compiling notifications	Сповіщення про компіляцію шейдерів
+Shaders: %s	Шейдери: %s
+Shared title media: %s	Спільні файли ігор: %s
+Shell theme	Тема інтерфейсу
+Show controls hint	Показувати підказку керування
+Side by side	Поруч
+Side-by-side underlay: %s	Тло «поруч»: %s
+Sign in to Screenscraper first	Спершу увійдіть у Screenscraper
+Single-core interpreter	Одноядерний інтерпретатор
+Single-core recompiler	Одноядерний рекомпілятор
+Spanish	Іспанська
+Stable-input calibration period	Час калібрування у спокої
+Stacked	Один над одним
+Stacked underlay: %s	Тло «один над одним»: %s
+Start Stream	Почати трансляцію
+Status: %s	Стан: %s
+Stop Stream	Зупинити трансляцію
+Stop the running game before installing content.	Зупиніть запущену гру перед встановленням вмісту.
+Storage	Сховище
+Storage: %s	Сховище: %s
+Stream: working...	Трансляція: виконується...
+Surround	Об’ємний звук
+Swap TV and GamePad screens	Поміняти місцями екрани ТБ і GamePad
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Приклади заміни: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	Система
+TV	ТВ
+TV channels	Канали ТБ
+TV device	Пристрій ТБ
+TV only	Лише ТБ
+TV volume	Гучність ТБ
+Taiwanese	Тайванська
+Target gamma	Цільова гама
+That folder is already in the list	Ця тека вже є у списку
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	Оформлення повторює головне меню Cemu UWP: плитки ігор, бічні панелі, м’які системні панелі та навігація під контролер.
+This entry cannot be launched	Цей запис не можна запустити
+This graphic pack has no description.	Цей пакет графіки не має опису.
+Title ID: %016llX	Ідентифікатор гри: %016llX
+Title image copied	Зображення гри скопійовано
+Title information is no longer available	Відомості про гру більше недоступні
+Title installed	Гру встановлено
+Title screen	Титульний екран
+Titles	Ігри
+Toggle GamePad display	Перемкнути екран GamePad
+Treat the mapped Screen control as a toggle instead of a hold action	Використовувати призначену кнопку «Екран» як перемикач, а не як утримання
+Trigger deadzone	Мертва зона тригерів
+Trigger range	Діапазон тригерів
+Triggers	Тригери
+USA	США
+UWP shell	Оболонка UWP
+UWP storage	Сховище UWP
+Underlays use titleImages/%s/*.png	Тла беруться з titleImages/%s/*.png
+Up to %d characters, used as the console profile name	До %d символів, використовується як назва профілю консолі
+Update directory was not found	Теку оновлення не знайдено
+Upscale filter	Фільтр масштабування (растяження)
+Use motion	Використовувати рух
+Username	Ім’я користувача
+VRAM usage	Використання VRAM
+VSync	Вертикальна синхронізація
+Version %u is already installed. Continuing will reinstall it.	Версію %u уже встановлено. Продовження перевстановить її.
+Version: %d	Версія: %d
+Vertical pointer sensitivity	Чутливість вказівника по вертикалі
+Video	Відео
+Video backgrounds use more storage and bandwidth.	Відеотла займають більше місця та трафіку.
+Virtual touch / IR pointer	Віртуальний дотик / ІЧ-вказівник
+Who's playing?	Хто грає?
+Wii Remote extension	Насадка Wii Remote
+World	Світ
+missing or incomplete	відсутні або неповні
+no	ні
+otp.bin is missing or invalid	otp.bin відсутній або пошкоджений
+seeprom.bin is missing or invalid	seeprom.bin відсутній або пошкоджений
+valid	у порядку
+yes	так

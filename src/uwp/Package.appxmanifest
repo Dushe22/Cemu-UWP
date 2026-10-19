@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  IgnorableNamespaces="uap mp rescap">
+  <Identity Name="Cemu.Libretro.Uwp" Publisher="CN=DanP142" Version="0.2.6.7" />
+  <mp:PhoneIdentity PhoneProductId="d24d337f-624b-46ac-bd56-98f009302dc0" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
+  <Properties>
+    <DisplayName>Cemu</DisplayName>
+    <PublisherDisplayName>DanP142</PublisherDisplayName>
+    <Logo>resources/StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Universal" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+    <PackageDependency Name="Microsoft.VCLibs.140.00"
+      MinVersion="14.0.30704.0"
+      Publisher="CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Applications>
+    <Application Id="CemuUwp" Executable="$targetnametoken$.exe" EntryPoint="CemuUwp.App">
+      <uap:VisualElements
+        DisplayName="Cemu"
+        Description="Cemu native UWP host"
+        Square150x150Logo="resources/Square150x150Logo.png"
+        Square44x44Logo="resources/Square44x44Logo.png"
+        BackgroundColor="#202020">
+        <uap:DefaultTile Square71x71Logo="resources/Square71x71Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="cemu">
+            <uap:DisplayName>Cemu</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="cemu-content">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.wua</uap:FileType>
+              <uap:FileType>.wux</uap:FileType>
+              <uap:FileType>.wud</uap:FileType>
+              <uap:FileType>.rpx</uap:FileType>
+              <uap:FileType>.elf</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="expandedResources" />
+    <rescap:Capability Name="broadFileSystemAccess" />
+    <Capability Name="codeGeneration" />
+    <Capability Name="internetClientServer" />
+    <Capability Name="privateNetworkClientServer" />
+    <uap:Capability Name="removableStorage" />
+  </Capabilities>
+</Package>

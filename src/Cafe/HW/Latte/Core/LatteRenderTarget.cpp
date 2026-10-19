@@ -16,6 +16,9 @@
 #include "Cafe/OS/libs/erreula/erreula.h"
 #include "input/InputManager.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
+#if defined(CEMU_UWP)
+#include "Cafe/CafeSystem.h"
+#endif
 
 uint32 prevScissorX = 0;
 uint32 prevScissorY = 0;
@@ -23,6 +26,64 @@ uint32 prevScissorWidth = 0;
 uint32 prevScissorHeight = 0;
 
 bool hasValidFramebufferAttached = false;
+
+#if defined(CEMU_UWP)
+namespace
+{
+enum class UwpLatteScreenLayout : sint32
+{
+	TVOnly = 0,
+	GamePadOnly,
+	SideBySide,
+	Stacked,
+	PictureInPicture,
+	GamePadPictureInPicture,
+};
+
+sint32 UwpLatteClampLayout(sint32 layout)
+{
+	switch (static_cast<UwpLatteScreenLayout>(layout))
+	{
+	case UwpLatteScreenLayout::TVOnly:
+	case UwpLatteScreenLayout::GamePadOnly:
+	case UwpLatteScreenLayout::SideBySide:
+	case UwpLatteScreenLayout::Stacked:
+	case UwpLatteScreenLayout::PictureInPicture:
+	case UwpLatteScreenLayout::GamePadPictureInPicture:
+		return layout;
+	default:
+		return static_cast<sint32>(UwpLatteScreenLayout::TVOnly);
+	}
+}
+
+sint32 UwpLatteResolveLayout()
+{
+	auto& display = GetConfig().uwp_display;
+	if (CafeSystem::IsTitleRunning())
+	{
+		const uint64 titleId = CafeSystem::GetForegroundTitleId();
+		const auto it = display.game_layouts.find(titleId);
+		if (it != display.game_layouts.end())
+			return UwpLatteClampLayout(it->second.layout);
+	}
+	return UwpLatteClampLayout(display.default_layout.GetValue());
+}
+
+bool UwpLatteDualScreenLayoutActive()
+{
+	switch (static_cast<UwpLatteScreenLayout>(UwpLatteResolveLayout()))
+	{
+	case UwpLatteScreenLayout::SideBySide:
+	case UwpLatteScreenLayout::Stacked:
+	case UwpLatteScreenLayout::PictureInPicture:
+	case UwpLatteScreenLayout::GamePadPictureInPicture:
+		return true;
+	default:
+		return false;
+	}
+}
+}
+#endif
 
 struct LatteMRTQuad
 {
@@ -97,6 +158,13 @@ void LatteMRT::NotifyTextureDeletion(LatteTexture* texture)
 			sLatteCurrentRendertargets.colorBuffer[i].view = nullptr;
 		}
 	}
+#if defined(CEMU_UWP)
+	if (sLatteCurrentRendertargets.depthBuffer.view && sLatteCurrentRendertargets.depthBuffer.view->baseTexture == texture)
+	{
+		sLatteCurrentRendertargets.depthBuffer.view = nullptr;
+		sLatteCurrentRendertargets.depthBuffer.hasStencil = false;
+	}
+#endif
 }
 
 LatteCachedFBO* LatteMRT::CreateCachedFBO(uint64 key)
@@ -678,6 +746,9 @@ void LatteRenderTarget_trackUpdates()
 
 void LatteRenderTarget_itHLESwapScanBuffer()
 {
+#if defined(CEMU_UWP)
+	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
 	performanceMonitor.cycle[performanceMonitor.cycleIndex].frameCounter++;
 	if(LatteGPUState.frameCounter > 5)
 		performanceMonitor.gpuTime_frameTime.endMeasuring();
@@ -864,6 +935,9 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
 
 void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPadView)
 {
+#if defined(CEMU_UWP)
+	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
 	// make sure texture is updated to latest data in cache
 	LatteTexture_UpdateDataToLatest(textureView->baseTexture);
 	// mark source texture as still in use
@@ -922,6 +996,10 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	if (shader == nullptr)
 	{
 		sint32 scaling_filter = downscaling ? GetConfig().downscale_filter : GetConfig().upscale_filter;
+		// at the same size FSR's upscale passes pixels through and its sharpening still applies; it only stays out of real downscaling
+		const bool sameSize = imageWidth == effectiveWidth && imageHeight == effectiveHeight;
+		if (sameSize && GetConfig().upscale_filter == kFsrFilter)
+			scaling_filter = kFsrFilter;
 
 		if (scaling_filter == kLinearFilter)
 		{
@@ -959,6 +1037,16 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 
 			filter = LatteTextureView::MagFilter::kNearestNeighbor;
 		}
+		else if (scaling_filter == kFsrFilter)
+		{
+			// only Direct3D 12 has the FSR passes; other renderers fall back to bilinear
+			if (renderUpsideDown)
+				shader = RendererOutputShader::s_fsr_shader_ud ? RendererOutputShader::s_fsr_shader_ud : RendererOutputShader::s_copy_shader_ud;
+			else
+				shader = RendererOutputShader::s_fsr_shader ? RendererOutputShader::s_fsr_shader : RendererOutputShader::s_copy_shader;
+
+			filter = LatteTextureView::MagFilter::kLinear;
+		}
 	}
 	cemu_assert(shader);
 	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
@@ -968,7 +1056,20 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	swkbd_render(!isPadView);
 	nn::erreula::render(!isPadView);
 	LatteOverlay_render(isPadView);
+#if defined(CEMU_UWP)
+	LatteOverlay_renderTouchCursor();
+#endif
 	g_renderer->ImguiEnd();
+}
+
+static void LatteRenderTarget_copyDRCToMainBackbuffer(LatteTextureView* textureView)
+{
+	struct MainWindowShowsDRCScope
+	{
+		MainWindowShowsDRCScope() { RendererOutputShader::SetMainWindowShowsDRC(true); }
+		~MainWindowShowsDRCScope() { RendererOutputShader::SetMainWindowShowsDRC(false); }
+	} mainWindowShowsDRC;
+	LatteRenderTarget_copyToBackbuffer(textureView, false);
 }
 
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
@@ -1005,11 +1106,33 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	togglePressedLast = togglePressed;
 
 	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
+	// titles in Off-TV mode only write the GamePad scan buffer
+	if (renderTarget & RENDER_TARGET_TV)
+		LatteGPUState.lastTVScanBufferCopyFrame = LatteGPUState.frameCounter;
+	const bool tvOutputIdle = (LatteGPUState.frameCounter - LatteGPUState.lastTVScanBufferCopyFrame) > 30;
+	if ((renderTarget & RENDER_TARGET_DRC) && tvOutputIdle)
+		showDRC = true;
+
+#if defined(CEMU_UWP)
+	const bool uwpDualLayout = UwpLatteDualScreenLayoutActive();
+	if (uwpDualLayout)
+	{
+		if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+			LatteRenderTarget_copyToBackbuffer(texView, true);
+		if (renderTarget & RENDER_TARGET_TV)
+			LatteRenderTarget_copyToBackbuffer(texView, false);
+		else if ((renderTarget & RENDER_TARGET_DRC) && tvOutputIdle)
+			LatteRenderTarget_copyDRCToMainBackbuffer(texView);
+		return;
+	}
+#endif
 
 	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
 		LatteRenderTarget_copyToBackbuffer(texView, true);
-	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
+	if ((renderTarget & RENDER_TARGET_TV) && !showDRC)
 		LatteRenderTarget_copyToBackbuffer(texView, false);
+	else if ((renderTarget & RENDER_TARGET_DRC) && showDRC)
+		LatteRenderTarget_copyDRCToMainBackbuffer(texView);
 }
 
 

@@ -17,6 +17,19 @@ if (ENABLE_VULKAN)
 	)
 endif()
 
+if (ENABLE_D3D12)
+	target_sources(imguiImpl PRIVATE
+		imgui_impl_dx12.cpp
+		imgui_impl_dx12.h
+	)
+	# the shaders are compiled to DXIL with DXC
+	if (ENABLE_UWP)
+		target_link_libraries(imguiImpl PRIVATE dxcompiler)
+	else()
+		target_link_libraries(imguiImpl PRIVATE Microsoft::DirectXShaderCompiler)
+	endif()
+endif()
+
 if (ENABLE_METAL)
     target_sources(imguiImpl PRIVATE
         imgui_impl_metal.mm
@@ -26,7 +39,7 @@ if (ENABLE_METAL)
     target_compile_definitions(imguiImpl PRIVATE IMGUI_IMPL_METAL_CPP)
 endif ()
 
-set_property(TARGET imguiImpl PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET imguiImpl PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 cemu_use_precompiled_header(imguiImpl)
 

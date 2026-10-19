@@ -12,6 +12,7 @@ namespace WindowSystem
 			Wayland,
 			Cocoa,
 			Windows,
+			WindowsCoreWindow,
 		} backend;
 		void* display = nullptr;
 		void* surface = nullptr;

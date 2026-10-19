@@ -211,6 +211,9 @@ struct LatteDecompilerShaderContext
 		bool genIntReg; // if set, generate R*i register variables
 		bool useArrayGPRs; // if set, an array is used to represent GPRs instead of individual variables
 	}typeTracker;
+	bool lowerIndexedGPRWrites{}; // relative GPR writes become selects over register variables
+	uint32 indexedGPRLimit{ LATTE_NUM_GPR }; // relative GPR accesses only reach registers below this index
+	bool passCubeCompareReference{}; // cube depth-compare samples pass the reference value as a separate argument
 	// analyzer
 	struct
 	{
@@ -231,6 +234,7 @@ struct LatteDecompilerShaderContext
 		std::bitset<LATTE_NUM_MAX_TEX_UNITS> texUnitUsesTexelCoordinates;
 		bool hasCubeMapTexture; // set to true if a cubemap texture is used
 		bool hasGradientLookup; // set to true if texture lookup with custom gradients is used
+		bool hasTextureLodQuery; // set to true if the computed texture LOD is queried
 		// misc
 		bool usesRelativeGPRRead; // set if indexed GPR reads are used
 		bool usesRelativeGPRWrite; // set if indexed GPR writes are used
@@ -267,6 +271,9 @@ struct LatteDecompilerShaderContext
 void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteDecompilerShader* shader);
 void LatteDecompiler_analyzeDataTypes(LatteDecompilerShaderContext* shaderContext);
 void LatteDecompiler_emitGLSLShader(LatteDecompilerShaderContext* shaderContext, LatteDecompilerShader* shader);
+#ifdef ENABLE_D3D12
+void LatteDecompiler_emitHLSLShader(LatteDecompilerShaderContext* shaderContext, LatteDecompilerShader* shader);
+#endif
 #ifdef ENABLE_METAL
 void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, LatteDecompilerShader* shader);
 #endif

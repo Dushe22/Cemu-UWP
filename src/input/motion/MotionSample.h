@@ -225,6 +225,19 @@ public:
 		gyro[1] = m_gyro[1];
 		gyro[2] = m_gyro[2];
 	}
+	void getOrientation(float orientation[3]) const
+	{
+		orientation[0] = m_orientation[0];
+		orientation[1] = m_orientation[1];
+		orientation[2] = m_orientation[2];
+	}
+	void getQuaternion(float quaternion[4]) const
+	{
+		quaternion[0] = m_q[0];
+		quaternion[1] = m_q[1];
+		quaternion[2] = m_q[2];
+		quaternion[3] = m_q[3];
+	}
 
 private:
 	static float _radToOrientation(float rad)

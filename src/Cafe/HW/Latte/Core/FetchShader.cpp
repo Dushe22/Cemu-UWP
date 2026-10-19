@@ -111,12 +111,13 @@ void LatteShader_calculateFSKey(LatteFetchShader* fetchShader)
 			{
 #ifdef ENABLE_METAL
 			case RendererAPI::Metal:
+#endif
+			case RendererAPI::Direct3D12:
 			{
 			    key += (uint64)attrib->offset;
 				key = std::rotl<uint64>(key, 7);
 				break;
 			}
-#endif
 			default:
 			{
 				key += (uint64)(attrib->offset & 3);

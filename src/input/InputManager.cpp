@@ -5,6 +5,278 @@
 #include <pugixml.hpp>
 #include "Cafe/GameProfile/GameProfile.h"
 #include "util/EventService.h"
+#if defined(CEMU_UWP)
+#include "UwpImGuiFrontend/InputMapping.h"
+#endif
+#if defined(CEMU_UWP) && HAS_DSU
+#include "uwp/UwpCompanionService.h"
+#include "input/api/DSU/DSUController.h"
+#endif
+
+#if defined(CEMU_UWP) && HAS_DSU
+namespace
+{
+std::vector<UwpDsuServerEntry> GetConfiguredDsuServers()
+{
+	const auto& config = GetConfig().dsu_client;
+	if (!config.servers.empty())
+		return config.servers;
+	return { UwpDsuServerEntry{
+		.id = "default",
+		.name = "DSU Server",
+		.host = config.host.GetValue(),
+		.port = config.port.GetValue(),
+		.enabled = config.enabled.GetValue(),
+		.companion_transport = true,
+	} };
+}
+
+bool IsAnyDsuServerEnabled()
+{
+	const auto servers = GetConfiguredDsuServers();
+	return std::ranges::any_of(servers,
+		[](const UwpDsuServerEntry& server) { return server.enabled; });
+}
+
+std::optional<UwpDsuServerEntry> ResolveConfiguredDsuServer(
+	const DSUProviderSettings& requested)
+{
+	const auto servers = GetConfiguredDsuServers();
+	auto selected = servers.end();
+	if (!requested.endpoint_id.empty())
+	{
+		selected = std::ranges::find_if(servers,
+			[&requested](const UwpDsuServerEntry& server) {
+				return server.id == requested.endpoint_id;
+			});
+	}
+	if (selected == servers.end() && requested.endpoint_id.empty())
+	{
+		selected = std::ranges::find_if(servers,
+			[&requested](const UwpDsuServerEntry& server) {
+				return server.host == requested.ip && server.port == requested.port;
+			});
+	}
+	if (selected == servers.end() || !selected->enabled || selected->host.empty())
+		return std::nullopt;
+	return *selected;
+}
+
+DSUProviderSettings MakeDsuProviderSettings(const UwpDsuServerEntry& server)
+{
+	return { server.id, server.name, server.host, server.port,
+		server.companion_transport };
+}
+
+bool HasUnqualifiedControlReference(std::string_view expression)
+{
+	for (std::size_t start = 0; start < expression.size(); ++start)
+	{
+		if (expression[start] != '`')
+			continue;
+		bool escaped = false;
+		bool qualified = false;
+		for (std::size_t index = start + 1; index < expression.size(); ++index)
+		{
+			const char character = expression[index];
+			if (escaped)
+			{
+				escaped = false;
+				continue;
+			}
+			if (character == '\\')
+			{
+				escaped = true;
+				continue;
+			}
+			if (character == '/')
+				qualified = true;
+			if (character == '`')
+			{
+				if (!qualified)
+					return true;
+				start = index;
+				break;
+			}
+		}
+	}
+	return false;
+}
+
+void PopulateDsuProviders(std::vector<ControllerProviderPtr>& providers)
+{
+	DSUControllerProvider* companionProvider = nullptr;
+	for (const UwpDsuServerEntry& server : GetConfiguredDsuServers())
+	{
+		if (!server.enabled || server.host.empty())
+			continue;
+		DSUProviderSettings settings(server.id, server.name, server.host,
+			server.port, server.companion_transport);
+		auto provider = std::make_shared<DSUControllerProvider>(settings);
+		if (!companionProvider && server.companion_transport)
+			companionProvider = provider.get();
+		providers.emplace_back(std::move(provider));
+	}
+	if (companionProvider)
+		CemuUwp::CompanionService::AttachDsuProvider(companionProvider);
+}
+
+void ApplyConfiguredDsuRoutes(InputManager& inputManager)
+{
+	std::array<std::shared_ptr<EmulatedController>, InputManager::kMaxController> players{};
+	using SlotKey = std::pair<std::string, uint32>;
+	std::map<SlotKey, std::pair<std::size_t, std::shared_ptr<DSUController>>> profileSlots;
+	const auto servers = GetConfiguredDsuServers();
+	for (std::size_t player = 0; player < players.size(); ++player)
+	{
+		players[player] = inputManager.get_controller(player);
+		if (!players[player])
+			continue;
+		players[player]->clear_runtime_expression_mappings();
+		players[player]->clear_route_controllers();
+		std::vector<std::shared_ptr<ControllerBase>> existingDsu;
+		for (const auto& controller : players[player]->get_controllers())
+		{
+			const auto dsu = std::dynamic_pointer_cast<DSUController>(controller);
+			if (!dsu)
+				continue;
+			if (dsu->is_route_managed())
+				existingDsu.push_back(controller);
+			else
+			{
+				dsu->reset_runtime_features();
+				const auto configured = ResolveConfiguredDsuServer(
+					dsu->provider_settings());
+				if (!configured || !dsu->rebind_provider(
+					MakeDsuProviderSettings(*configured)))
+				{
+					existingDsu.push_back(controller);
+					continue;
+				}
+				const std::string endpointIdentity = configured->id.empty() ?
+					fmt::format("{}:{}", configured->host, configured->port) :
+					configured->id;
+				const auto [existing, inserted] = profileSlots.try_emplace(
+					SlotKey{ endpointIdentity, dsu->remote_slot() },
+					player, std::move(dsu));
+				if (!inserted)
+				{
+					cemuLog_log(LogType::Force,
+						"Removing duplicate DSU profile assignment from player {}; player {} already uses that endpoint and slot",
+						player + 1, existing->second.first + 1);
+					existingDsu.push_back(controller);
+				}
+			}
+		}
+		for (const auto& controller : existingDsu)
+			players[player]->remove_controller(controller);
+	}
+
+	auto routes = GetConfig().dsu_client.player_routes;
+	for (std::size_t player = 0; player < players.size(); ++player)
+	{
+		if (!players[player])
+			continue;
+		const auto& profileRoute = players[player]->get_dsu_route_override();
+		if (!profileRoute)
+			continue;
+		std::erase_if(routes, [player](const UwpDsuPlayerRouteEntry& route) {
+			return route.player == player;
+		});
+		if (!profileRoute->enabled)
+			continue;
+		routes.push_back({ static_cast<uint8>(player), profileRoute->server_id,
+			profileRoute->remote_slot, profileRoute->merge, profileRoute->gamepad,
+			profileRoute->motion, profileRoute->touch });
+	}
+	std::set<SlotKey> claimedSlots;
+	for (const UwpDsuPlayerRouteEntry& route : routes)
+	{
+		if (route.player >= players.size() || route.remote_slot >= DSUControllerProvider::kMaxClients ||
+			!players[route.player])
+			continue;
+		const auto server = std::ranges::find_if(servers,
+			[&](const UwpDsuServerEntry& candidate) {
+				return candidate.id == route.server_id;
+			});
+		if (server == servers.end() || !server->enabled || server->host.empty())
+			continue;
+		const std::string endpointIdentity = server->id.empty() ?
+			fmt::format("{}:{}", server->host, server->port) : server->id;
+		const SlotKey slotKey{ endpointIdentity, route.remote_slot };
+		if (!claimedSlots.emplace(slotKey).second)
+		{
+			cemuLog_log(LogType::Force,
+				"Ignoring duplicate DSU route {} slot {} for player {}",
+				server->name, route.remote_slot, route.player + 1);
+			continue;
+		}
+
+		std::shared_ptr<DSUController> physical;
+		if (const auto profileSlot = profileSlots.find(slotKey);
+			profileSlot != profileSlots.end())
+		{
+			if (profileSlot->second.first != route.player)
+			{
+				cemuLog_log(LogType::Force,
+					"Ignoring DSU route {} slot {} for player {} because player {} already uses it",
+					server->name, route.remote_slot, route.player + 1,
+					profileSlot->second.first + 1);
+				continue;
+			}
+			physical = profileSlot->second.second;
+		}
+		auto& player = players[route.player];
+		if (!physical)
+		{
+			const DSUProviderSettings settings = MakeDsuProviderSettings(*server);
+			try
+			{
+				physical = std::make_shared<DSUController>(route.remote_slot, settings);
+			}
+			catch (const std::exception& ex)
+			{
+				cemuLog_log(LogType::Force,
+					"Unable to attach DSU route {} slot {} to player {}: {}",
+					server->name, route.remote_slot, route.player + 1, ex.what());
+				continue;
+			}
+			physical->configure_route_features(route.gamepad, route.motion, route.touch);
+			player->add_controller(physical);
+		}
+		else
+			physical->configure_runtime_features(route.gamepad, route.motion, route.touch);
+		if (route.motion)
+			player->set_route_motion_controller(physical);
+		if (route.touch)
+			player->set_route_pointer_controller(physical);
+		if (!route.gamepad)
+			continue;
+
+		auto defaults = ControllerFactory::CreateEmulatedController(route.player,
+			player->type());
+		defaults->add_controller(physical);
+		defaults->set_default_mapping(physical);
+		const std::string routeDevicePrefix = fmt::format("{}:{}/",
+			physical->api_name(), physical->uuid());
+		const auto& attached = player->get_controllers();
+		const bool routeIsDefault = !attached.empty() && attached.front() &&
+			*attached.front() == *physical;
+		for (std::uint64_t mapping = 1; mapping < player->get_highest_mapping_id(); ++mapping)
+		{
+			const std::string configured = player->get_expression_mapping(mapping);
+			if (configured.find(routeDevicePrefix) != std::string::npos ||
+				(routeIsDefault && HasUnqualifiedControlReference(configured)))
+				continue;
+			const std::string addition = defaults->get_expression_mapping(mapping);
+			if (addition.empty() && route.merge)
+				continue;
+			player->set_runtime_expression_mapping(mapping, addition, !route.merge);
+		}
+	}
+}
+}
+#endif
 
 InputManager::InputManager()
 {
@@ -38,13 +310,30 @@ InputManager::InputManager()
 	create_provider<DirectInputControllerProvider>();
 #endif
 #if HAS_DSU
+#if defined(CEMU_UWP)
+	if (IsAnyDsuServerEnabled())
+	{
+		try
+		{
+			PopulateDsuProviders(m_api_available[InputAPI::DSUClient]);
+		}
+		catch (const std::exception& ex)
+		{
+			cemuLog_log(LogType::Force, ex.what());
+		}
+	}
+#else
 	create_provider<DSUControllerProvider>();
+#endif
 #endif
 #if defined(HAS_GAMECUBE) && HAS_GAMECUBE && defined(HAS_LIBUSB)
 	create_provider<GameCubeControllerProvider>();
 #endif
 #if HAS_WIIMOTE
 	create_provider<WiimoteControllerProvider>();
+#endif
+#if defined(CEMU_UWP)
+	create_provider<WGIGamepadControllerProvider>();
 #endif
 
 	m_update_thread_shutdown.store(false);
@@ -69,6 +358,9 @@ void InputManager::load() noexcept
 			cemuLog_log(LogType::Force, "can't load controller profile: {}", ex.what());
 		}
 	}
+#if defined(CEMU_UWP) && HAS_DSU
+	ApplyConfiguredDsuRoutes(*this);
+#endif
 }
 
 bool InputManager::load(size_t player_index, std::string_view filename)
@@ -106,6 +398,15 @@ bool InputManager::load(size_t player_index, std::string_view filename)
 			return false;
 
 		const auto emulate = EmulatedController::type_from_string(type_node.child_value());
+#if defined(CEMU_UWP)
+		if (!can_set_controller(player_index, emulate))
+		{
+			cemuLog_log(LogType::Force,
+				"Controller profile for player {} exceeds Cemu's active controller limits",
+				player_index + 1);
+			return false;
+		}
+#endif
 		auto emulated_controller = ControllerFactory::CreateEmulatedController(player_index, emulate);
 
 
@@ -115,6 +416,11 @@ bool InputManager::load(size_t player_index, std::string_view filename)
 		// custom settings
 		emulated_controller->load(root);
 
+#if defined(CEMU_UWP)
+		bool physicalControllerLoadFailed = false;
+		std::vector<UwpImGuiFrontend::InputDeviceIdAlias> deviceAliases;
+		std::shared_ptr<ControllerBase> defaultPhysicalController;
+#endif
 		for (const auto controller_node : root.select_nodes("controller"))
 		{
 			const auto cnode = controller_node.node();
@@ -131,8 +437,12 @@ bool InputManager::load(size_t player_index, std::string_view filename)
 			try
 			{
 				const auto api = InputAPI::from_string(api_node.child_value());
+				const std::string persistedDeviceId = fmt::format("{}:{}",
+					InputAPI::to_string(api), uuid_node.child_value());
 				auto controller = ControllerFactory::CreateController(api, uuid_node.child_value(), display_name);
+#if !defined(CEMU_UWP)
 				emulated_controller->add_controller(controller);
+#endif
 
 				// load optional settings
 				auto settings = controller->get_settings();
@@ -171,7 +481,15 @@ bool InputManager::load(size_t player_index, std::string_view filename)
 
 				// custom settings
 				controller->load(cnode);
-				
+#if defined(CEMU_UWP)
+				emulated_controller->add_controller(controller);
+				if (!defaultPhysicalController)
+					defaultPhysicalController = controller;
+				const std::string runtimeDeviceId = fmt::format("{}:{}",
+					controller->api_name(), controller->uuid());
+				if (persistedDeviceId != runtimeDeviceId)
+					deviceAliases.push_back({ persistedDeviceId, runtimeDeviceId });
+#endif
 
 				// mappings
 				if (const auto mappings_node = cnode.child("mappings"))
@@ -198,9 +516,101 @@ bool InputManager::load(size_t player_index, std::string_view filename)
 			catch (const std::exception& ex)
 			{
 				cemuLog_log(LogType::Force, "can't load controller: {}", ex.what());
+#if defined(CEMU_UWP)
+				physicalControllerLoadFailed = true;
+#endif
 			}
 		}
 
+#if defined(CEMU_UWP)
+		if (physicalControllerLoadFailed)
+		{
+			cemuLog_log(LogType::Force,
+				"Controller profile for player {} was rejected because an attached input device could not be loaded",
+				player_index + 1);
+			return false;
+		}
+
+		if (const auto expressions = root.child("uwp_expressions"))
+		{
+			EmulatedControllerPtr migrationDefaults;
+			if (defaultPhysicalController)
+			{
+				migrationDefaults = ControllerFactory::CreateEmulatedController(
+					player_index, emulate);
+				migrationDefaults->add_controller(defaultPhysicalController);
+				migrationDefaults->set_default_mapping(defaultPhysicalController);
+			}
+			for (const auto& entry : expressions.select_nodes("entry"))
+			{
+				const auto node = entry.node();
+				const auto mapping = node.attribute("mapping");
+				const auto expression = node.attribute("expression");
+				if (mapping && expression)
+				{
+					const uint64 mappingId = ConvertString<uint64>(mapping.value());
+					std::string source = expression.value();
+					if (source.empty())
+					{
+						emulated_controller->set_expression_mapping(mappingId, {});
+						continue;
+					}
+
+					const auto rewritten =
+						UwpImGuiFrontend::RewriteInputControlDeviceIds(
+							source, deviceAliases);
+					if (rewritten)
+						source = *rewritten;
+					UwpImGuiFrontend::MappingExpression validation(source);
+					if (!validation.IsValid() && !rewritten && migrationDefaults)
+					{
+						bool affectedByIdentityMigration = false;
+						for (const auto& alias : deviceAliases)
+						{
+							const std::string escaped =
+								UwpImGuiFrontend::EscapeInputControlReference(
+									alias.previousId);
+							if (source.find(alias.previousId) != std::string::npos ||
+								(escaped.size() > 1 && source.find(escaped.substr(
+									0, escaped.size() - 1)) != std::string::npos))
+							{
+								affectedByIdentityMigration = true;
+								break;
+							}
+						}
+						if (affectedByIdentityMigration)
+						{
+							source = migrationDefaults->get_expression_mapping(mappingId);
+							cemuLog_log(LogType::Force,
+								"Recovered controller mapping {} for player {} from an unsafe WGI device identity",
+								mappingId, player_index + 1);
+						}
+					}
+					emulated_controller->set_expression_mapping(mappingId,
+						std::move(source));
+				}
+			}
+		}
+		if (const auto routeNode = root.child("uwp_dsu_route"))
+		{
+			EmulatedController::DsuRouteOverride route;
+			const unsigned remoteSlot = routeNode.attribute("slot").as_uint(0);
+			route.enabled = routeNode.attribute("enabled").as_bool(false) &&
+				remoteSlot < 16;
+			route.server_id = routeNode.attribute("server").as_string();
+			route.remote_slot = static_cast<uint8>(std::min(remoteSlot, 255u));
+			route.merge = routeNode.attribute("merge").as_bool(false);
+			route.gamepad = routeNode.attribute("gamepad").as_bool(true);
+			route.motion = routeNode.attribute("motion").as_bool(true);
+			route.touch = routeNode.attribute("touch").as_bool(true);
+			emulated_controller->set_dsu_route_override(std::move(route));
+		}
+#endif
+
+#if defined(CEMU_UWP)
+		// a loaded profile is an exact device set, do not inherit prior devices
+		delete_controller(player_index, false);
+#endif
 		set_controller(emulated_controller);
 		return true;
 	}
@@ -483,6 +893,13 @@ bool InputManager::save(size_t player_index, std::string_view filename)
 
 	for (const auto& controller : emulated_controller->get_controllers())
 	{
+#if defined(CEMU_UWP) && HAS_DSU
+		if (const auto dsu = std::dynamic_pointer_cast<DSUController>(controller);
+			dsu && dsu->is_route_managed())
+		{
+			continue;
+		}
+#endif
 		auto controller_node = emulated_controller_node.append_child("controller");
 
 		// general
@@ -539,6 +956,15 @@ bool InputManager::save(size_t player_index, std::string_view filename)
 			}
 		}
 	}
+#if defined(CEMU_UWP)
+	auto expressionsNode = emulated_controller_node.append_child("uwp_expressions");
+	for (const auto& [mapping, expression] : emulated_controller->get_expression_mappings())
+	{
+		auto entry = expressionsNode.append_child("entry");
+		entry.append_attribute("mapping") = fmt::format("{}", mapping).c_str();
+		entry.append_attribute("expression") = expression.c_str();
+	}
+#endif
 	FileStream* fs = FileStream::createFile2(file_path);
 	if (!fs)
 		return false;
@@ -610,6 +1036,10 @@ EmulatedControllerPtr InputManager::set_controller(size_t player_index, Emulated
 {
 	try
 	{
+#if defined(CEMU_UWP)
+		if (!can_set_controller(player_index, type))
+			return {};
+#endif
 		auto emulated_controller = ControllerFactory::CreateEmulatedController(player_index, type);
 		set_controller(emulated_controller);
 		return emulated_controller;
@@ -749,22 +1179,139 @@ ControllerProviderPtr InputManager::get_api_provider(InputAPI::Type api) const
 
 ControllerProviderPtr InputManager::get_api_provider(InputAPI::Type api, const ControllerProviderSettings& settings)
 {
+#if defined(CEMU_UWP) && HAS_DSU
+	std::optional<DSUProviderSettings> resolvedDsuSettings;
+	const ControllerProviderSettings* effectiveSettings = &settings;
+	if (api == InputAPI::DSUClient)
+	{
+		const auto* requested = dynamic_cast<const DSUProviderSettings*>(&settings);
+		if (!requested)
+			return {};
+		const auto server = ResolveConfiguredDsuServer(*requested);
+		if (!server)
+			return {};
+		resolvedDsuSettings = MakeDsuProviderSettings(*server);
+		effectiveSettings = &*resolvedDsuSettings;
+	}
+	const ControllerProviderSettings& selectedSettings = *effectiveSettings;
+#else
+	const ControllerProviderSettings& selectedSettings = settings;
+#endif
 	for(const auto& p : m_api_available[api])
 	{
-		if(*p == settings)
+		if(*p == selectedSettings)
 		{
 			return p;
 		}
 	}
 
-	const auto result = ControllerFactory::CreateControllerProvider(api, settings);
+	const auto result = ControllerFactory::CreateControllerProvider(api, selectedSettings);
+	if (!result)
+		return {};
 	m_api_available[api].emplace_back(result);
 	return result;
 }
 
+#if defined(CEMU_UWP) && HAS_DSU
+void InputManager::apply_uwp_dsu_routes()
+{
+	ApplyConfiguredDsuRoutes(*this);
+}
+
+void InputManager::refresh_uwp_dsu_provider()
+{
+	auto& providers = m_api_available[InputAPI::DSUClient];
+	for (const auto& provider : providers)
+	{
+		if (const auto dsu = std::dynamic_pointer_cast<DSUControllerProvider>(provider))
+			CemuUwp::CompanionService::DetachDsuProvider(dsu.get());
+	}
+	providers.clear();
+
+	if (!IsAnyDsuServerEnabled())
+	{
+		ApplyConfiguredDsuRoutes(*this);
+		EventService::instance().signal<Events::ControllerChanged>();
+		return;
+	}
+
+	try
+	{
+		PopulateDsuProviders(providers);
+		ApplyConfiguredDsuRoutes(*this);
+	}
+	catch (const std::exception& ex)
+	{
+		cemuLog_log(LogType::Force, "UWP DSU provider refresh failed: {}", ex.what());
+	}
+
+	EventService::instance().signal<Events::ControllerChanged>();
+}
+#endif
+
 void InputManager::apply_game_profile()
 {
 	const auto& profiles = g_current_game_profile->GetControllerProfile();
+#if defined(CEMU_UWP)
+	std::array<EmulatedControllerPtr, kMaxController> previousControllers{};
+	const auto previousGameProfileState = m_is_gameprofile_set;
+	const auto previousPreGameControllers = m_uwp_pre_game_controllers;
+	const auto previousPreGameCaptured = m_uwp_pre_game_controller_captured;
+	std::array<bool, kMaxController> targeted{};
+	for (size_t i = 0; i < kMaxController; ++i)
+	{
+		if (!profiles[i] || profiles[i]->empty())
+			continue;
+		targeted[i] = true;
+		previousControllers[i] = get_controller(i);
+		m_is_gameprofile_set[i] = false;
+		delete_controller(i, false);
+	}
+
+	bool loadedAll = true;
+	for (size_t i = 0; i < kMaxController; ++i)
+	{
+		if (!targeted[i])
+			continue;
+		if (!load(i, profiles[i].value()))
+		{
+			loadedAll = false;
+			break;
+		}
+		m_is_gameprofile_set[i] = true;
+		if (!previousGameProfileState[i])
+		{
+			m_uwp_pre_game_controllers[i] = previousControllers[i];
+			m_uwp_pre_game_controller_captured[i] = true;
+		}
+		if (const auto controller = get_controller(i);
+			controller && !controller->has_profile_name())
+		{
+			controller->m_profile_name = profiles[i].value();
+		}
+	}
+	if (!loadedAll)
+	{
+		for (size_t i = 0; i < kMaxController; ++i)
+		{
+			if (targeted[i])
+				delete_controller(i, false);
+		}
+		for (size_t i = 0; i < kMaxController; ++i)
+		{
+			if (targeted[i] && previousControllers[i])
+				set_controller(previousControllers[i]);
+			if (targeted[i])
+			{
+				m_is_gameprofile_set[i] = previousGameProfileState[i];
+				m_uwp_pre_game_controllers[i] = previousPreGameControllers[i];
+				m_uwp_pre_game_controller_captured[i] = previousPreGameCaptured[i];
+			}
+		}
+		cemuLog_log(LogType::Force,
+			"Controller game profile was rejected; the previous controller set was restored");
+	}
+#else
 	for (int i = 0; i < kMaxController; ++i)
 	{
 		if (profiles[i] && !profiles[i]->empty())
@@ -780,7 +1327,118 @@ void InputManager::apply_game_profile()
 			}
 		}
 	}
+#endif
+#if defined(CEMU_UWP) && HAS_DSU
+	ApplyConfiguredDsuRoutes(*this);
+#endif
 }
+
+#if defined(CEMU_UWP)
+bool InputManager::activate_uwp_title_profile(size_t player_index,
+	std::string_view filename)
+{
+	if (player_index >= kMaxController || filename.empty())
+		return false;
+	const bool replacingTitleProfile = m_is_gameprofile_set[player_index];
+	const EmulatedControllerPtr previousController = replacingTitleProfile ?
+		EmulatedControllerPtr{} : get_controller(player_index);
+	if (!load(player_index, filename))
+		return false;
+	if (!replacingTitleProfile)
+	{
+		m_uwp_pre_game_controllers[player_index] = previousController;
+		m_uwp_pre_game_controller_captured[player_index] = true;
+	}
+	m_is_gameprofile_set[player_index] = true;
+#if HAS_DSU
+	ApplyConfiguredDsuRoutes(*this);
+#endif
+	return true;
+}
+
+void InputManager::restore_uwp_default_profiles()
+{
+	std::array<bool, kMaxController> restore{};
+	for (size_t i = 0; i < kMaxController; ++i)
+	{
+		if (!m_is_gameprofile_set[i])
+			continue;
+		restore[i] = true;
+		m_is_gameprofile_set[i] = false;
+		delete_controller(i, false);
+	}
+	for (size_t i = 0; i < kMaxController; ++i)
+	{
+		if (!restore[i])
+			continue;
+		if (m_uwp_pre_game_controller_captured[i])
+		{
+			if (m_uwp_pre_game_controllers[i])
+				set_controller(m_uwp_pre_game_controllers[i]);
+			m_uwp_pre_game_controllers[i].reset();
+			m_uwp_pre_game_controller_captured[i] = false;
+			continue;
+		}
+		try
+		{
+			(void)load(i);
+		}
+		catch (const std::exception& ex)
+		{
+			cemuLog_log(LogType::Force, "Unable to restore UWP controller {} after game profile: {}", i + 1, ex.what());
+		}
+	}
+#if defined(CEMU_UWP) && HAS_DSU
+	ApplyConfiguredDsuRoutes(*this);
+#endif
+}
+
+void InputManager::set_uwp_gameprofile_state(size_t player_index, bool active)
+{
+	if (player_index < kMaxController)
+	{
+		m_is_gameprofile_set[player_index] = active;
+		if (!active)
+		{
+			m_uwp_pre_game_controllers[player_index].reset();
+			m_uwp_pre_game_controller_captured[player_index] = false;
+		}
+	}
+}
+
+void InputManager::reset_uwp_expression_state()
+{
+	for (std::size_t player = 0; player < kMaxController; ++player)
+	{
+		if (const auto controller = get_controller(player))
+			controller->reset_expression_state();
+	}
+}
+#endif
+
+#if defined(CEMU_UWP)
+bool InputManager::can_set_controller(size_t player_index,
+	EmulatedController::Type type) const
+{
+	if (player_index >= kMaxController)
+		return false;
+	std::shared_lock lock(m_mutex);
+	std::size_t vpadCount = 0;
+	std::size_t wpadCount = 0;
+	for (const auto& controller : m_vpad)
+	{
+		if (controller && controller->player_index() != player_index)
+			++vpadCount;
+	}
+	for (const auto& controller : m_wpad)
+	{
+		if (controller && controller->player_index() != player_index)
+			++wpadCount;
+	}
+	return type == EmulatedController::VPAD ?
+		vpadCount < kMaxVPADControllers : wpadCount < kMaxWPADControllers;
+}
+#endif
 
 std::vector<std::string> InputManager::get_profiles()
 {
@@ -966,6 +1624,11 @@ void InputManager::Shutdown()
 
     for (auto& pad : m_vpad) pad.reset();
 	for (auto& pad : m_wpad) pad.reset();
+#if defined(CEMU_UWP)
+	for (auto& controller : m_uwp_pre_game_controllers)
+		controller.reset();
+	m_uwp_pre_game_controller_captured.fill(false);
+#endif
 
 	for (auto& providers : m_api_available)
 	{

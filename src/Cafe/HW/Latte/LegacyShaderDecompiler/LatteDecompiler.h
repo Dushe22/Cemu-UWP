@@ -172,6 +172,8 @@ struct LatteDecompilerShader
 
 	// analyzer stage (pixel outputs)
 	uint32 pixelColorOutputMask{ 0 }; // from LSB to MSB, 1 bit per written output. 1 if written (indices of color attachments)
+	// proof about the original program only; consumers must reject custom shaders
+	bool pixelColorOutputIsUniform{ false };
 	// analyzer stage (depth output)
 	bool depthMask{ false };
 	// analyzer stage (geometry shader parameters/inputs)
@@ -277,9 +279,11 @@ struct LatteDecompilerOutput_t
 	// uniform locations
 	LatteDecompilerOutputUniformOffsets uniformOffsetsGL;
 	LatteDecompilerOutputUniformOffsets uniformOffsetsVK;
+	LatteDecompilerOutputUniformOffsets uniformOffsetsD3D12;
 	// mapping and binding information
 	LatteDecompilerShaderResourceMapping resourceMappingGL;
 	LatteDecompilerShaderResourceMapping resourceMappingVK;
+	LatteDecompilerShaderResourceMapping resourceMappingD3D12;
 	LatteDecompilerShaderResourceMapping resourceMappingMTL;
 };
 

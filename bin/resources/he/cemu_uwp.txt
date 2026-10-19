@@ -1,0 +1,99 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+APP Store	APP Store
+Account	חשבון
+App Store	App Store
+Apply Quick Menu combo	החל צירוף של התפריט המהיר
+Artwork	תמונות
+Backend	מנוע
+CPU mode	מצב מעבד
+CPU usage	שימוש במעבד
+Cancel	ביטול
+Cancel installation	ביטול ההתקנה
+Cemu UWP	Cemu UWP
+Cemu UWP shell	ממשק Cemu UWP
+Choose side-by-side underlay	בחירת רקע זה לצד זה
+Choose stacked underlay	בחירת רקע זה מעל זה
+Clear account credentials	ניקוי פרטי החשבון
+Clear side-by-side	איפוס זה לצד זה
+Clear stacked	איפוס זה מעל זה
+Close	סגור
+Console language	שפת הקונסולה
+Controller battery notifications	התראות סוללת בקר
+Controller profile notifications	התראות פרופיל בקר
+Crash dump	קובץ קריסה
+Current game override	הגדרת המשחק הנוכחי
+Debug overlay	שכבת ניפוי
+Debugger	מנפה שגיאות
+Default	ברירת מחדל
+Discord	Discord
+Display uses sRGB curve	הצג משתמש בעקומת sRGB
+Download community packs	הורדת חבילות הקהילה
+Downloads	הורדות
+Downscale filter	מסנן הקטנה
+Draw calls	קריאות ציור
+Dump libcurl requests	ייצוא בקשות libcurl
+Dump recompiler functions	ייצוא פונקציות המהדר
+Dump shaders	ייצוא מצללים
+Dump textures	ייצוא מרקמים
+Emulated USB devices	התקני USB מדומים
+Enabled	מופעל
+FPS	FPS
+Flush log	כתיבת היומן
+Friend service notifications	התראות שירות החברים
+Fullscreen scaling	התאמה למסך מלא
+GDB port	GDB port
+Game layout	פריסת המשחק
+Game-list artwork	תמונות רשימת המשחקים
+GamePad	GamePad
+GamePad channels	ערוצי GamePad
+GamePad screen	מסך GamePad
+Games directory	תיקיית המשחקים
+Gamma	Gamma
+Global default layout	פריסת ברירת המחדל
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Home	בית
+Input channels	ערוצי קלט
+Install	התקנה
+Install title, update or DLC	התקנת משחק, עדכון או DLC
+Interface	ממשק
+Interface language	שפת הממשק
+Keep installing	המשך ההתקנה
+Large information artwork	תמונת מידע גדולה
+Logs	יומנים
+Microphone and portal	מיקרופון ופורטל
+Network service	שירות רשת
+Nickname	כינוי
+Notifications	התראות
+Open title	פתיחת משחק
+Open title file	פתיחת קובץ משחק
+Overlay	שכבת על
+Preferred region	אזור מועדף
+RAM usage	שימוש בזיכרון
+Refresh list	רענון הרשימה
+Refresh logs	רענון היומנים
+Refresh titles	רענון המשחקים
+Reload packs	טעינת החבילות מחדש
+Remove	הסרה
+Renderer	מנוע רינדור
+Reset Quick Menu to Menu + View	איפוס התפריט המהיר ל-Menu + View
+Resume scan	המשך הסריקה
+Runtime dumps	ייצוא בזמן ריצה
+Save account credentials	שמירת פרטי החשבון
+Save nickname	שמירת הכינוי
+Scaling	קנה מידה
+Screenscraper	Screenscraper
+Shader compiling notifications	התראות הידור מצללים
+Show controls hint	הצגת רמז שליטה
+Start Stream	התחלת השידור
+Stop Stream	עצירת השידור
+Storage	אחסון
+System	מערכת
+TV	TV
+TV channels	ערוצי טלוויזיה
+Titles	משחקים
+UWP shell	ממשק UWP
+UWP storage	אחסון UWP
+Upscale filter	מסנן הגדלה
+VRAM usage	שימוש בזיכרון מסך
+VSync	סנכרון אנכי

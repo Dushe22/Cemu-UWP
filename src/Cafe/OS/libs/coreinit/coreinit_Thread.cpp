@@ -15,6 +15,13 @@
 
 #include "util/helpers/helpers.h"
 
+#if defined(CEMU_UWP)
+#include "Cafe/CafeSystem.h"
+#include <chrono>
+#include <new>
+#include <thread>
+#endif
+
 #ifdef __arm64__
 #if defined(__clang__)
 #include <arm_acle.h>
@@ -65,6 +72,9 @@ namespace coreinit
 {
 	// scheduler state
 	std::atomic<bool> sSchedulerActive;
+#if defined(CEMU_UWP)
+	std::atomic<bool> sSchedulerPaused;
+#endif
 	std::vector<std::thread> sSchedulerThreads;
 	std::mutex sSchedulerStateMtx;
 
@@ -100,6 +110,32 @@ namespace coreinit
 	{
 		return g_isMulticoreMode;
 	}
+
+#if defined(CEMU_UWP)
+	void OSSchedulerSetPaused(bool paused)
+	{
+		const bool wasPaused = sSchedulerPaused.exchange(paused, std::memory_order::relaxed);
+		if (wasPaused && !paused)
+		{
+			for (size_t i = 0; i < Espresso::CORE_COUNT; i++)
+				g_coreRunQueueThreadCount[i].increment();
+		}
+	}
+
+	bool OSSchedulerIsPaused()
+	{
+		return sSchedulerPaused.load(std::memory_order::relaxed);
+	}
+
+	bool __OSWaitWhileSchedulerPaused()
+	{
+		if (!sSchedulerPaused.load(std::memory_order::relaxed))
+			return false;
+		while (sSchedulerPaused.load(std::memory_order::relaxed) && sSchedulerActive.load(std::memory_order::relaxed))
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		return true;
+	}
+#endif
 
 	// create host thread (fiber) that will be used to run the PPC instance
 	// note that host threads are fibers and not actual threads
@@ -1255,6 +1291,10 @@ namespace coreinit
 		__OSUnlockScheduler();
 		while (true)
 		{
+#if defined(CEMU_UWP)
+			if (__OSWaitWhileSchedulerPaused())
+				continue;
+#endif
 			if (!g_coreRunQueueThreadCount[coreIndex].isZero()) // avoid hammering the lock on the main core if there is no runable thread
 			{
 				__OSLockScheduler();
@@ -1356,6 +1396,10 @@ namespace coreinit
 		__OSUnlockScheduler(); // lock is always held when switching to a fiber, so we need to unlock it here
 		while (true)
 		{
+#if defined(CEMU_UWP)
+			if (__OSWaitWhileSchedulerPaused())
+				continue;
+#endif
 			if (hCPU->remainingCycles > 0)
 			{
 				// try to enter recompiler immediately
@@ -1390,7 +1434,41 @@ namespace coreinit
 	}
 #endif
 
+#if defined(CEMU_UWP)
+	void OSSchedulerCoreEmulationThreadImpl(void* _assignedCoreIndex);
+
 	void OSSchedulerCoreEmulationThread(void* _assignedCoreIndex)
+	{
+		// the bad_alloc handler must stay allocation-free
+		try
+		{
+			OSSchedulerCoreEmulationThreadImpl(_assignedCoreIndex);
+		}
+		catch (const std::bad_alloc&)
+		{
+			CafeSystem::RecordLaunchError("The game stopped because the Xbox app memory budget was exhausted.");
+		}
+		catch (const std::exception& ex)
+		{
+			try
+			{
+				cemuLog_log(LogType::Force, "UWP scheduler core {} failed: {}", (uintptr_t)_assignedCoreIndex, ex.what());
+			}
+			catch (...)
+			{
+			}
+			CafeSystem::RecordLaunchError("The game stopped because an emulation thread failed.");
+		}
+		catch (...)
+		{
+			CafeSystem::RecordLaunchError("The game stopped because an emulation thread failed.");
+		}
+	}
+
+	void OSSchedulerCoreEmulationThreadImpl(void* _assignedCoreIndex)
+#else
+	void OSSchedulerCoreEmulationThread(void* _assignedCoreIndex)
+#endif
 	{
 		SetThreadName(fmt::format("OSSched[core={}]", (uintptr_t)_assignedCoreIndex).c_str());
 		t_assignedCoreIndex = (sint32)(uintptr_t)_assignedCoreIndex;
@@ -1455,6 +1533,9 @@ namespace coreinit
 	void OSSchedulerEnd()
 	{
 		std::unique_lock _lock(sSchedulerStateMtx);
+#if defined(CEMU_UWP)
+		sSchedulerPaused.store(false, std::memory_order::relaxed);
+#endif
 		sSchedulerActive.store(false);
 		for (size_t i = 0; i < Espresso::CORE_COUNT; i++)
 			g_coreRunQueueThreadCount[i].increment(); // make sure to wake up cores if they are paused and waiting for runnable threads

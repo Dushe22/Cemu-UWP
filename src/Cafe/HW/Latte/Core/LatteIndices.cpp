@@ -3,6 +3,9 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Common/cpu_features.h"
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Latte/Core/LattePrimitiveRestartPolicy.h"
+#endif
 
 #if defined(ARCH_X86_64) && defined(__GNUC__)
 #include <immintrin.h>
@@ -14,11 +17,19 @@ struct
 {
 	struct CacheEntry
 	{
+#if defined(CEMU_UWP)
+		bool valid{};
+#endif
 		// input data
 		const void* lastPtr;
 		uint32 lastCount;
 		LattePrimitiveMode lastPrimitiveMode;
 		LatteIndexType lastIndexType;
+#if defined(CEMU_UWP)
+		RendererAPI lastRendererType;
+		bool lastPrimitiveRestartEnabled;
+		uint32 lastPrimitiveRestartIndex;
+#endif
 		uint64 lastUsed;
 		// output
 		uint32 indexMax;
@@ -32,6 +43,32 @@ struct
 
 void LatteIndices_invalidate(const void* memPtr, uint32 size)
 {
+#if defined(CEMU_UWP)
+	if (!memPtr || size == 0)
+		return;
+	const uintptr_t rangeBegin = reinterpret_cast<uintptr_t>(memPtr);
+	const uintptr_t rangeEnd = size <= std::numeric_limits<uintptr_t>::max() - rangeBegin ?
+		rangeBegin + size : std::numeric_limits<uintptr_t>::max();
+	for (auto& entry : LatteIndexCache.entry)
+	{
+		if (!entry.valid || !entry.lastPtr || entry.lastIndexType == LatteIndexType::AUTO)
+			continue;
+		const size_t indexSize =
+			(entry.lastIndexType == LatteIndexType::U16_BE || entry.lastIndexType == LatteIndexType::U16_LE) ?
+			sizeof(uint16) : sizeof(uint32);
+		const uintptr_t entryBegin = reinterpret_cast<uintptr_t>(entry.lastPtr);
+		const uint64 entryBytes = static_cast<uint64>(entry.lastCount) * indexSize;
+		const uintptr_t entryEnd = entryBytes <= std::numeric_limits<uintptr_t>::max() - entryBegin ?
+			entryBegin + static_cast<uintptr_t>(entryBytes) : std::numeric_limits<uintptr_t>::max();
+		if (rangeBegin < entryEnd && entryBegin < rangeEnd)
+		{
+			g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
+			entry.valid = false;
+			entry.lastPtr = nullptr;
+			entry.lastCount = 0;
+		}
+	}
+#else
 	for(auto& entry : LatteIndexCache.entry)
 	{
 		if (entry.lastPtr >= memPtr && (entry.lastPtr < ((uint8*)memPtr + size)) )
@@ -42,14 +79,21 @@ void LatteIndices_invalidate(const void* memPtr, uint32 size)
 			entry.lastCount = 0;
 		}
 	}
+#endif
 }
 
 void LatteIndices_invalidateAll()
 {
 	for(auto& entry : LatteIndexCache.entry)
 	{
+#if defined(CEMU_UWP)
+		if (entry.valid)
+			g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
+		entry.valid = false;
+#else
 		if (entry.lastPtr != nullptr)
 			g_renderer->indexData_releaseIndexMemory(entry.indexAllocation);
+#endif
 		entry.lastPtr = nullptr;
 		entry.lastCount = 0;
 	}
@@ -60,82 +104,58 @@ uint64 LatteIndices_GetNextUsageIndex()
 	return LatteIndexCache.currentUsageCounter++;
 }
 
-uint32 LatteIndices_calculateIndexOutputSize(LattePrimitiveMode primitiveMode, LatteIndexType indexType, uint32 count)
+uint32 LatteIndices_calculateIndexOutputSize(LattePrimitiveMode primitiveMode, LatteIndexType indexType, uint32 count, bool segmentedLineLoop, bool forceU32Output)
 {
+	uint64 outputElementCount = count;
 	if (primitiveMode == LattePrimitiveMode::QUADS)
 	{
-		sint32 numQuads = count / 4;
-		if (indexType == LatteIndexType::AUTO)
-		{
-			if(count <= 0xFFFF)
-				return numQuads * 6 * sizeof(uint16);
-			return numQuads * 6 * sizeof(uint32);
-		}
-		if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
-			return numQuads * 6 * sizeof(uint16);
-		if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
-			return numQuads * 6 * sizeof(uint32);
-		cemu_assert_suspicious();
-		return 0;
+		outputElementCount = std::max<uint64>((uint64)(count / 4) * 6, 1);
 	}
 	else if (primitiveMode == LattePrimitiveMode::QUAD_STRIP)
 	{
-		if (count <= 3)
-		{
-			return 0;
-		}
-		sint32 numQuads = (count-2) / 2;
-		if (indexType == LatteIndexType::AUTO)
-		{
-			if (count <= 0xFFFF)
-				return numQuads * 6 * sizeof(uint16);
-			return numQuads * 6 * sizeof(uint32);
-		}
-		if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
-			return numQuads * 6 * sizeof(uint16);
-		if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
-			return numQuads * 6 * sizeof(uint32);
-		cemu_assert_suspicious();
-		return 0;
+		const uint64 numQuads = count >= 4 ? (count - 2) / 2 : 0;
+		outputElementCount = std::max<uint64>(numQuads * 6, 1);
 	}
 	else if (primitiveMode == LattePrimitiveMode::LINE_LOOP)
 	{
-		count++; // one extra vertex to reconnect the LINE_STRIP to the beginning
-		if (indexType == LatteIndexType::AUTO)
-		{
-			if (count <= 0xFFFF)
-				return count * sizeof(uint16);
-			return count * sizeof(uint32);
-		}
-		if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
-			return count * sizeof(uint16);
-		if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
-			return count * sizeof(uint32);
-		cemu_assert_suspicious();
-		return 0;
+		// every restart segment re-appends its first index, so count * 2 + 1 bounds it
+		outputElementCount = segmentedLineLoop ? (uint64)count * 2 + 1 : (uint64)count + 1;
+		outputElementCount = std::max<uint64>(outputElementCount, 1);
 	}
-	else if (primitiveMode == LattePrimitiveMode::TRIANGLE_FAN && g_renderer->GetType() == RendererAPI::Metal)
+	else if (primitiveMode == LattePrimitiveMode::TRIANGLE_FAN && (g_renderer->GetType() == RendererAPI::Metal || g_renderer->GetType() == RendererAPI::Direct3D12))
 	{
-		if (indexType == LatteIndexType::AUTO)
-		{
-			if (count <= 0xFFFF)
-				return count * sizeof(uint16);
-			return count * sizeof(uint32);
-		}
-		if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
-			return count * sizeof(uint16);
-		if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
-			return count * sizeof(uint32);
+#if defined(CEMU_UWP)
+		// N fan vertices yield at most N-2 triangles; 3*N covers restart markers too
+		outputElementCount = std::max<uint64>((uint64)count * 3, 1);
+#else
+		outputElementCount = std::max<uint64>(count, 1);
+#endif
+	}
+	else if (indexType == LatteIndexType::AUTO)
+		return 0;
+
+	uint32 elementSize;
+	if (forceU32Output)
+		elementSize = sizeof(uint32);
+	else if (indexType == LatteIndexType::AUTO)
+		elementSize = count <= 0xFFFF ? sizeof(uint16) : sizeof(uint32);
+	else if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
+		elementSize = sizeof(uint16);
+	else if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
+		elementSize = sizeof(uint32);
+	else
+	{
 		cemu_assert_suspicious();
 		return 0;
 	}
-	else if(indexType == LatteIndexType::AUTO)
+
+	const uint64 outputSize = outputElementCount * elementSize;
+	if (outputSize > std::numeric_limits<uint32>::max())
+	{
+		cemu_assert_suspicious();
 		return 0;
-	else if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
-		return count * sizeof(uint16);
-	else if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
-		return count * sizeof(uint32);
-	return 0;
+	}
+	return (uint32)outputSize;
 }
 
 template<typename T>
@@ -168,31 +188,93 @@ void LatteIndices_convertLE(const void* indexDataInput, void* indexDataOutput, u
 	}
 }
 
-template<typename T>
-void LatteIndices_unpackQuadsAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, uint32& indexMax)
+template<typename T, bool isBigEndian>
+T LatteIndices_readIndex(const void* indexDataInput, uint32 index)
 {
-	sint32 numQuads = count / 4;
-	const betype<T>* src = (betype<T>*)indexDataInput;
-	T* dst = (T*)indexDataOutput;
-	for (sint32 i = 0; i < numQuads; i++)
+	if constexpr (isBigEndian)
+		return static_cast<const betype<T>*>(indexDataInput)[index];
+	else
+		return static_cast<const T*>(indexDataInput)[index];
+}
+
+template<typename T, bool isBigEndian, typename SegmentCallback>
+void LatteIndices_forEachSegment(const void* indexDataInput, uint32 count, bool primitiveRestartEnabled, T primitiveRestartIndex, SegmentCallback&& callback)
+{
+	uint32 segmentStart = 0;
+	for (uint32 i = 0; i < count; ++i)
 	{
-		T idx0 = src[0];
-		T idx1 = src[1];
-		T idx2 = src[2];
-		T idx3 = src[3];
-		indexMax = std::max(indexMax, (uint32)idx0);
-		indexMax = std::max(indexMax, (uint32)idx1);
-		indexMax = std::max(indexMax, (uint32)idx2);
-		indexMax = std::max(indexMax, (uint32)idx3);
-		dst[0] = idx0;
-		dst[1] = idx1;
-		dst[2] = idx2;
-		dst[3] = idx0;
-		dst[4] = idx2;
-		dst[5] = idx3;
-		src += 4;
-		dst += 6;
+		if (!primitiveRestartEnabled || LatteIndices_readIndex<T, isBigEndian>(indexDataInput, i) != primitiveRestartIndex)
+			continue;
+		if (i != segmentStart)
+			callback(segmentStart, i - segmentStart);
+		segmentStart = i + 1;
 	}
+	if (segmentStart != count)
+		callback(segmentStart, count - segmentStart);
+}
+
+bool LatteIndices_isD3D12NativeStripMode(LattePrimitiveMode primitiveMode)
+{
+	return primitiveMode == LattePrimitiveMode::LINE_STRIP ||
+		primitiveMode == LattePrimitiveMode::LINE_STRIP_ADJACENT ||
+		primitiveMode == LattePrimitiveMode::TRIANGLE_STRIP ||
+		primitiveMode == LattePrimitiveMode::TRIANGLE_STRIP_ADJACENT;
+}
+
+bool LatteIndices_isD3D12FixedRestartMode(LattePrimitiveMode primitiveMode)
+{
+	return LatteIndices_isD3D12NativeStripMode(primitiveMode) ||
+		primitiveMode == LattePrimitiveMode::LINE_LOOP ||
+		primitiveMode == LattePrimitiveMode::TRIANGLE_FAN;
+}
+
+template<typename T, bool isBigEndian, typename OutputT = T>
+void LatteIndices_convertAndRemapRestart(const void* indexDataInput, void* indexDataOutput, uint32 count, T primitiveRestartIndex, uint32& indexMax)
+{
+	OutputT* dst = static_cast<OutputT*>(indexDataOutput);
+	const OutputT hostRestartIndex = std::numeric_limits<OutputT>::max();
+	for (uint32 i = 0; i < count; ++i)
+	{
+		const T idx = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, i);
+		if (idx == primitiveRestartIndex)
+		{
+			dst[i] = hostRestartIndex;
+			continue;
+		}
+		dst[i] = (OutputT)idx;
+		indexMax = std::max(indexMax, (uint32)idx);
+	}
+}
+
+template<typename T, bool isBigEndian>
+uint32 LatteIndices_unpackQuadsAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, bool primitiveRestartEnabled, T primitiveRestartIndex, uint32& indexMax)
+{
+	T* dst = (T*)indexDataOutput;
+	uint32 outputCount = 0;
+	LatteIndices_forEachSegment<T, isBigEndian>(indexDataInput, count, primitiveRestartEnabled, primitiveRestartIndex, [&](uint32 segmentStart, uint32 segmentCount)
+	{
+		const uint32 numQuads = segmentCount / 4;
+		for (uint32 i = 0; i < numQuads; ++i)
+		{
+			const uint32 srcIndex = segmentStart + i * 4;
+			const T idx0 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 0);
+			const T idx1 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 1);
+			const T idx2 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 2);
+			const T idx3 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 3);
+			indexMax = std::max(indexMax, (uint32)idx0);
+			indexMax = std::max(indexMax, (uint32)idx1);
+			indexMax = std::max(indexMax, (uint32)idx2);
+			indexMax = std::max(indexMax, (uint32)idx3);
+			dst[outputCount + 0] = idx0;
+			dst[outputCount + 1] = idx1;
+			dst[outputCount + 2] = idx2;
+			dst[outputCount + 3] = idx0;
+			dst[outputCount + 4] = idx2;
+			dst[outputCount + 5] = idx3;
+			outputCount += 6;
+		}
+	});
+	return outputCount;
 }
 
 template<typename T>
@@ -219,52 +301,60 @@ void LatteIndices_generateAutoQuadIndices(const void* indexDataInput, void* inde
 	indexMax = std::max(count, 1u) - 1;
 }
 
-template<typename T>
-void LatteIndices_unpackQuadStripAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, uint32& indexMax)
+template<typename T, bool isBigEndian>
+uint32 LatteIndices_unpackQuadStripAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, bool primitiveRestartEnabled, T primitiveRestartIndex, uint32& indexMax)
 {
-	if (count <= 3)
-		return;
-	sint32 numQuads = (count - 2) / 2;
-	const betype<T>* src = (betype<T>*)indexDataInput;
 	T* dst = (T*)indexDataOutput;
-	for (sint32 i = 0; i < numQuads; i++)
+	uint32 outputCount = 0;
+	LatteIndices_forEachSegment<T, isBigEndian>(indexDataInput, count, primitiveRestartEnabled, primitiveRestartIndex, [&](uint32 segmentStart, uint32 segmentCount)
 	{
-		T idx0 = src[0];
-		T idx1 = src[1];
-		T idx2 = src[2];
-		T idx3 = src[3];
-		indexMax = std::max(indexMax, (uint32)idx0);
-		indexMax = std::max(indexMax, (uint32)idx1);
-		indexMax = std::max(indexMax, (uint32)idx2);
-		indexMax = std::max(indexMax, (uint32)idx3);
-		dst[0] = idx0;
-		dst[1] = idx1;
-		dst[2] = idx2;
-		dst[3] = idx2;
-		dst[4] = idx1;
-		dst[5] = idx3;
-		src += 2;
-		dst += 6;
-	}
+		if (segmentCount < 4)
+			return;
+		const uint32 numQuads = (segmentCount - 2) / 2;
+		for (uint32 i = 0; i < numQuads; ++i)
+		{
+			const uint32 srcIndex = segmentStart + i * 2;
+			const T idx0 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 0);
+			const T idx1 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 1);
+			const T idx2 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 2);
+			const T idx3 = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, srcIndex + 3);
+			indexMax = std::max(indexMax, (uint32)idx0);
+			indexMax = std::max(indexMax, (uint32)idx1);
+			indexMax = std::max(indexMax, (uint32)idx2);
+			indexMax = std::max(indexMax, (uint32)idx3);
+			dst[outputCount + 0] = idx0;
+			dst[outputCount + 1] = idx1;
+			dst[outputCount + 2] = idx2;
+			dst[outputCount + 3] = idx2;
+			dst[outputCount + 4] = idx1;
+			dst[outputCount + 5] = idx3;
+			outputCount += 6;
+		}
+	});
+	return outputCount;
 }
 
-template<typename T>
-void LatteIndices_unpackLineLoopAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, uint32& indexMax)
+template<typename T, bool isBigEndian, typename OutputT = T>
+uint32 LatteIndices_unpackLineLoopAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, bool primitiveRestartEnabled, T primitiveRestartIndex, uint32& indexMax)
 {
-	if (count <= 0)
-		return;
-	const betype<T>* src = (betype<T>*)indexDataInput;
-	T firstIndex = *src;
-	T* dst = (T*)indexDataOutput;
-	for (sint32 i = 0; i < (sint32)count; i++)
+	OutputT* dst = static_cast<OutputT*>(indexDataOutput);
+	uint32 outputCount = 0;
+	bool wroteSegment = false;
+	LatteIndices_forEachSegment<T, isBigEndian>(indexDataInput, count, primitiveRestartEnabled, primitiveRestartIndex, [&](uint32 segmentStart, uint32 segmentCount)
 	{
-		T idx = *src;
-		indexMax = std::max(indexMax, (uint32)idx);
-		*dst = idx;
-		src++;
-		dst++;
-	}
-	*dst = firstIndex;
+		if (wroteSegment)
+			dst[outputCount++] = std::numeric_limits<OutputT>::max();
+		const T firstIndex = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, segmentStart);
+		for (uint32 i = 0; i < segmentCount; ++i)
+		{
+			const T idx = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, segmentStart + i);
+			indexMax = std::max(indexMax, (uint32)idx);
+			dst[outputCount++] = (OutputT)idx;
+		}
+		dst[outputCount++] = (OutputT)firstIndex;
+		wroteSegment = true;
+	});
+	return outputCount;
 }
 
 template<typename T>
@@ -308,23 +398,26 @@ void LatteIndices_generateAutoLineLoopIndices(void* indexDataOutput, uint32 coun
 	indexMax = std::max(count, 1u) - 1;
 }
 
-template<typename T>
-void LatteIndices_unpackTriangleFanAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, uint32& indexMax)
+template<typename T, bool isBigEndian, typename OutputT = T>
+uint32 LatteIndices_unpackTriangleFanAndConvert(const void* indexDataInput, void* indexDataOutput, uint32 count, bool primitiveRestartEnabled, T primitiveRestartIndex, uint32& indexMax)
 {
-	const betype<T>* src = (betype<T>*)indexDataInput;
-	T* dst = (T*)indexDataOutput;
-	// TODO: check this
-	for (sint32 i = 0; i < count; i++)
+	OutputT* dst = static_cast<OutputT*>(indexDataOutput);
+	uint32 outputCount = 0;
+	bool wroteSegment = false;
+	LatteIndices_forEachSegment<T, isBigEndian>(indexDataInput, count, primitiveRestartEnabled, primitiveRestartIndex, [&](uint32 segmentStart, uint32 segmentCount)
 	{
-	    uint32 i0;
-		if (i % 2 == 0)
-		    i0 = i / 2;
-        else
-            i0 = count - 1 - i / 2;
-        T idx = src[i0];
-		indexMax = std::max(indexMax, (uint32)idx);
-		dst[i] = idx;
-	}
+		if (wroteSegment)
+			dst[outputCount++] = std::numeric_limits<OutputT>::max();
+		for (uint32 i = 0; i < segmentCount; ++i)
+		{
+			const uint32 sourceOffset = (i % 2) == 0 ? i / 2 : segmentCount - 1 - i / 2;
+			const T idx = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, segmentStart + sourceOffset);
+			indexMax = std::max(indexMax, (uint32)idx);
+			dst[outputCount++] = (OutputT)idx;
+		}
+		wroteSegment = true;
+	});
+	return outputCount;
 }
 
 template<typename T>
@@ -343,6 +436,47 @@ void LatteIndices_generateAutoTriangleFanIndices(const void* indexDataInput, voi
 	}
 	indexMax = std::max(count, 1u) - 1;
 }
+
+#if defined(CEMU_UWP)
+template<typename T, bool isBigEndian, typename OutputT = T>
+uint32 LatteIndices_unpackTriangleFanToList(const void* indexDataInput, void* indexDataOutput, uint32 count, bool primitiveRestartEnabled, T primitiveRestartIndex, uint32& indexMax)
+{
+	OutputT* dst = static_cast<OutputT*>(indexDataOutput);
+	uint32 outputCount = 0;
+	LatteIndices_forEachSegment<T, isBigEndian>(indexDataInput, count, primitiveRestartEnabled, primitiveRestartIndex, [&](uint32 segmentStart, uint32 segmentCount)
+	{
+		if (segmentCount < 3)
+			return;
+		const T centre = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, segmentStart);
+		indexMax = std::max(indexMax, (uint32)centre);
+		for (uint32 i = 1; i + 1 < segmentCount; ++i)
+		{
+			const T second = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, segmentStart + i);
+			const T third = LatteIndices_readIndex<T, isBigEndian>(indexDataInput, segmentStart + i + 1);
+			indexMax = std::max(indexMax, std::max((uint32)second, (uint32)third));
+			dst[outputCount++] = (OutputT)centre;
+			dst[outputCount++] = (OutputT)second;
+			dst[outputCount++] = (OutputT)third;
+		}
+	});
+	return outputCount;
+}
+
+template<typename T>
+uint32 LatteIndices_generateAutoTriangleFanList(void* indexDataOutput, uint32 count, uint32& indexMax)
+{
+	T* dst = static_cast<T*>(indexDataOutput);
+	uint32 outputCount = 0;
+	for (uint32 i = 1; i + 1 < count; ++i)
+	{
+		dst[outputCount++] = 0;
+		dst[outputCount++] = (T)i;
+		dst[outputCount++] = (T)(i + 1);
+	}
+	indexMax = count == 0 ? 0 : count - 1;
+	return outputCount;
+}
+#endif
 
 #if defined(ARCH_X86_64)
 ATTRIBUTE_AVX2
@@ -598,50 +732,38 @@ void LatteIndices_fastConvertU32_NEON(const void* indexDataInput, void* indexDat
 
 #endif
 
-template<typename T>
-void _LatteIndices_alternativeCalculateIndexMax(const void* indexData, uint32 count, uint32 primitiveRestartIndex, uint32& indexMax)
+template<typename T, bool isBigEndian>
+void _LatteIndices_alternativeCalculateIndexMax(const void* indexData, uint32 count, T primitiveRestartIndex, uint32& indexMax)
 {
-	cemu_assert_debug(count != 0);
-	const betype<T>* idxPtrT = (betype<T>*)indexData;
-	T _indexMax = *idxPtrT;
-	cemu_assert_debug(primitiveRestartIndex <= std::numeric_limits<T>::max());
-	T restartIndexT = (T)primitiveRestartIndex;
-	while (count)
+	uint32 calculatedMax = 0;
+	for (uint32 i = 0; i < count; ++i)
 	{
-		T idx = *idxPtrT;
-		if (idx != restartIndexT)
-		{
-			_indexMax = std::max(_indexMax, idx);
-		}
-		idxPtrT++;
-		count--;
+		const T idx = LatteIndices_readIndex<T, isBigEndian>(indexData, i);
+		if (idx != primitiveRestartIndex)
+			calculatedMax = std::max(calculatedMax, (uint32)idx);
 	}
-	indexMax = _indexMax;
+	indexMax = calculatedMax;
 }
 
 // calculate min and max index while taking primitive restart into account
 // fallback implementation in case the fast path gives us invalid results
-void LatteIndices_alternativeCalculateIndexMax(const void* indexData, LatteIndexType indexType, uint32 count, uint32& indexMax)
+void LatteIndices_alternativeCalculateIndexMax(const void* indexData, LatteIndexType indexType, uint32 count, uint32 primitiveRestartIndex, uint32& indexMax)
 {
 	if (count == 0)
 	{
 		indexMax = 0;
 		return;
 	}
-	uint32 primitiveRestartIndex = LatteGPUState.contextNew.VGT_MULTI_PRIM_IB_RESET_INDX.get_RESTART_INDEX();
-
-	if (indexType == LatteIndexType::U16_BE)
-	{
-		_LatteIndices_alternativeCalculateIndexMax<uint16>(indexData, count, primitiveRestartIndex, indexMax);
-	}
+	if (indexType == LatteIndexType::U16_BE && primitiveRestartIndex <= std::numeric_limits<uint16>::max())
+		_LatteIndices_alternativeCalculateIndexMax<uint16, true>(indexData, count, (uint16)primitiveRestartIndex, indexMax);
+	else if (indexType == LatteIndexType::U16_LE && primitiveRestartIndex <= std::numeric_limits<uint16>::max())
+		_LatteIndices_alternativeCalculateIndexMax<uint16, false>(indexData, count, (uint16)primitiveRestartIndex, indexMax);
 	else if (indexType == LatteIndexType::U32_BE)
-	{
-		_LatteIndices_alternativeCalculateIndexMax<uint32>(indexData, count, primitiveRestartIndex, indexMax);
-	}
+		_LatteIndices_alternativeCalculateIndexMax<uint32, true>(indexData, count, primitiveRestartIndex, indexMax);
+	else if (indexType == LatteIndexType::U32_LE)
+		_LatteIndices_alternativeCalculateIndexMax<uint32, false>(indexData, count, primitiveRestartIndex, indexMax);
 	else
-	{
-		cemu_assert_debug(false);
-	}
+		cemu_assert_suspicious();
 }
 
 void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32 count, LattePrimitiveMode primitiveMode, uint32& indexMax, Renderer::INDEX_TYPE& renderIndexType, uint32& outputCount, Renderer::IndexAllocation& indexAllocation)
@@ -653,10 +775,49 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	// [x] decode data directly into coherent memory buffer?
 	// [ ] better cache implementation, allow to cache across frames
 
+	const RendererAPI rendererType = g_renderer->GetType();
+	const uint32 primitiveRestartIndex = LatteGPUState.contextNew.VGT_MULTI_PRIM_IB_RESET_INDX.get_RESTART_INDEX();
+#if defined(CEMU_UWP)
+	const bool isD3D12Renderer = rendererType == RendererAPI::Direct3D12;
+	const unsigned indexBits = (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE) ? 16 :
+		(indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE) ? 32 : 0;
+	const bool primitiveRestartEnabled = LattePrimitiveRestartPolicy::IsEnabled(
+		isD3D12Renderer, LattePrimitiveRestartPolicy::IsNativeStrip(primitiveMode),
+		LatteGPUState.contextNew.VGT_MULTI_PRIM_IB_RESET_EN.get_RESET_EN(), indexBits, primitiveRestartIndex);
+#else
+	const bool isD3D12Renderer = false;
+	const bool primitiveRestartEnabled = LatteGPUState.contextNew.VGT_MULTI_PRIM_IB_RESET_EN.get_RESET_EN();
+#endif
+	const bool primitiveRestart16Enabled = primitiveRestartEnabled && primitiveRestartIndex <= std::numeric_limits<uint16>::max();
+	const uint16 primitiveRestartIndex16 = (uint16)primitiveRestartIndex;
+	const bool d3d12PrimitiveRestartEnabled = isD3D12Renderer && primitiveRestartEnabled;
+	const bool d3d12PrimitiveRestart16Enabled = d3d12PrimitiveRestartEnabled && primitiveRestart16Enabled;
+	// D3D12 only cuts 0xffff/0xffffffff; promoting to U32 keeps a real 0xffff index
+	const bool promoteD3D12RestartToU32 = isD3D12Renderer &&
+		(indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE) &&
+		primitiveRestart16Enabled && primitiveRestartIndex16 != std::numeric_limits<uint16>::max() &&
+		LatteIndices_isD3D12FixedRestartMode(primitiveMode);
+	const bool segmentedLineLoop = d3d12PrimitiveRestartEnabled;
+
 	// reuse from cache if data didn't change
-	auto cacheEntry = std::find_if(LatteIndexCache.entry.begin(), LatteIndexCache.entry.end(), [indexData, count, primitiveMode, indexType](const auto& entry)
+	auto cacheEntry = std::find_if(LatteIndexCache.entry.begin(), LatteIndexCache.entry.end(), [=](const auto& entry)
 	{
-		return entry.lastPtr == indexData && entry.lastCount == count && entry.lastPrimitiveMode == primitiveMode && entry.lastIndexType == indexType;
+		const bool baseKeyMatches =
+#if defined(CEMU_UWP)
+			entry.valid &&
+#endif
+			entry.lastPtr == indexData &&
+			entry.lastCount == count &&
+			entry.lastPrimitiveMode == primitiveMode &&
+			entry.lastIndexType == indexType;
+#if defined(CEMU_UWP)
+		return baseKeyMatches &&
+			entry.lastRendererType == rendererType &&
+			entry.lastPrimitiveRestartEnabled == primitiveRestartEnabled &&
+			entry.lastPrimitiveRestartIndex == primitiveRestartIndex;
+#else
+		return baseKeyMatches;
+#endif
 	});
 	if (cacheEntry != LatteIndexCache.entry.end())
 	{
@@ -672,16 +833,14 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	if (indexType == LatteIndexType::AUTO)
 		renderIndexType = Renderer::INDEX_TYPE::NONE;
 	else if (indexType == LatteIndexType::U16_BE || indexType == LatteIndexType::U16_LE)
-		renderIndexType = Renderer::INDEX_TYPE::U16;
-	else if (indexType == LatteIndexType::U32_BE)
+		renderIndexType = promoteD3D12RestartToU32 ? Renderer::INDEX_TYPE::U32 : Renderer::INDEX_TYPE::U16;
+	else if (indexType == LatteIndexType::U32_BE || indexType == LatteIndexType::U32_LE)
 		renderIndexType = Renderer::INDEX_TYPE::U32;
 	else
 		cemu_assert_debug(false);
 
-	uint32 primitiveRestartIndex = LatteGPUState.contextNew.VGT_MULTI_PRIM_IB_RESET_INDX.get_RESTART_INDEX();
-
 	// calculate index output size
-	uint32 indexOutputSize = LatteIndices_calculateIndexOutputSize(primitiveMode, indexType, count);
+	uint32 indexOutputSize = LatteIndices_calculateIndexOutputSize(primitiveMode, indexType, count, segmentedLineLoop, promoteD3D12RestartToU32);
 	if (indexOutputSize == 0)
 	{
 		outputCount = count;
@@ -693,9 +852,20 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	// query index buffer from renderer
 	indexAllocation = g_renderer->indexData_reserveIndexMemory(indexOutputSize);
 	void* indexOutputPtr = indexAllocation.mem;
+#if defined(CEMU_UWP)
+	if (!indexOutputPtr || !indexAllocation.rendererInternal)
+	{
+		outputCount = 0;
+		indexMax = 0;
+		renderIndexType = Renderer::INDEX_TYPE::NONE;
+		indexAllocation = {};
+		return;
+	}
+#endif
 
 	// decode indices
 	indexMax = std::numeric_limits<uint32>::min();
+	bool indexMaxIsAccurate = false;
 	if (primitiveMode == LattePrimitiveMode::QUADS)
 	{
 		// unpack quads into triangles
@@ -711,14 +881,19 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 				LatteIndices_generateAutoQuadIndices<uint32>(indexData, indexOutputPtr, count, indexMax);
 				renderIndexType = Renderer::INDEX_TYPE::U32;
 			}
+			outputCount = count / 4 * 6;
 		}
 		else if (indexType == LatteIndexType::U16_BE)
-			LatteIndices_unpackQuadsAndConvert<uint16>(indexData, indexOutputPtr, count, indexMax);
+			outputCount = LatteIndices_unpackQuadsAndConvert<uint16, true>(indexData, indexOutputPtr, count, d3d12PrimitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
+		else if (indexType == LatteIndexType::U16_LE)
+			outputCount = LatteIndices_unpackQuadsAndConvert<uint16, false>(indexData, indexOutputPtr, count, d3d12PrimitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
 		else if (indexType == LatteIndexType::U32_BE)
-			LatteIndices_unpackQuadsAndConvert<uint32>(indexData, indexOutputPtr, count, indexMax);
+			outputCount = LatteIndices_unpackQuadsAndConvert<uint32, true>(indexData, indexOutputPtr, count, d3d12PrimitiveRestartEnabled, primitiveRestartIndex, indexMax);
+		else if (indexType == LatteIndexType::U32_LE)
+			outputCount = LatteIndices_unpackQuadsAndConvert<uint32, false>(indexData, indexOutputPtr, count, d3d12PrimitiveRestartEnabled, primitiveRestartIndex, indexMax);
 		else
 			cemu_assert_debug(false);
-		outputCount = count / 4 * 6;
+		indexMaxIsAccurate = true;
 	}
 	else if (primitiveMode == LattePrimitiveMode::QUAD_STRIP)
 	{
@@ -735,17 +910,19 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 				LatteIndices_generateAutoQuadStripIndices<uint32>(indexOutputPtr, count, indexMax);
 				renderIndexType = Renderer::INDEX_TYPE::U32;
 			}
+			outputCount = count >= 4 ? (count - 2) / 2 * 6 : 0;
 		}
 		else if (indexType == LatteIndexType::U16_BE)
-			LatteIndices_unpackQuadStripAndConvert<uint16>(indexData, indexOutputPtr, count, indexMax);
+			outputCount = LatteIndices_unpackQuadStripAndConvert<uint16, true>(indexData, indexOutputPtr, count, d3d12PrimitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
+		else if (indexType == LatteIndexType::U16_LE)
+			outputCount = LatteIndices_unpackQuadStripAndConvert<uint16, false>(indexData, indexOutputPtr, count, d3d12PrimitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
 		else if (indexType == LatteIndexType::U32_BE)
-			LatteIndices_unpackQuadStripAndConvert<uint32>(indexData, indexOutputPtr, count, indexMax);
+			outputCount = LatteIndices_unpackQuadStripAndConvert<uint32, true>(indexData, indexOutputPtr, count, d3d12PrimitiveRestartEnabled, primitiveRestartIndex, indexMax);
+		else if (indexType == LatteIndexType::U32_LE)
+			outputCount = LatteIndices_unpackQuadStripAndConvert<uint32, false>(indexData, indexOutputPtr, count, d3d12PrimitiveRestartEnabled, primitiveRestartIndex, indexMax);
 		else
 			cemu_assert_debug(false);
-		if (count >= 2)
-			outputCount = (count - 2) / 2 * 6;
-		else
-			outputCount = 0;
+		indexMaxIsAccurate = true;
 	}
 	else if (primitiveMode == LattePrimitiveMode::LINE_LOOP)
 	{
@@ -762,87 +939,184 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 				LatteIndices_generateAutoLineLoopIndices<uint32>(indexOutputPtr, count, indexMax);
 				renderIndexType = Renderer::INDEX_TYPE::U32;
 			}
+			outputCount = count == 0 ? 0 : count + 1;
 		}
 		else if (indexType == LatteIndexType::U16_BE)
-			LatteIndices_unpackLineLoopAndConvert<uint16>(indexData, indexOutputPtr, count, indexMax);
-		else if (indexType == LatteIndexType::U32_BE)
-			LatteIndices_unpackLineLoopAndConvert<uint32>(indexData, indexOutputPtr, count, indexMax);
-		else
-			cemu_assert_debug(false);
-		outputCount = count + 1;
-	}
-	else if (primitiveMode == LattePrimitiveMode::TRIANGLE_FAN && g_renderer->GetType() == RendererAPI::Metal)
-	{
-        if (indexType == LatteIndexType::AUTO)
-    	{
-    		if (count <= 0xFFFF)
-    		{
-    			LatteIndices_generateAutoTriangleFanIndices<uint16>(indexData, indexOutputPtr, count, indexMax);
-    			renderIndexType = Renderer::INDEX_TYPE::U16;
-    		}
-    		else
-    		{
-    			LatteIndices_generateAutoTriangleFanIndices<uint32>(indexData, indexOutputPtr, count, indexMax);
-    			renderIndexType = Renderer::INDEX_TYPE::U32;
-    		}
-    	}
-    	else if (indexType == LatteIndexType::U16_BE)
-    		LatteIndices_unpackTriangleFanAndConvert<uint16>(indexData, indexOutputPtr, count, indexMax);
-    	else if (indexType == LatteIndexType::U32_BE)
-    		LatteIndices_unpackTriangleFanAndConvert<uint32>(indexData, indexOutputPtr, count, indexMax);
-    	else
-    		cemu_assert_debug(false);
-    	outputCount = count;
-	}
-	else
-	{
-		if (indexType == LatteIndexType::U16_BE)
 		{
-#if defined(ARCH_X86_64)
-			if (g_CPUFeatures.x86.avx2)
-				LatteIndices_fastConvertU16_AVX2(indexData, indexOutputPtr, count, indexMax);
-			else if (g_CPUFeatures.x86.sse4_1 && g_CPUFeatures.x86.ssse3)
-				LatteIndices_fastConvertU16_SSE41(indexData, indexOutputPtr, count, indexMax);
+			if (promoteD3D12RestartToU32)
+				outputCount = LatteIndices_unpackLineLoopAndConvert<uint16, true, uint32>(indexData, indexOutputPtr, count, true, primitiveRestartIndex16, indexMax);
 			else
-				LatteIndices_convertBE<uint16>(indexData, indexOutputPtr, count, indexMax);
-#elif defined(__aarch64__)
-			LatteIndices_fastConvertU16_NEON(indexData, indexOutputPtr, count, indexMax);
-#else
-			LatteIndices_convertBE<uint16>(indexData, indexOutputPtr, count, indexMax);
-#endif
+				outputCount = LatteIndices_unpackLineLoopAndConvert<uint16, true>(indexData, indexOutputPtr, count, segmentedLineLoop && primitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
+		}
+		else if (indexType == LatteIndexType::U16_LE)
+		{
+			if (promoteD3D12RestartToU32)
+				outputCount = LatteIndices_unpackLineLoopAndConvert<uint16, false, uint32>(indexData, indexOutputPtr, count, true, primitiveRestartIndex16, indexMax);
+			else
+				outputCount = LatteIndices_unpackLineLoopAndConvert<uint16, false>(indexData, indexOutputPtr, count, segmentedLineLoop && primitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
 		}
 		else if (indexType == LatteIndexType::U32_BE)
+			outputCount = LatteIndices_unpackLineLoopAndConvert<uint32, true>(indexData, indexOutputPtr, count, segmentedLineLoop, primitiveRestartIndex, indexMax);
+		else if (indexType == LatteIndexType::U32_LE)
+			outputCount = LatteIndices_unpackLineLoopAndConvert<uint32, false>(indexData, indexOutputPtr, count, segmentedLineLoop, primitiveRestartIndex, indexMax);
+		else
+			cemu_assert_debug(false);
+		indexMaxIsAccurate = true;
+	}
+	else if (primitiveMode == LattePrimitiveMode::TRIANGLE_FAN && (rendererType == RendererAPI::Metal || rendererType == RendererAPI::Direct3D12))
+	{
+		const bool remapFanRestart = isD3D12Renderer;
+		if (indexType == LatteIndexType::AUTO)
 		{
-#if defined(ARCH_X86_64)
-			if (g_CPUFeatures.x86.avx2)
-				LatteIndices_fastConvertU32_AVX2(indexData, indexOutputPtr, count, indexMax);
-			else
-				LatteIndices_convertBE<uint32>(indexData, indexOutputPtr, count, indexMax);
-#elif defined(__aarch64__)
-			LatteIndices_fastConvertU32_NEON(indexData, indexOutputPtr, count, indexMax);
+			if (count <= 0xFFFF)
+			{
+#if defined(CEMU_UWP)
+				outputCount = LatteIndices_generateAutoTriangleFanList<uint16>(indexOutputPtr, count, indexMax);
 #else
-			LatteIndices_convertBE<uint32>(indexData, indexOutputPtr, count, indexMax);
+				LatteIndices_generateAutoTriangleFanIndices<uint16>(indexData, indexOutputPtr, count, indexMax);
+#endif
+				renderIndexType = Renderer::INDEX_TYPE::U16;
+			}
+			else
+			{
+#if defined(CEMU_UWP)
+				outputCount = LatteIndices_generateAutoTriangleFanList<uint32>(indexOutputPtr, count, indexMax);
+#else
+				LatteIndices_generateAutoTriangleFanIndices<uint32>(indexData, indexOutputPtr, count, indexMax);
+#endif
+				renderIndexType = Renderer::INDEX_TYPE::U32;
+			}
+#if !defined(CEMU_UWP)
+			outputCount = count;
+#endif
+		}
+		else if (indexType == LatteIndexType::U16_BE)
+		{
+			if (promoteD3D12RestartToU32)
+#if defined(CEMU_UWP)
+				outputCount = LatteIndices_unpackTriangleFanToList<uint16, true, uint32>(indexData, indexOutputPtr, count, true, primitiveRestartIndex16, indexMax);
+			else
+				outputCount = LatteIndices_unpackTriangleFanToList<uint16, true>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
+#else
+				outputCount = LatteIndices_unpackTriangleFanAndConvert<uint16, true, uint32>(indexData, indexOutputPtr, count, true, primitiveRestartIndex16, indexMax);
+			else
+				outputCount = LatteIndices_unpackTriangleFanAndConvert<uint16, true>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
 #endif
 		}
 		else if (indexType == LatteIndexType::U16_LE)
 		{
-			LatteIndices_convertLE<uint16>(indexData, indexOutputPtr, count, indexMax);
+			if (promoteD3D12RestartToU32)
+#if defined(CEMU_UWP)
+				outputCount = LatteIndices_unpackTriangleFanToList<uint16, false, uint32>(indexData, indexOutputPtr, count, true, primitiveRestartIndex16, indexMax);
+			else
+				outputCount = LatteIndices_unpackTriangleFanToList<uint16, false>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
+#else
+				outputCount = LatteIndices_unpackTriangleFanAndConvert<uint16, false, uint32>(indexData, indexOutputPtr, count, true, primitiveRestartIndex16, indexMax);
+			else
+				outputCount = LatteIndices_unpackTriangleFanAndConvert<uint16, false>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestart16Enabled, primitiveRestartIndex16, indexMax);
+#endif
+		}
+		else if (indexType == LatteIndexType::U32_BE)
+#if defined(CEMU_UWP)
+			outputCount = LatteIndices_unpackTriangleFanToList<uint32, true>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestartEnabled, primitiveRestartIndex, indexMax);
+#else
+			outputCount = LatteIndices_unpackTriangleFanAndConvert<uint32, true>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestartEnabled, primitiveRestartIndex, indexMax);
+#endif
+		else if (indexType == LatteIndexType::U32_LE)
+#if defined(CEMU_UWP)
+			outputCount = LatteIndices_unpackTriangleFanToList<uint32, false>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestartEnabled, primitiveRestartIndex, indexMax);
+#else
+			outputCount = LatteIndices_unpackTriangleFanAndConvert<uint32, false>(indexData, indexOutputPtr, count, remapFanRestart && primitiveRestartEnabled, primitiveRestartIndex, indexMax);
+#endif
+		else
+			cemu_assert_debug(false);
+		indexMaxIsAccurate = true;
+	}
+	else
+	{
+		const bool remapD3D12Restart = isD3D12Renderer &&
+			primitiveRestartEnabled && LatteIndices_isD3D12NativeStripMode(primitiveMode);
+		if (indexType == LatteIndexType::U16_BE)
+		{
+			if (remapD3D12Restart && primitiveRestart16Enabled)
+			{
+				if (promoteD3D12RestartToU32)
+					LatteIndices_convertAndRemapRestart<uint16, true, uint32>(indexData, indexOutputPtr, count, primitiveRestartIndex16, indexMax);
+				else
+					LatteIndices_convertAndRemapRestart<uint16, true>(indexData, indexOutputPtr, count, primitiveRestartIndex16, indexMax);
+				indexMaxIsAccurate = true;
+			}
+			else
+			{
+#if defined(ARCH_X86_64)
+				if (g_CPUFeatures.x86.avx2)
+					LatteIndices_fastConvertU16_AVX2(indexData, indexOutputPtr, count, indexMax);
+				else if (g_CPUFeatures.x86.sse4_1 && g_CPUFeatures.x86.ssse3)
+					LatteIndices_fastConvertU16_SSE41(indexData, indexOutputPtr, count, indexMax);
+				else
+					LatteIndices_convertBE<uint16>(indexData, indexOutputPtr, count, indexMax);
+#elif defined(__aarch64__)
+				LatteIndices_fastConvertU16_NEON(indexData, indexOutputPtr, count, indexMax);
+#else
+				LatteIndices_convertBE<uint16>(indexData, indexOutputPtr, count, indexMax);
+#endif
+			}
+		}
+		else if (indexType == LatteIndexType::U32_BE)
+		{
+			if (remapD3D12Restart)
+			{
+				LatteIndices_convertAndRemapRestart<uint32, true>(indexData, indexOutputPtr, count, primitiveRestartIndex, indexMax);
+				indexMaxIsAccurate = true;
+			}
+			else
+			{
+#if defined(ARCH_X86_64)
+				if (g_CPUFeatures.x86.avx2)
+					LatteIndices_fastConvertU32_AVX2(indexData, indexOutputPtr, count, indexMax);
+				else
+					LatteIndices_convertBE<uint32>(indexData, indexOutputPtr, count, indexMax);
+#elif defined(__aarch64__)
+				LatteIndices_fastConvertU32_NEON(indexData, indexOutputPtr, count, indexMax);
+#else
+				LatteIndices_convertBE<uint32>(indexData, indexOutputPtr, count, indexMax);
+#endif
+			}
+		}
+		else if (indexType == LatteIndexType::U16_LE)
+		{
+			if (remapD3D12Restart && primitiveRestart16Enabled)
+			{
+				if (promoteD3D12RestartToU32)
+					LatteIndices_convertAndRemapRestart<uint16, false, uint32>(indexData, indexOutputPtr, count, primitiveRestartIndex16, indexMax);
+				else
+					LatteIndices_convertAndRemapRestart<uint16, false>(indexData, indexOutputPtr, count, primitiveRestartIndex16, indexMax);
+				indexMaxIsAccurate = true;
+			}
+			else
+				LatteIndices_convertLE<uint16>(indexData, indexOutputPtr, count, indexMax);
 		}
 		else if (indexType == LatteIndexType::U32_LE)
 		{
-			LatteIndices_convertLE<uint32>(indexData, indexOutputPtr, count, indexMax);
+			if (remapD3D12Restart)
+			{
+				LatteIndices_convertAndRemapRestart<uint32, false>(indexData, indexOutputPtr, count, primitiveRestartIndex, indexMax);
+				indexMaxIsAccurate = true;
+			}
+			else
+				LatteIndices_convertLE<uint32>(indexData, indexOutputPtr, count, indexMax);
 		}
 		else
 			cemu_assert_debug(false);
 		outputCount = count;
 	}
-	// the above algorithms use a fast approach to get indexMax which does not filter out indices matching primitiveRestartIndex
-	// here we use a fallback in case the determined index equals the primitive restart index
-	if (primitiveRestartIndex == indexMax)
+	// fast passthrough converters include the restart value in their maximum
+	if (!indexMaxIsAccurate && primitiveRestartEnabled && primitiveRestartIndex == indexMax)
 	{
-		// recalculate index range but filter out primitive restart index
-		LatteIndices_alternativeCalculateIndexMax(indexData, indexType, count, indexMax);
+		LatteIndices_alternativeCalculateIndexMax(indexData, indexType, count, primitiveRestartIndex, indexMax);
 	}
+	if (outputCount == 0)
+		indexMax = 0;
 	g_renderer->indexData_uploadIndexMemory(indexAllocation);
 	performanceMonitor.cycle[performanceMonitor.cycleIndex].indexDataUploaded += indexOutputSize;
 	// get least recently used cache entry
@@ -851,13 +1125,25 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		return a.lastUsed < b.lastUsed;
 	});
 	// invalidate previous allocation
+#if defined(CEMU_UWP)
+	if (lruEntry->valid)
+#else
 	if(lruEntry->lastPtr != nullptr)
+#endif
 		g_renderer->indexData_releaseIndexMemory(lruEntry->indexAllocation);
 	// update cache
+#if defined(CEMU_UWP)
+	lruEntry->valid = true;
+#endif
 	lruEntry->lastPtr = indexData;
 	lruEntry->lastCount = count;
 	lruEntry->lastPrimitiveMode = primitiveMode;
 	lruEntry->lastIndexType = indexType;
+#if defined(CEMU_UWP)
+	lruEntry->lastRendererType = rendererType;
+	lruEntry->lastPrimitiveRestartEnabled = primitiveRestartEnabled;
+	lruEntry->lastPrimitiveRestartIndex = primitiveRestartIndex;
+#endif
 	lruEntry->indexMax = indexMax;
 	lruEntry->renderIndexType = renderIndexType;
 	lruEntry->outputCount = outputCount;

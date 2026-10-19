@@ -2,6 +2,9 @@
 #include "util/helpers/helpers.h"
 #include "config/ActiveSettings.h"
 #include "Cafe/Account/Account.h"
+#if defined(CEMU_UWP)
+#include "uwp/UwpQuickMenuBinding.h"
+#endif
 
 void CemuConfig::SetMLCPath(fs::path path, bool save)
 {
@@ -24,6 +27,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 
 	const char* mlc = parser.get("mlc_path", "");
 	mlc_path = mlc;
+	graphic_packs_path = parser.get("graphic_packs_path", "");
 
 	permanent_storage = parser.get("permanent_storage", permanent_storage);
 
@@ -130,6 +134,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	else
 		vk_graphic_device_uuid = legacy_graphic_device_uuid;
 	mtl_graphic_device_uuid = graphic.get("mtlDevice", 0);
+	graphic.get("d3d12Device", d3d12_graphic_device_luid);
 	vsync = graphic.get("VSync", 0);
 	overrideAppGammaPreference = graphic.get("OverrideAppGammaPreference", false);
 	overrideGammaValue = graphic.get("OverrideGammaValue", 2.2f);
@@ -140,9 +145,11 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		userDisplayGamma = 2.2f;
 	gx2drawdone_sync = graphic.get("GX2DrawdoneSync", true);
 	upscale_filter = graphic.get("UpscaleFilter", kBicubicHermiteFilter);
+	fsr_sharpness = graphic.get("FsrSharpness", fsr_sharpness.GetInitValue());
 	downscale_filter = graphic.get("DownscaleFilter", kLinearFilter);
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
+	skip_resolution_rules_of_packs_with_skipped_shaders = graphic.get("SkipResolutionRulesOfPacksWithSkippedShaders", false);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
 #ifdef ENABLE_METAL
 	force_mesh_shaders = graphic.get("ForceMeshShaders", false);
@@ -283,6 +290,126 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	auto dsuc = input.get("DSUC");
 	dsu_client.host = dsuc.get_attribute("host", dsu_client.host);
 	dsu_client.port = dsuc.get_attribute("port", dsu_client.port);
+#if defined(CEMU_UWP)
+	dsu_client.enabled = dsuc.get_attribute("enabled", dsu_client.enabled);
+	dsu_client.streaming_enabled = dsuc.get_attribute("streamingEnabled", dsu_client.streaming_enabled);
+	dsu_client.streaming_url = dsuc.get_attribute("streamingUrl", dsu_client.streaming_url);
+	dsu_client.servers.clear();
+	auto dsuServers = dsuc.get("Servers");
+	for (auto element = dsuServers.get("Server"); element.valid();
+		element = dsuServers.get("Server", element))
+	{
+		UwpDsuServerEntry server;
+		server.id = element.get_attribute<std::string>("id", {});
+		server.name = element.get_attribute<std::string>("name", {});
+		server.host = element.get_attribute<std::string>("host", "127.0.0.1");
+		server.port = element.get_attribute<uint16>("port", 26760);
+		server.enabled = element.get_attribute<bool>("enabled", false);
+		server.companion_transport = false;
+		if (server.id.empty())
+			server.id = fmt::format("dsu-{}", dsu_client.servers.size() + 1);
+		if (server.name.empty())
+			server.name = fmt::format("DSU Server {}", dsu_client.servers.size() + 1);
+		dsu_client.servers.emplace_back(std::move(server));
+	}
+	if (dsu_client.servers.empty())
+	{
+		dsu_client.servers.emplace_back(UwpDsuServerEntry{
+			.id = "default",
+			.name = "DSU Server",
+			.host = dsu_client.host.GetValue(),
+			.port = dsu_client.port.GetValue(),
+			.enabled = dsu_client.enabled.GetValue(),
+			.companion_transport = true,
+		});
+	}
+	auto primary = std::ranges::find_if(dsu_client.servers,
+		[](const UwpDsuServerEntry& server) { return server.enabled; });
+	if (primary == dsu_client.servers.end())
+		primary = dsu_client.servers.begin();
+	for (auto& server : dsu_client.servers)
+		server.companion_transport = &server == &*primary;
+	if (primary != dsu_client.servers.end())
+	{
+		dsu_client.host = primary->host;
+		dsu_client.port = primary->port;
+		dsu_client.enabled = primary->enabled;
+	}
+	dsu_client.player_routes.clear();
+	auto dsuRoutes = dsuc.get("Routes");
+	for (auto element = dsuRoutes.get("Route"); element.valid();
+		element = dsuRoutes.get("Route", element))
+	{
+		UwpDsuPlayerRouteEntry route;
+		route.player = element.get_attribute<uint8>("player", 0);
+		route.server_id = element.get_attribute<std::string>("server", {});
+		route.remote_slot = element.get_attribute<uint8>("slot", 0);
+		route.merge = element.get_attribute<bool>("merge", false);
+		route.gamepad = element.get_attribute<bool>("gamepad", true);
+		route.motion = element.get_attribute<bool>("motion", true);
+		route.touch = element.get_attribute<bool>("touch", true);
+		if (route.player < 8 && route.remote_slot < 16 && !route.server_id.empty())
+			dsu_client.player_routes.emplace_back(std::move(route));
+	}
+	#endif
+
+#if defined(CEMU_UWP)
+	auto uwpDisplay = parser.get("UWP").get("Display");
+	uwp_display.ui_language = uwpDisplay.get("Language", uwp_display.ui_language);
+	uwp_display.default_layout = uwpDisplay.get("DefaultLayout", uwp_display.default_layout);
+	uwp_display.swap_screens = uwpDisplay.get("SwapScreens", uwp_display.swap_screens);
+	uwp_display.touch_cursor = uwpDisplay.get("TouchCursor", uwp_display.touch_cursor);
+	uwp_display.toggle_swap_binding = uwpDisplay.get("ToggleSwapBinding", uwp_display.toggle_swap_binding);
+	uwp_display.quick_menu_binding = uwpDisplay.get("QuickMenuBinding", uwp_display.quick_menu_binding);
+	uwp_display.quick_menu_binding = UwpQuickMenuBinding::Normalize(uwp_display.quick_menu_binding.GetValue());
+	uwp_display.game_layouts.clear();
+	auto uwpGameLayouts = uwpDisplay.get("GameLayouts");
+	for (auto element = uwpGameLayouts.get("Entry"); element.valid(); element = uwpGameLayouts.get("Entry", element))
+	{
+		UwpGameLayoutEntry entry{};
+		entry.title_id = element.get_attribute<uint64>("TitleId", 0);
+		if (entry.title_id == 0)
+			continue;
+		entry.layout = element.get("Layout", uwp_display.default_layout.GetValue());
+		uwp_display.game_layouts[entry.title_id] = std::move(entry);
+	}
+
+	auto uwpScreenScraper = parser.get("UWP").get("ScreenScraper");
+	uwp_screenscraper.enabled = uwpScreenScraper.get("Enabled", uwp_screenscraper.enabled);
+	uwp_screenscraper.download_metadata = uwpScreenScraper.get("DownloadMetadata", uwp_screenscraper.download_metadata);
+	uwp_screenscraper.download_box_art = uwpScreenScraper.get("DownloadBoxArt", uwp_screenscraper.download_box_art);
+	uwp_screenscraper.download_fanart = uwpScreenScraper.get("DownloadFanart", uwp_screenscraper.download_fanart);
+	uwp_screenscraper.download_videos = uwpScreenScraper.get("DownloadVideos", uwp_screenscraper.download_videos);
+	uwp_screenscraper.download_screenshots = uwpScreenScraper.get("DownloadScreenshots", uwp_screenscraper.download_screenshots);
+	uwp_screenscraper.download_logos = uwpScreenScraper.get("DownloadLogos", uwp_screenscraper.download_logos);
+	uwp_screenscraper.overwrite_existing = uwpScreenScraper.get("OverwriteExisting", uwp_screenscraper.overwrite_existing);
+	const sint32 legacyArtwork = uwpScreenScraper.get("BoxArtSource", -1);
+	const auto migrateLegacyArtwork = [](sint32 value) {
+		switch (value)
+		{
+		case 0: return (sint32)UwpScreenScraperArtwork::Box2D;
+		case 1: return (sint32)UwpScreenScraperArtwork::Box3D;
+		case 2: return (sint32)UwpScreenScraperArtwork::MixRecalboxV2;
+		case 3: return (sint32)UwpScreenScraperArtwork::Screenshot;
+		case 5: return (sint32)UwpScreenScraperArtwork::FanArt;
+		default: return (sint32)UwpScreenScraperArtwork::Box3D;
+		}
+	};
+	const sint32 migratedArtwork = migrateLegacyArtwork(legacyArtwork);
+	uwp_screenscraper.list_artwork_source = std::clamp(
+		uwpScreenScraper.get("ListArtworkSource", migratedArtwork),
+		(sint32)UwpScreenScraperArtwork::Box2D,
+		(sint32)UwpScreenScraperArtwork::TitleScreen);
+	uwp_screenscraper.detail_artwork_source = std::clamp(
+		uwpScreenScraper.get("DetailArtworkSource", migratedArtwork),
+		(sint32)UwpScreenScraperArtwork::Box2D,
+		(sint32)UwpScreenScraperArtwork::TitleScreen);
+	uwp_screenscraper.preferred_region = uwpScreenScraper.get("PreferredRegion", uwp_screenscraper.preferred_region);
+	uwp_screenscraper.metadata_language = uwpScreenScraper.get("MetadataLanguage", uwp_screenscraper.metadata_language);
+	uwp_screenscraper.media_directory = uwpScreenScraper.get(
+		"MediaDirectory", uwp_screenscraper.media_directory);
+
+#endif
 
 	// emulatedusbdevices
 	auto usbdevices = parser.get("EmulatedUsbDevices");
@@ -300,6 +427,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set("logflag", log_flag.GetValue());
 	config.set("advanced_ppc_logging", advanced_ppc_logging.GetValue());
 	config.set("mlc_path", mlc_path.GetValue().c_str());
+	config.set("graphic_packs_path", graphic_packs_path.GetValue().c_str());
 	config.set<bool>("permanent_storage", permanent_storage);
 	config.set("proxy_server", proxy_server.GetValue().c_str());
 	config.set<bool>("disable_screensaver", disable_screensaver);
@@ -364,6 +492,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("device", legacy_graphic_device_uuid);
 	graphic.set("vkDevice", vk_graphic_device_uuid);
 	graphic.set("mtlDevice", mtl_graphic_device_uuid);
+	graphic.set("d3d12Device", d3d12_graphic_device_luid);
 	graphic.set("VSync", vsync);
 	graphic.set("OverrideAppGammaPreference", overrideAppGammaPreference);
 	graphic.set("OverrideGammaValue", overrideGammaValue);
@@ -374,9 +503,11 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 #endif
 	//graphic.set("PrecompiledShaders", precompiled_shaders.GetValue());
 	graphic.set("UpscaleFilter", upscale_filter);
+	graphic.set("FsrSharpness", fsr_sharpness.GetValue());
 	graphic.set("DownscaleFilter", downscale_filter);
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());
+	graphic.set("SkipResolutionRulesOfPacksWithSkippedShaders", skip_resolution_rules_of_packs_with_skipped_shaders.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);
 
 	auto overlay_node = graphic.set("Overlay");
@@ -448,6 +579,67 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	auto dsuc = input.set("DSUC");
 	dsuc.set_attribute("host", dsu_client.host);
 	dsuc.set_attribute("port", dsu_client.port);
+#if defined(CEMU_UWP)
+	dsuc.set_attribute("enabled", dsu_client.enabled);
+	dsuc.set_attribute("streamingEnabled", dsu_client.streaming_enabled);
+	dsuc.set_attribute("streamingUrl", dsu_client.streaming_url.GetValue().c_str());
+	auto dsuServers = dsuc.set("Servers");
+	for (const UwpDsuServerEntry& server : dsu_client.servers)
+	{
+		auto element = dsuServers.set("Server");
+		element.set_attribute("id", server.id.c_str());
+		element.set_attribute("name", server.name.c_str());
+		element.set_attribute("host", server.host.c_str());
+		element.set_attribute("port", server.port);
+		element.set_attribute("enabled", server.enabled);
+	}
+	auto dsuRoutes = dsuc.set("Routes");
+	for (const UwpDsuPlayerRouteEntry& route : dsu_client.player_routes)
+	{
+		auto element = dsuRoutes.set("Route");
+		element.set_attribute("player", route.player);
+		element.set_attribute("server", route.server_id.c_str());
+		element.set_attribute("slot", route.remote_slot);
+		element.set_attribute("merge", route.merge);
+		element.set_attribute("gamepad", route.gamepad);
+		element.set_attribute("motion", route.motion);
+		element.set_attribute("touch", route.touch);
+	}
+	#endif
+
+#if defined(CEMU_UWP)
+	auto uwp = config.set("UWP");
+	auto uwpDisplay = uwp.set("Display");
+	uwpDisplay.set("Language", uwp_display.ui_language.GetValue());
+	uwpDisplay.set("DefaultLayout", uwp_display.default_layout.GetValue());
+	uwpDisplay.set("SwapScreens", uwp_display.swap_screens.GetValue());
+	uwpDisplay.set("TouchCursor", uwp_display.touch_cursor.GetValue());
+	uwpDisplay.set("ToggleSwapBinding", uwp_display.toggle_swap_binding.GetValue().c_str());
+	uwpDisplay.set("QuickMenuBinding", UwpQuickMenuBinding::Normalize(uwp_display.quick_menu_binding.GetValue()).c_str());
+	auto uwpGameLayouts = uwpDisplay.set("GameLayouts");
+	for (const auto& [titleId, entry] : uwp_display.game_layouts)
+	{
+		auto node = uwpGameLayouts.set("Entry");
+		node.set_attribute("TitleId", (sint64)titleId);
+		node.set("Layout", entry.layout);
+	}
+
+	auto uwpScreenScraper = uwp.set("ScreenScraper");
+	uwpScreenScraper.set("Enabled", uwp_screenscraper.enabled.GetValue());
+	uwpScreenScraper.set("DownloadMetadata", uwp_screenscraper.download_metadata.GetValue());
+	uwpScreenScraper.set("DownloadBoxArt", uwp_screenscraper.download_box_art.GetValue());
+	uwpScreenScraper.set("DownloadFanart", uwp_screenscraper.download_fanart.GetValue());
+	uwpScreenScraper.set("DownloadVideos", uwp_screenscraper.download_videos.GetValue());
+	uwpScreenScraper.set("DownloadScreenshots", uwp_screenscraper.download_screenshots.GetValue());
+	uwpScreenScraper.set("DownloadLogos", uwp_screenscraper.download_logos.GetValue());
+	uwpScreenScraper.set("OverwriteExisting", uwp_screenscraper.overwrite_existing.GetValue());
+	uwpScreenScraper.set("ListArtworkSource", uwp_screenscraper.list_artwork_source.GetValue());
+	uwpScreenScraper.set("DetailArtworkSource", uwp_screenscraper.detail_artwork_source.GetValue());
+	uwpScreenScraper.set("PreferredRegion", uwp_screenscraper.preferred_region.GetValue());
+	uwpScreenScraper.set("MetadataLanguage", uwp_screenscraper.metadata_language.GetValue().c_str());
+	uwpScreenScraper.set("MediaDirectory", uwp_screenscraper.media_directory.GetValue());
+
+#endif
 
 	// emulated usb devices
 	auto usbdevices = config.set("EmulatedUsbDevices");

@@ -7,6 +7,23 @@
 #include "config/CemuConfig.h"
 #include "Cafe/CafeSystem.h"
 
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#endif
+
+#if defined(CEMU_UWP) && defined(CEMU_UWP_ASYNC_COMPLETION_POLL)
+#include "Cafe/HW/Latte/Renderer/Renderer.h"
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include <algorithm>
+#include <mutex>
+
+namespace
+{
+HRTick s_lastAsyncCompletionPoll = 0;
+HRTick s_asyncCompletionPollInterval = 1;
+}
+#endif
+
 sint32 s_customVsyncFrequency = -1;
 
 void LatteTiming_NotifyHostVSync();
@@ -73,11 +90,29 @@ void LatteTiming_Init()
 	LatteGPUState.timer_frequency = HighResolutionTimer::getFrequency();
 	LatteGPUState.timer_bootUp = HighResolutionTimer::now().getTick();
 	LatteGPUState.timer_nextVSync = LatteGPUState.timer_bootUp + LatteTime_CalculateTimeBetweenVSync();
+#if defined(CEMU_UWP) && defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
+	cemuLog_log(LogType::Force, "UWP vblank boundary experiment compiled: phase mask bit 8 enables additional timer service checks every 32 completed generic packets, only outside active draw sequences; mask 0 is baseline. Vblank deadlines and flip logic are retained; guest event service timing is experimental.");
+#endif
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+#if defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
+	cemuLog_log(LogType::Force, "UWP timing diagnostic enabled: vblank/guest-wait/command-batch aggregation; boundary service experiment is separately phase-gated.");
+#else
+	cemuLog_log(LogType::Force, "UWP timing diagnostic enabled: vblank/guest-wait/command-batch aggregation only; timing behavior unchanged.");
+#endif
+#endif
+#if defined(CEMU_UWP) && defined(CEMU_UWP_ASYNC_COMPLETION_POLL)
+	s_lastAsyncCompletionPoll = LatteGPUState.timer_bootUp;
+	s_asyncCompletionPollInterval = std::max<HRTick>(HighResolutionTimer::getFrequency() / 1000, 1);
+	cemuLog_log(LogType::Force, "D3D12 UWP: nonblocking async completion polling enabled while the command processor waits (1ms cadence; guest vsync unchanged).");
+#endif
 }
 
 void LatteTiming_signalVsync()
 {
 	static uint32 s_vsyncIntervalCounter = 0;
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+	bool diagnosticFlipped = false;
+#endif
 
 	if (!LatteGPUState.gx2InitCalled)
 		return;
@@ -89,6 +124,13 @@ void LatteTiming_signalVsync()
 	// flip
 	if (s_vsyncIntervalCounter >= swapInterval)
 	{
+		// a buffer is only flipped once the GPU has processed a swap request since the last flip
+		bool flipPending = false;
+		if (LatteGPUState.flipRequestCount > 0)
+		{
+			LatteGPUState.flipRequestCount.fetch_sub(1);
+			flipPending = true;
+		}
 		if (LatteGPUState.sharedArea)
 		{
 			// hack/workaround - only execute flip if GX2SwapScanBuffers() isn't lagging behind
@@ -109,18 +151,29 @@ void LatteTiming_signalVsync()
 			else
 			{
 				// old code for all other games
-				if (LatteGPUState.flipRequestCount > 0)
+				if (flipPending)
 				{
-					LatteGPUState.flipRequestCount.fetch_sub(1);
 					LatteGPUState.sharedArea->flipExecuteCountBE = _swapEndianU32(_swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE) + 1);
 				}
 
 			}
 		}
-		GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::FLIP);
-		s_vsyncIntervalCounter = 0;
+		// the flip event marks a newly displayed buffer, games pace their next swap from it
+		if (flipPending)
+		{
+			GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::FLIP);
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+			diagnosticFlipped = true;
+#endif
+			s_vsyncIntervalCounter = 0;
+		}
 	}
 	// vsync
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+	LatteUwpRecordVblank(swapInterval, diagnosticFlipped,
+		LatteGPUState.sharedArea ? _swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE) : 0,
+		LatteGPUState.sharedArea ? _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE) : 0);
+#endif
 	GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::VSYNC);
 }
 
@@ -153,7 +206,7 @@ void LatteTiming_NotifyHostVSync()
 }
 
 // handle timed vsync event
-void LatteTiming_HandleTimedVsync()
+void LatteTiming_HandleTimedVsync(bool isCommandProcessorWaiting)
 {
 	// simulate VSync
 	uint64 currentTimer = HighResolutionTimer::now().getTick();
@@ -164,9 +217,17 @@ void LatteTiming_HandleTimedVsync()
 		// even if vsync is delegated to the host device, we still use this virtual vsync timer to check finished states
 		LatteQuery_UpdateFinishedQueries();
 		LatteTextureReadback_UpdateFinishedTransfers(false);
+#if defined(CEMU_UWP) && defined(CEMU_UWP_ASYNC_COMPLETION_POLL)
+		s_lastAsyncCompletionPoll = currentTimer;
+#endif
 		// update vsync timer
 		uint64 vsyncTime = LatteTime_CalculateTimeBetweenVSync();
 		uint64 missedVsyncCount = (currentTimer - LatteGPUState.timer_nextVSync) / vsyncTime;
+#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+		LatteUwpRecordVblankService(HighResolutionTimer::ticksToMicroseconds(currentTimer - LatteGPUState.timer_nextVSync),
+			missedVsyncCount, missedVsyncCount >= 2 ? missedVsyncCount : 0,
+			HighResolutionTimer::ticksToMicroseconds(vsyncTime), isCommandProcessorWaiting);
+#endif
 		if (missedVsyncCount >= 2)
 		{
 			LatteGPUState.timer_nextVSync += vsyncTime*(missedVsyncCount+1ULL);
@@ -174,4 +235,25 @@ void LatteTiming_HandleTimedVsync()
 		else	
 			LatteGPUState.timer_nextVSync += vsyncTime;
 	}
+#if defined(CEMU_UWP) && defined(CEMU_UWP_ASYNC_COMPLETION_POLL)
+	else if (isCommandProcessorWaiting &&
+		(currentTimer - s_lastAsyncCompletionPoll) >= s_asyncCompletionPollInterval)
+	{
+		// query/readback completion is not vblank-bound, so poll before the next vsync
+		s_lastAsyncCompletionPoll = currentTimer;
+		const bool queriesPending = LatteQuery_HasPendingCompletions();
+		const bool readbacksPending = LatteTextureReadback_HasPendingCompletions();
+		if (queriesPending || readbacksPending)
+		{
+			std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+			LatteUwpHitchScope pollTiming(LatteUwpHitchOp::AsyncCompletionPoll);
+			if (queriesPending)
+				LatteQuery_UpdateFinishedQueries();
+			if (readbacksPending)
+				LatteTextureReadback_UpdateFinishedTransfers(false);
+		}
+	}
+#else
+	(void)isCommandProcessorWaiting;
+#endif
 }

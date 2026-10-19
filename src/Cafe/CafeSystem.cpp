@@ -27,6 +27,11 @@
 #include "GamePatch.h"
 #include "HW/Espresso/Debugger/GDBStub.h"
 
+#include <array>
+#include <cstring>
+#include <new>
+#include <string_view>
+
 #include "Cafe/IOSU/legacy/iosu_ioctl.h"
 #include "Cafe/IOSU/legacy/iosu_act.h"
 #include "Cafe/IOSU/legacy/iosu_fpd.h"
@@ -66,6 +71,10 @@
 #include "Cafe/HW/SI/si.h"
 
 #include <time.h>
+#if defined(CEMU_UWP)
+#include <mutex>
+#include <thread>
+#endif
 
 #if BOOST_OS_LINUX
 #include <sys/sysinfo.h>
@@ -250,6 +259,12 @@ void InfoLog_PrintActiveSettings()
 		if (!GetConfig().vk_accurate_barriers.GetValue())
 			cemuLog_log(LogType::Force, "Accurate barriers are disabled!");
 	}
+#ifdef ENABLE_D3D12
+	else if (ActiveSettings::GetGraphicsAPI() == GraphicAPI::kDirect3D12)
+	{
+		cemuLog_log(LogType::Force, "Async compile: {}", GetConfig().async_compile.GetValue() ? "true" : "false");
+	}
+#endif
 #ifdef ENABLE_METAL
 	else if (ActiveSettings::GetGraphicsAPI() == GraphicAPI::kMetal)
 	{
@@ -362,7 +377,11 @@ uint32 LoadSharedData()
 	return mmuRange_SHARED_AREA.getBase() + sizeof(SharedDataEntry) * numEntries;
 }
 
+#if defined(CEMU_UWP)
+bool cemu_initForGame()
+#else
 void cemu_initForGame()
+#endif
 {
 	WindowSystem::UpdateWindowTitles(false, true, 0.0);
 	cemuLog_createLogFile(false);
@@ -408,7 +427,12 @@ void cemu_initForGame()
 	}
 	LatteGPUState.isDRCPrimary = ActiveSettings::DisplayDRCEnabled();
 	InfoLog_PrintActiveSettings();
+#if defined(CEMU_UWP)
+	if (!Latte_Start())
+		return false;
+#else
 	Latte_Start();
+#endif
 	// check for debugger entrypoint bp
     if (g_gdbstub)
     {
@@ -425,11 +449,19 @@ void cemu_initForGame()
 	// everything initialized
 	cemuLog_log(LogType::Force, "------- Run title -------");
 	// wait till GPU thread is initialized
+#if defined(CEMU_UWP)
+	if (!Latte_WaitForGPUInit())
+		return false;
+#else
 	while (g_isGPUInitFinished == false) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+#endif
 	// run coreinit rpl_entry
 	RPLLoader_CallCoreinitEntrypoint();
 	// init AX and start AX I/O thread
 	snd_core::AXOut_init();
+#if defined(CEMU_UWP)
+	return true;
+#endif
 }
 
 namespace CafeSystem
@@ -447,12 +479,51 @@ namespace CafeSystem
 	bool sSystemRunning = false;
 	TitleId sForegroundTitleId = 0;
 
+#if defined(CEMU_UWP)
+	std::mutex sLaunchTitleThreadMutex;
+	std::thread sLaunchTitleThread;
+	std::mutex sLaunchErrorMutex;
+	std::array<char, 512> sLaunchError{};
+	bool sHasLaunchError{};
+
+	void WaitForLaunchTitleThread()
+	{
+		std::thread launchThread;
+		{
+			std::scoped_lock lock(sLaunchTitleThreadMutex);
+			if (sLaunchTitleThread.joinable())
+				launchThread = std::move(sLaunchTitleThread);
+		}
+		if (launchThread.joinable())
+			launchThread.join();
+	}
+
+	void RecordLaunchError(std::string_view message) noexcept
+	{
+		std::scoped_lock lock(sLaunchErrorMutex);
+		const size_t length = std::min(message.size(), sLaunchError.size() - 1);
+		std::memcpy(sLaunchError.data(), message.data(), length);
+		sLaunchError[length] = '\0';
+		sHasLaunchError = true;
+	}
+
+	bool ConsumeLaunchError(std::string& message)
+	{
+		std::scoped_lock lock(sLaunchErrorMutex);
+		if (!sHasLaunchError)
+			return false;
+		message.assign(sLaunchError.data());
+		sHasLaunchError = false;
+		return true;
+	}
+#endif
+
 	GameInfo2 sGameInfo_ForegroundTitle;
 
 
 	static void _CheckForWine()
 	{
-		#if BOOST_OS_WINDOWS
+		#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 		const HMODULE hmodule = GetModuleHandleA("ntdll.dll");
 		if (!hmodule)
 			return;
@@ -498,6 +569,10 @@ namespace CafeSystem
 	#if BOOST_OS_WINDOWS
 	std::string GetWindowsNamedVersion(uint32& buildNumber)
 	{
+#if defined(CEMU_UWP)
+		buildNumber = 0;
+		return "Windows UWP";
+#else
 		char productName[256];
 		char buildNumberStr[32];
 		char featureVersion[32];
@@ -536,6 +611,7 @@ namespace CafeSystem
 		if (featureVersion[0] != '\0')
 			result += fmt::format(" {}", featureVersion);
 		return result;
+#endif
 	}
 	#endif
 
@@ -544,10 +620,15 @@ namespace CafeSystem
 		std::string buffer;
 		const char* platform = NULL;
 		#if BOOST_OS_WINDOWS
+#if defined(CEMU_UWP)
+		buffer = "Windows UWP";
+		platform = buffer.c_str();
+#else
 		uint32 buildNumber;
 		std::string windowsVersionName = GetWindowsNamedVersion(buildNumber);
 		buffer = fmt::format("{} (Build {})", windowsVersionName, buildNumber);
 		platform = buffer.c_str();
+#endif
 		#elif BOOST_OS_LINUX
 		if (getenv ("APPIMAGE"))
 			platform = "Linux (AppImage)";
@@ -905,14 +986,44 @@ namespace CafeSystem
 
 	void _LaunchTitleThread()
 	{
+#if defined(CEMU_UWP)
+		try
+		{
+#endif
 		for(auto& module : s_iosuModules)
 			module->TitleStart();
+#if defined(CEMU_UWP)
+		if (!cemu_initForGame())
+		{
+			RecordLaunchError("Graphics initialization failed while launching the title.");
+			return;
+		}
+#else
 		cemu_initForGame();
+#endif
 		// enter scheduler
 		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
 			coreinit::OSSchedulerBegin(3);
 		else
 			coreinit::OSSchedulerBegin(1);
+#if defined(CEMU_UWP)
+		}
+		catch (const std::bad_alloc&)
+		{
+			cemuLog_log(LogType::Force, "UWP title launch failed: out of memory");
+			RecordLaunchError("The title could not start because the Xbox app memory budget was exhausted.");
+		}
+		catch (const std::exception& error)
+		{
+			cemuLog_log(LogType::Force, "UWP title launch failed: {}", error.what());
+			RecordLaunchError(error.what());
+		}
+		catch (...)
+		{
+			cemuLog_log(LogType::Force, "UWP title launch failed with an unknown exception");
+			RecordLaunchError("Title launch failed with an unknown error.");
+		}
+#endif
 	}
 
 	void LaunchForegroundTitle()
@@ -921,8 +1032,18 @@ namespace CafeSystem
 		// start system
 		sSystemRunning = true;
 		WindowSystem::NotifyGameLoaded();
+#if defined(CEMU_UWP)
+		WaitForLaunchTitleThread();
+		{
+			std::scoped_lock errorLock(sLaunchErrorMutex);
+			sHasLaunchError = false;
+		}
+		std::scoped_lock lock(sLaunchTitleThreadMutex);
+		sLaunchTitleThread = std::thread(_LaunchTitleThread);
+#else
 		std::thread t(_LaunchTitleThread);
 		t.detach();
+#endif
 	}
 
 	bool IsTitleRunning()
@@ -1066,6 +1187,10 @@ namespace CafeSystem
 	{
 		if(!sSystemRunning)
 			return;
+#if defined(CEMU_UWP)
+		// the launch thread owns title state until it enters the scheduler or fails
+		WaitForLaunchTitleThread();
+#endif
 		coreinit::OSSchedulerEnd();
 		Latte_Stop();
 		// reset Cafe OS userspace modules

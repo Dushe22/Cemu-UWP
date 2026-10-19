@@ -1,4 +1,7 @@
 #include "input/ControllerFactory.h"
+#if defined(CEMU_UWP)
+#include "config/ActiveSettings.h"
+#endif
 
 #include "input/emulated/VPADController.h"
 #include "input/emulated/ProController.h"
@@ -9,8 +12,10 @@
 #include "input/api/DSU/DSUController.h"
 #include "input/api/GameCube/GameCubeController.h"
 
-#if BOOST_OS_WINDOWS
+#ifdef HAS_XINPUT
 #include "input/api/XInput/XInputController.h"
+#endif
+#ifdef HAS_DIRECTINPUT
 #include "input/api/DirectInput/DirectInputController.h"
 #endif
 
@@ -20,6 +25,11 @@
 
 #ifdef HAS_SDL
 #include "input/api/SDL/SDLController.h"
+#endif
+
+#if defined(CEMU_UWP)
+#include "input/api/WGI/WGIGamepadController.h"
+#include "input/api/WGI/WGIGamepadControllerProvider.h"
 #endif
 
 ControllerPtr ControllerFactory::CreateController(InputAPI::Type api, std::string_view uuid,
@@ -82,7 +92,15 @@ ControllerPtr ControllerFactory::CreateController(InputAPI::Type api, std::strin
 #if HAS_DSU
 	case InputAPI::DSUClient:
 		{
-			const auto index = ConvertString<uint32>(uuid);
+	#if defined(CEMU_UWP)
+				if (!GetConfig().dsu_client.enabled.GetValue() &&
+					std::ranges::none_of(GetConfig().dsu_client.servers,
+						[](const UwpDsuServerEntry& server) { return server.enabled; }))
+					throw std::runtime_error("DSU client is disabled");
+	#endif
+				const auto separator = uuid.find_last_of(':');
+				const auto index = ConvertString<uint32>(separator == std::string_view::npos ?
+					uuid : uuid.substr(separator + 1));
 			return std::make_shared<DSUController>(index);
 		}
 #endif
@@ -105,13 +123,15 @@ ControllerPtr ControllerFactory::CreateController(InputAPI::Type api, std::strin
 			return std::make_shared<NativeWiimoteController>(index);
 		}
 #endif
+#if defined(CEMU_UWP)
+	case InputAPI::WGIGamepad:
+		{
+			return std::make_shared<WGIGamepadController>(uuid, display_name);
+		}
+#endif
 	default:
 		throw std::invalid_argument(fmt::format("unhandled controller api: {}", api));
 	}
-	/*
-	case InputAPI::WGIGamepad: break;
-	case InputAPI::WGIRawController: break;
-	*/
 }
 
 EmulatedControllerPtr
@@ -155,6 +175,12 @@ ControllerProviderPtr ControllerFactory::CreateControllerProvider(InputAPI::Type
 #if HAS_DSU
 	case InputAPI::DSUClient:
 		{
+	#if defined(CEMU_UWP)
+				if (!GetConfig().dsu_client.enabled.GetValue() &&
+					std::ranges::none_of(GetConfig().dsu_client.servers,
+						[](const UwpDsuServerEntry& server) { return server.enabled; }))
+				throw std::runtime_error("DSU client is disabled");
+#endif
 			try
 			{
 				const auto& dsu_settings = dynamic_cast<const DSUProviderSettings&>(settings);
@@ -175,6 +201,10 @@ ControllerProviderPtr ControllerFactory::CreateControllerProvider(InputAPI::Type
 #if HAS_WIIMOTE
 	case InputAPI::Wiimote:
 		return std::make_shared<WiimoteControllerProvider>();
+#endif
+#if defined(CEMU_UWP)
+	case InputAPI::WGIGamepad:
+		return std::make_shared<WGIGamepadControllerProvider>();
 #endif
 	default:
 		cemu_assert_debug(false);

@@ -43,6 +43,16 @@ public:
 
 	[[nodiscard]] const std::array< std::optional<std::string>, 8>& GetControllerProfile() const { return m_controllerProfile; }
 
+#if defined(CEMU_UWP)
+	void SetLoadSharedLibraries(std::optional<bool> value);
+	void SetStartWithPadView(bool value);
+	void SetGraphicsAPI(std::optional<GraphicAPI> value);
+	void SetAccurateShaderMul(AccurateShaderMulOption value);
+	void SetThreadQuantum(uint32 value);
+	void SetCPUMode(std::optional<CPUMode> value);
+	void SetControllerProfile(size_t index, std::optional<std::string> value);
+#endif
+
 private:
 	uint64_t m_title_id = 0;
 	bool m_is_loaded = false;

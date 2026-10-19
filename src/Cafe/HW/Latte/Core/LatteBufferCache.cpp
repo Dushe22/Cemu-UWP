@@ -1,4 +1,8 @@
+#include <bit>
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#endif
 #include "util/ChunkedHeap/ChunkedHeap.h"
 #include "util/helpers/fspinlock.h"
 #include "config/ActiveSettings.h"
@@ -1269,6 +1273,11 @@ private:
 			m_pageInfo[firstPage + i].hash = hashPage(s_pageUploadBuffer.data() + i * CACHE_PAGE_SIZE);
 		}
 		g_renderer->bufferCache_upload(s_pageUploadBuffer.data(), uploadRangeEnd - uploadRangeBegin, getBufferOffset(uploadRangeBegin));
+#if defined(CEMU_UWP)
+		constexpr size_t maximumRetainedUploadCapacity = 16ull * 1024ull * 1024ull;
+		if (s_pageUploadBuffer.capacity() > maximumRetainedUploadCapacity)
+			std::vector<uint8>().swap(s_pageUploadBuffer);
+#endif
 	}
 
 	// upload only non-streamout data of a single page
@@ -1636,60 +1645,107 @@ void LatteBufferCache_getStats(uint32& heapSize, uint32& allocationSize, uint32&
 
 class SparseBitset
 {
-	static inline constexpr size_t TABLE_MASK = 0xFF;
+	// one bit per cache page across the 32-bit address space
+	static inline constexpr uint32 PAGE_COUNT = 0xFFFFFFFFu / CACHE_PAGE_SIZE + 1;
+	static inline constexpr uint32 WORD_COUNT = PAGE_COUNT / 64;
 
 public:
+	SparseBitset() : m_words(WORD_COUNT, 0)
+	{
+		m_dirtyWords.reserve(4096);
+	}
+
 	bool Empty() const
 	{
-		return m_numNonEmptyVectors == 0;
+		return m_dirtyWords.empty();
 	}
 
 	void Set(uint32 index)
 	{
-		auto& v = m_bits[index & TABLE_MASK];
-		if (std::find(v.cbegin(), v.cend(), index) != v.end())
-			return;
-		if (v.empty())
+		SetRange(index, index);
+	}
+
+	void SetRange(uint32 firstIndex, uint32 lastIndex)
+	{
+		firstIndex = std::min<uint32>(firstIndex, PAGE_COUNT - 1);
+		lastIndex = std::min<uint32>(lastIndex, PAGE_COUNT - 1);
+		const uint32 firstWord = firstIndex >> 6;
+		const uint32 lastWord = lastIndex >> 6;
+		for (uint32 w = firstWord; w <= lastWord; w++)
 		{
-			m_nonEmptyVectors[m_numNonEmptyVectors] = &v;
-			m_numNonEmptyVectors++;
+			const uint32 lo = (w == firstWord) ? (firstIndex & 63) : 0;
+			const uint32 hi = (w == lastWord) ? (lastIndex & 63) : 63;
+			const uint64 mask = (hi == 63 ? ~0ull : ((1ull << (hi + 1)) - 1)) & ~((1ull << lo) - 1);
+			uint64& word = m_words[w];
+			if (word == 0)
+				m_dirtyWords.push_back(w);
+			word |= mask;
 		}
-		v.emplace_back(index);
 	}
 
 	template<typename TFunc>
 	void ForAllAndClear(TFunc callbackFunc)
 	{
-		auto vCurrent = m_nonEmptyVectors + 0;
-		auto vEnd = m_nonEmptyVectors + m_numNonEmptyVectors;
-		while (vCurrent < vEnd)
+		for (uint32 w : m_dirtyWords)
 		{
-			std::vector<uint32>* vec = *vCurrent;
-			vCurrent++;
-			for (const auto& it : *vec)
-				callbackFunc(it);
-			vec->clear();
+			uint64 bits = m_words[w];
+			m_words[w] = 0;
+			while (bits)
+			{
+				const uint32 bit = (uint32)std::countr_zero(bits);
+				callbackFunc(w * 64 + bit);
+				bits &= bits - 1;
+			}
 		}
-		m_numNonEmptyVectors = 0;
+		m_dirtyWords.clear();
+	}
+
+	template<typename TFunc>
+	void ForAllRangesAndClear(TFunc callbackFunc)
+	{
+		std::sort(m_dirtyWords.begin(), m_dirtyWords.end());
+		bool open = false;
+		uint32 runFirst = 0;
+		uint32 runLast = 0;
+		for (uint32 w : m_dirtyWords)
+		{
+			uint64 bits = m_words[w];
+			m_words[w] = 0;
+			while (bits)
+			{
+				const uint32 lo = (uint32)std::countr_zero(bits);
+				const uint64 shifted = bits >> lo;
+				const uint32 len = (uint32)std::countr_one(shifted);
+				const uint32 first = w * 64 + lo;
+				const uint32 last = first + len - 1;
+				if (open && first == runLast + 1)
+					runLast = last;
+				else
+				{
+					if (open)
+						callbackFunc(runFirst, runLast);
+					runFirst = first;
+					runLast = last;
+					open = true;
+				}
+				bits = (lo + len >= 64) ? 0 : (shifted >> len) << (lo + len);
+			}
+		}
+		if (open)
+			callbackFunc(runFirst, runLast);
+		m_dirtyWords.clear();
 	}
 
 	void Clear()
 	{
-		auto vCurrent = m_nonEmptyVectors + 0;
-		auto vEnd = m_nonEmptyVectors + m_numNonEmptyVectors;
-		while (vCurrent < vEnd)
-		{
-			std::vector<uint32>* vec = *vCurrent;
-			vCurrent++;
-			vec->clear();
-		}
-		m_numNonEmptyVectors = 0;
+		for (uint32 w : m_dirtyWords)
+			m_words[w] = 0;
+		m_dirtyWords.clear();
 	}
 
 private:
-	std::vector<uint32> m_bits[TABLE_MASK + 1];
-	std::vector<uint32>* m_nonEmptyVectors[TABLE_MASK + 1];
-	size_t m_numNonEmptyVectors{ 0 };
+	std::vector<uint64> m_words;
+	std::vector<uint32> m_dirtyWords;
 };
 
 FSpinlock g_spinlockDCFlushQueue;
@@ -1704,8 +1760,7 @@ void LatteBufferCache_notifyDCFlush(MPTR address, uint32 size)
 	uint32 firstPage = address / CACHE_PAGE_SIZE;
 	uint32 lastPage = (address + size - 1) / CACHE_PAGE_SIZE;
 	g_spinlockDCFlushQueue.lock();
-	for (uint32 i = firstPage; i <= lastPage; i++)
-		s_DCFlushQueue->Set(i);
+	s_DCFlushQueue->SetRange(firstPage, lastPage);
 	g_spinlockDCFlushQueue.unlock();
 }
 
@@ -1716,7 +1771,16 @@ void LatteBufferCache_processDCFlushQueue()
 	g_spinlockDCFlushQueue.lock();
 	std::swap(s_DCFlushQueue, s_DCFlushQueueAlternate);
 	g_spinlockDCFlushQueue.unlock();
-	s_DCFlushQueueAlternate->ForAllAndClear([](uint32 index) {LatteBufferCache_invalidatePage(index * CACHE_PAGE_SIZE); });
+	s_DCFlushQueueAlternate->ForAllRangesAndClear([](uint32 firstPage, uint32 lastPage)
+	{
+		const MPTR rangeBegin = firstPage * CACHE_PAGE_SIZE;
+		const MPTR rangeEnd = (lastPage + 1) * CACHE_PAGE_SIZE;
+		static std::vector<BufferCacheNode*> s_flushQueryResult;
+		s_flushQueryResult.clear();
+		g_gpuBufferCache.GetOverlappingRanges(rangeBegin, rangeEnd, s_flushQueryResult);
+		for (BufferCacheNode* node : s_flushQueryResult)
+			node->invalidate(rangeBegin, rangeEnd);
+	});
 }
 
 void LatteBufferCache_notifyDrawDone()
@@ -1732,6 +1796,9 @@ void LatteBufferCache_notifySwapTVScanBuffer()
 
 void LatteBufferCache_incrementalCleanup()
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope bufferCacheCleanupScope(LatteUwpHitchOp::BufferCacheCleanup);
+#endif
 	static uint32 s_counter = 0;
 
 	if (s_allCacheNodes.empty())

@@ -112,7 +112,14 @@ public:
 	float get_axis_value(uint64 button) const;
 	virtual bool has_axis() const { return true; }
 
-	bool use_motion() { return has_motion() && m_settings.motion; }
+	bool use_motion()
+	{
+#if defined(CEMU_UWP)
+		return has_motion() && get_settings().motion;
+#else
+		return has_motion() && m_settings.motion;
+#endif
+	}
 	virtual bool has_motion() { return false; }
 	virtual MotionSample get_motion_sample() { return {}; }
 

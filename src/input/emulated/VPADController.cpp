@@ -638,6 +638,86 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 		break;
 	}
 #endif
+#if defined(CEMU_UWP)
+	case InputAPI::WGIGamepad:
+	{
+		// A and B follow the button labels, like the profiles created on first start
+		mapping =
+		{
+			{kButtonId_A, kButton12},
+			{kButtonId_B, kButton13},
+			{kButtonId_X, kButton15},
+			{kButtonId_Y, kButton14},
+
+			{kButtonId_L, kButton8},
+			{kButtonId_R, kButton9},
+			{kButtonId_ZL, kTriggerXP},
+			{kButtonId_ZR, kTriggerYP},
+
+			{kButtonId_Plus, kButton4},
+			{kButtonId_Minus, kButton5},
+
+			{kButtonId_Up, kButton0},
+			{kButtonId_Down, kButton1},
+			{kButtonId_Left, kButton2},
+			{kButtonId_Right, kButton3},
+
+			{kButtonId_StickL, kButton6},
+			{kButtonId_StickR, kButton7},
+
+			{kButtonId_StickL_Up, kAxisYP},
+			{kButtonId_StickL_Down, kAxisYN},
+			{kButtonId_StickL_Left, kAxisXN},
+			{kButtonId_StickL_Right, kAxisXP},
+
+			{kButtonId_StickR_Up, kRotationYP},
+			{kButtonId_StickR_Down, kRotationYN},
+			{kButtonId_StickR_Left, kRotationXN},
+			{kButtonId_StickR_Right, kRotationXP},
+		};
+
+		break;
+	}
+#if HAS_DSU
+	case InputAPI::DSUClient:
+	{
+		mapping =
+		{
+			{kButtonId_A, kButton13},
+			{kButtonId_B, kButton14},
+			{kButtonId_X, kButton12},
+			{kButtonId_Y, kButton15},
+
+			{kButtonId_L, kButton10},
+			{kButtonId_R, kButton11},
+			{kButtonId_ZL, kTriggerXP},
+			{kButtonId_ZR, kTriggerYP},
+
+			{kButtonId_Plus, kButton3},
+			{kButtonId_Minus, kButton0},
+
+			{kButtonId_Up, kButton4},
+			{kButtonId_Down, kButton6},
+			{kButtonId_Left, kButton7},
+			{kButtonId_Right, kButton5},
+
+			{kButtonId_StickL, kButton1},
+			{kButtonId_StickR, kButton2},
+
+			{kButtonId_StickL_Up, kAxisYP},
+			{kButtonId_StickL_Down, kAxisYN},
+			{kButtonId_StickL_Left, kAxisXN},
+			{kButtonId_StickL_Right, kAxisXP},
+
+			{kButtonId_StickR_Up, kRotationYP},
+			{kButtonId_StickR_Down, kRotationYN},
+			{kButtonId_StickR_Left, kRotationXN},
+			{kButtonId_StickR_Right, kRotationXP},
+		};
+		break;
+	}
+#endif
+#endif
 	case InputAPI::XInput:
 	{
 		mapping =
@@ -693,11 +773,13 @@ bool VPADController::set_default_mapping(const std::shared_ptr<ControllerBase>& 
 
 void VPADController::load(const pugi::xml_node& node)
 {
+	EmulatedController::load(node);
 	if (const auto value = node.child("toggle_display"))
 		m_screen_active_toggle = ConvertString<bool>(value.child_value());
 }
 
 void VPADController::save(pugi::xml_node& node)
 {
+	EmulatedController::save(node);
 	node.append_child("toggle_display").append_child(pugi::node_pcdata).set_value(fmt::format("{}", (int)m_screen_active_toggle).c_str());
 }

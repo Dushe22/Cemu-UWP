@@ -31,6 +31,9 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#endif
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #endif
@@ -99,6 +102,19 @@ public:
 
 private:
 	VulkanRenderer::DeviceInfo m_device_info;
+};
+#endif
+
+#ifdef ENABLE_D3D12
+class wxD3D12LUID : public wxClientData
+{
+public:
+	wxD3D12LUID(const D3D12Renderer::DeviceInfo& info)
+		: m_device_info(info) {}
+	const D3D12Renderer::DeviceInfo& GetDeviceInfo() const { return m_device_info; }
+
+private:
+	D3D12Renderer::DeviceInfo m_device_info;
 };
 #endif
 
@@ -374,6 +390,13 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 		choices[api_size++] = "Metal";
 		m_api_map.push_back(GraphicAPI::kMetal);
 #endif
+#ifdef ENABLE_D3D12
+		if (g_d3d12_available)
+		{
+			choices[api_size++] = "Direct3D 12";
+			m_api_map.push_back(GraphicAPI::kDirect3D12);
+		}
+#endif
 		wxASSERT(api_size > 0);
 
 		m_graphic_api = new wxChoice(box, wxID_ANY, wxDefaultPosition, wxDefaultSize, api_size, choices);
@@ -402,7 +425,7 @@ wxPanel* GeneralSettings2::AddGraphicsPage(wxNotebook* notebook)
 		auto* graphic_misc_row = new wxFlexGridSizer(0, 2, 0, 0);
 
 		m_async_compile = new wxCheckBox(box, wxID_ANY, _("Async shader compile"));
-		m_async_compile->SetToolTip(_("Enables async shader and pipeline compilation. Reduces stutter at the cost of objects not rendering for a short time.\nVulkan only"));
+		m_async_compile->SetToolTip(_("Enables async shader and pipeline compilation. Reduces stutter at the cost of objects not rendering for a short time.\nVulkan, Direct3D 12 and Metal only"));
 		graphic_misc_row->Add(m_async_compile, 0, wxALL, 5);
 
 		m_gx2drawdone_sync = new wxCheckBox(box, wxID_ANY, _("Full sync at GX2DrawDone()"));
@@ -1260,6 +1283,21 @@ void GeneralSettings2::StoreConfig()
 				config.mtl_graphic_device_uuid = {};
 		}
 #endif
+#ifdef ENABLE_D3D12
+		if (config.graphic_api == GraphicAPI::kDirect3D12)
+		{
+			if (selection != wxNOT_FOUND)
+			{
+				const auto* info = (wxD3D12LUID*)m_graphic_device->GetClientObject(selection);
+				if (info)
+					config.d3d12_graphic_device_luid = info->GetDeviceInfo().luid;
+				else
+					config.d3d12_graphic_device_luid = {};
+			}
+			else
+				config.d3d12_graphic_device_luid = {};
+		}
+#endif
 	}
 
 
@@ -1820,6 +1858,51 @@ void GeneralSettings2::HandleGraphicsApiSelection()
 		break;
 	}
 	#endif
+#ifdef ENABLE_D3D12
+	case GraphicAPI::kDirect3D12:
+	{
+		m_gx2drawdone_sync->Disable();
+		m_async_compile->Enable();
+#ifdef ENABLE_METAL
+		m_force_mesh_shaders->Disable();
+#endif
+
+		m_vsync->AppendString(_("Off"));
+		m_vsync->AppendString(_("On"));
+		m_vsync->Select(selection == 0 ? 0 : 1);
+
+		m_graphic_device->Enable();
+		m_graphic_device->Clear();
+
+		if (!CafeSystem::IsTitleRunning())
+		{
+			auto devices = D3D12Renderer::GetDevices();
+			if (!devices.empty())
+			{
+				for (const auto& device : devices)
+					m_graphic_device->Append(device.name, new wxD3D12LUID(device));
+				m_graphic_device->SetSelection(0);
+
+				const auto& config = GetConfig();
+				for (size_t i = 0; i < devices.size(); ++i)
+				{
+					if (config.d3d12_graphic_device_luid == devices[i].luid)
+					{
+						m_graphic_device->SetSelection(i);
+						break;
+					}
+				}
+			}
+		}
+		else
+		{
+			cemu_assert(g_renderer != nullptr);
+			m_graphic_device->Append(g_renderer->GetDeviceName());
+			m_graphic_device->SetSelection(0);
+		}
+		break;
+	}
+#endif
 #ifdef ENABLE_METAL
 	case GraphicAPI::kMetal:
 	{

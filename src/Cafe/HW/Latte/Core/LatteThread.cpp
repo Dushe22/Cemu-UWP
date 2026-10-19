@@ -19,10 +19,29 @@
 
 #include "Cafe/CafeSystem.h"
 
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "uwp/UwpWindowSystem.h"
+
+#include <fmt/format.h>
+#include <new>
+#include <winrt/base.h>
+#endif
+
 LatteGPUState_t LatteGPUState = {};
 
 std::atomic_bool sLatteThreadRunning = false;
 std::atomic_bool sLatteThreadFinishedInit = false;
+#if defined(CEMU_UWP)
+std::atomic_bool sLatteThreadFailureCleanupPending = false;
+enum class UwpLatteStartupState : uint8
+{
+	Pending,
+	Ready,
+	Failed,
+};
+std::atomic<UwpLatteStartupState> sLatteThreadStartupState{ UwpLatteStartupState::Pending };
+#endif
 
 void LatteThread_Exit();
 
@@ -106,6 +125,9 @@ bool LatteHandleOSScreen_DRC()
 
 void LatteThread_HandleOSScreen()
 {
+#if defined(CEMU_UWP)
+	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
 	bool swapTV = LatteHandleOSScreen_TV();
 	bool swapDRC = LatteHandleOSScreen_DRC();
 	if(swapTV || swapDRC)
@@ -154,6 +176,9 @@ int Latte_ThreadEntry()
 	}
 
 	sLatteThreadFinishedInit = true;
+#if defined(CEMU_UWP)
+	sLatteThreadStartupState.store(UwpLatteStartupState::Ready, std::memory_order_release);
+#endif
 
 	// register debug handler
 	if (cemuLog_isLoggingEnabled(LogType::OpenGLLogging))
@@ -165,13 +190,23 @@ int Latte_ThreadEntry()
 		if( CafeSystem::IsTitleRunning() )
 			break;
 
-		g_renderer->DrawEmptyFrame(true);
-		g_renderer->DrawEmptyFrame(false);
-		g_renderer->CancelScreenshotRequest(); // keep the screenshot request queue empty
+		{
+#if defined(CEMU_UWP)
+			std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+			g_renderer->DrawEmptyFrame(true);
+			g_renderer->DrawEmptyFrame(false);
+			g_renderer->CancelScreenshotRequest(); // keep the screenshot request queue empty
+		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000/60));
 	}
 
-	g_renderer->DrawEmptyFrame(true);
+	{
+#if defined(CEMU_UWP)
+		std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+		g_renderer->DrawEmptyFrame(true);
+	}
 
 	// before doing anything with game specific shaders, we need to wait for graphic packs to finish loading
 	GraphicPack2::WaitUntilReady();
@@ -197,7 +232,7 @@ int Latte_ThreadEntry()
 	// init registers
 	Latte_LoadInitialRegisters();
 	// let CPU thread know the GPU is done initializing
-	g_isGPUInitFinished = true;
+	g_isGPUInitFinished.store(true, std::memory_order_release);
 	// wait until CPU has called GX2Init()
 	while (LatteGPUState.gx2InitCalled == 0)
 	{
@@ -212,24 +247,183 @@ int Latte_ThreadEntry()
 	return 0;
 }
 
+#if defined(CEMU_UWP)
+namespace
+{
+void LatteThread_CancelPendingTitleGpuWork()
+{
+	LatteQuery_CancelAllForTitle();
+	LatteTextureReadback_CancelAllForTitle();
+}
+
+void LatteThread_CleanupAfterFailure()
+{
+	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+	bool rendererPrepared = false;
+	if (g_renderer)
+	{
+		try
+		{
+			static_cast<D3D12Renderer*>(g_renderer.get())->PrepareForTitleShutdown();
+			rendererPrepared = true;
+		}
+		catch (const std::exception& ex)
+		{
+			cemuLog_log(LogType::Force, "UWP Latte cleanup continued after renderer preparation failed: {}", ex.what());
+		}
+		catch (...)
+		{
+			cemuLog_log(LogType::Force, "UWP Latte cleanup continued after an unknown renderer preparation failure.");
+		}
+	}
+	LatteThread_CancelPendingTitleGpuWork();
+	LatteBufferCache_UnloadAll();
+	LatteTC_UnloadAllTextures();
+	LatteSHRC_UnloadAll();
+	LatteShaderCache_Close();
+	RendererOutputShader::ShutdownStatic();
+	if (g_renderer && rendererPrepared)
+	{
+		try
+		{
+			static_cast<D3D12Renderer*>(g_renderer.get())->FinishTitleShutdown();
+		}
+		catch (const std::exception& ex)
+		{
+			cemuLog_log(LogType::Force, "UWP Latte cleanup continued after renderer title cleanup failed: {}", ex.what());
+		}
+		catch (...)
+		{
+			cemuLog_log(LogType::Force, "UWP Latte cleanup continued after an unknown renderer title cleanup failure.");
+		}
+	}
+	if (g_renderer)
+	{
+		Renderer* renderer = g_renderer.get();
+		delete renderer;
+		g_renderer.release();
+	}
+	std::memset(&LatteGPUState, 0, sizeof(LatteGPUState));
+}
+
+void ReportLatteThreadFailure(std::string message) noexcept
+{
+	sLatteThreadFailureCleanupPending.store(true, std::memory_order_release);
+	sLatteThreadFinishedInit.store(true, std::memory_order_release);
+	sLatteThreadStartupState.store(UwpLatteStartupState::Failed, std::memory_order_release);
+	try
+	{
+		cemuLog_log(LogType::Force, "UWP Latte thread failure: {}", message);
+	}
+	catch (...)
+	{
+	}
+	CemuUwp::WindowHost::RequestGameplayGraphicsRecovery(std::move(message));
+}
+
+void LatteThread_UwpEntry() noexcept
+{
+	try
+	{
+		(void)Latte_ThreadEntry();
+		return;
+	}
+	catch (const winrt::hresult_error& ex)
+	{
+		try
+		{
+			ReportLatteThreadFailure(fmt::format(
+				"Latte gameplay thread raised WinRT error 0x{:08X}: {}",
+				(uint32)ex.code(), winrt::to_string(ex.message())));
+			return;
+		}
+		catch (...)
+		{
+		}
+	}
+	catch (const std::bad_alloc& ex)
+	{
+		CemuUwp::WindowHost::RecordCaughtAllocationFailure();
+		try
+		{
+			ReportLatteThreadFailure(fmt::format(
+				"Latte gameplay thread raised a renderer exception: {}", ex.what()));
+			return;
+		}
+		catch (...)
+		{
+		}
+	}
+	catch (const std::exception& ex)
+	{
+		try
+		{
+			ReportLatteThreadFailure(fmt::format(
+				"Latte gameplay thread raised a renderer exception: {}", ex.what()));
+			return;
+		}
+		catch (...)
+		{
+		}
+	}
+	catch (...)
+	{
+	}
+
+	ReportLatteThreadFailure("Latte gameplay thread raised an unknown renderer exception");
+}
+}
+#endif
+
 std::thread sLatteThread;
 std::mutex sLatteThreadStateMutex;
 
 // initializes GPU thread which in turn also activates graphic packs
 // does not return until the thread finished initialization
+#if defined(CEMU_UWP)
+bool Latte_Start()
+#else
 void Latte_Start()
+#endif
 {
 	std::unique_lock _lock(sLatteThreadStateMutex);
 	cemu_assert_debug(!sLatteThreadRunning);
 	sLatteThreadRunning = true;
 	sLatteThreadFinishedInit = false;
+#if defined(CEMU_UWP)
+	sLatteThreadFailureCleanupPending.store(false, std::memory_order_release);
+	g_isGPUInitFinished.store(false, std::memory_order_release);
+	sLatteThreadStartupState.store(UwpLatteStartupState::Pending, std::memory_order_release);
+	sLatteThread = std::thread(LatteThread_UwpEntry);
+#else
 	sLatteThread = std::thread(Latte_ThreadEntry);
+#endif
 	// wait until initialized
+#if defined(CEMU_UWP)
+	while (sLatteThreadStartupState.load(std::memory_order_acquire) == UwpLatteStartupState::Pending)
+#else
 	while (!sLatteThreadFinishedInit)
+#endif
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
 	}
+#if defined(CEMU_UWP)
+	return sLatteThreadStartupState.load(std::memory_order_acquire) == UwpLatteStartupState::Ready;
+#endif
 }
+
+#if defined(CEMU_UWP)
+bool Latte_WaitForGPUInit()
+{
+	while (!g_isGPUInitFinished.load(std::memory_order_acquire))
+	{
+		if (sLatteThreadStartupState.load(std::memory_order_acquire) == UwpLatteStartupState::Failed)
+			return false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	return true;
+}
+#endif
 
 void Latte_Stop()
 {
@@ -239,6 +433,10 @@ void Latte_Stop()
 	sLatteThreadRunning = false;
 	_lock.unlock();
 	sLatteThread.join();
+#if defined(CEMU_UWP)
+	if (sLatteThreadFailureCleanupPending.exchange(false, std::memory_order_acq_rel))
+		LatteThread_CleanupAfterFailure();
+#endif
 }
 
 bool Latte_GetStopSignal()
@@ -248,8 +446,31 @@ bool Latte_GetStopSignal()
 
 void LatteThread_Exit()
 {
+#if defined(CEMU_UWP)
+	auto* uwpRenderer = static_cast<D3D12Renderer*>(g_renderer.get());
+	bool rendererReusable = uwpRenderer != nullptr;
+	if (uwpRenderer)
+	{
+		try
+		{
+			uwpRenderer->PrepareForTitleShutdown();
+		}
+		catch (const std::exception& ex)
+		{
+			rendererReusable = false;
+			cemuLog_log(LogType::Force, "UWP title shutdown will rebuild the renderer after preparation failed: {}", ex.what());
+		}
+		catch (...)
+		{
+			rendererReusable = false;
+			cemuLog_log(LogType::Force, "UWP title shutdown will rebuild the renderer after an unknown preparation failure.");
+		}
+	}
+	LatteThread_CancelPendingTitleGpuWork();
+#else
 	if (g_renderer)
 		g_renderer->Shutdown();
+#endif
     // clean up vertex/uniform cache
     LatteBufferCache_UnloadAll();
 	// clean up texture cache
@@ -257,8 +478,33 @@ void LatteThread_Exit()
 	// clean up runtime shader cache
     LatteSHRC_UnloadAll();
     // close disk cache
-    LatteShaderCache_Close();
+	LatteShaderCache_Close();
 	RendererOutputShader::ShutdownStatic();
+#if defined(CEMU_UWP)
+	if (uwpRenderer && rendererReusable)
+	{
+		try
+		{
+			uwpRenderer->FinishTitleShutdown();
+		}
+		catch (const std::exception& ex)
+		{
+			rendererReusable = false;
+			cemuLog_log(LogType::Force, "UWP title shutdown will rebuild the renderer after title cleanup failed: {}", ex.what());
+		}
+		catch (...)
+		{
+			rendererReusable = false;
+			cemuLog_log(LogType::Force, "UWP title shutdown will rebuild the renderer after an unknown title cleanup failure.");
+		}
+	}
+	if (uwpRenderer && !rendererReusable && g_renderer)
+	{
+		Renderer* renderer = g_renderer.get();
+		delete renderer;
+		g_renderer.release();
+	}
+#else
     // destroy renderer but make sure that g_renderer remains valid until the destructor has finished
 	if (g_renderer)
 	{
@@ -266,6 +512,7 @@ void LatteThread_Exit()
 		delete renderer;
 		g_renderer.release();
 	}
+#endif
 	// reset GPU7 state
 	std::memset(&LatteGPUState, 0, sizeof(LatteGPUState));
 	#if BOOST_OS_WINDOWS

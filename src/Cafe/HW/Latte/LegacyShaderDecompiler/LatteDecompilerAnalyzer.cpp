@@ -341,6 +341,8 @@ void LatteDecompiler_analyzeTEXClause(LatteDecompilerShaderContext* shaderContex
 			if( texInstruction.textureFetch.samplerIndex != 0 )
 				debugBreakpoint(); // sampler is ignored and should be 0
 			shaderContext->output->textureUnitMask[texInstruction.textureFetch.textureIndex] = true;
+			if (texInstruction.opcode == GPU7_TEX_INST_GET_COMP_TEX_LOD)
+				shaderContext->analyzer.hasTextureLodQuery = true;
 		}
 		else if( texInstruction.opcode == GPU7_TEX_INST_SET_CUBEMAP_INDEX )
 		{
@@ -517,6 +519,17 @@ namespace LatteDecompiler
 			decompilerContext->output->resourceMappingVK.textureUnitBaseBindingPoint = -1;
 	}
 
+	void _initTextureBindingPointsD3D12(LatteDecompilerShaderContext* decompilerContext)
+	{
+		// per-stage register spaces let texture units keep their local t-register index
+		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		{
+			if (!decompilerContext->output->textureUnitMask[i])
+				continue;
+			decompilerContext->output->resourceMappingD3D12.textureUnitToBindingPoint[i] = i;
+		}
+	}
+
 #ifdef ENABLE_METAL
 	void _initTextureBindingPointsMTL(LatteDecompilerShaderContext* decompilerContext)
 	{
@@ -604,6 +617,7 @@ namespace LatteDecompiler
 		{
 			decompilerContext->output->resourceMappingVK.uniformVarsBufferBindingPoint = decompilerContext->currentBindingPointVK;
 			decompilerContext->currentBindingPointVK++;
+			decompilerContext->output->resourceMappingD3D12.uniformVarsBufferBindingPoint = 0;
 			decompilerContext->output->resourceMappingMTL.uniformVarsBufferBindingPoint = decompilerContext->currentBufferBindingPointMTL;
 			decompilerContext->currentBufferBindingPointMTL++;
 		}
@@ -630,6 +644,7 @@ namespace LatteDecompiler
 
 				decompilerContext->output->resourceMappingVK.uniformBuffersBindingPoint[i] = decompilerContext->currentBindingPointVK;
 				decompilerContext->currentBindingPointVK++;
+				decompilerContext->output->resourceMappingD3D12.uniformBuffersBindingPoint[i] = 64 + i;
 				decompilerContext->output->resourceMappingMTL.uniformBuffersBindingPoint[i] = decompilerContext->currentBufferBindingPointMTL;
 				decompilerContext->currentBufferBindingPointMTL++;
 			}
@@ -653,6 +668,7 @@ namespace LatteDecompiler
 		{
 			decompilerContext->output->resourceMappingVK.tfStorageBindingPoint = decompilerContext->currentBindingPointVK;
 			decompilerContext->currentBindingPointVK++;
+			decompilerContext->output->resourceMappingD3D12.tfStorageBindingPoint = 0;
 			decompilerContext->output->resourceMappingMTL.tfStorageBindingPoint = decompilerContext->currentBufferBindingPointMTL;
 			decompilerContext->currentBufferBindingPointMTL++;
 		}
@@ -671,6 +687,7 @@ namespace LatteDecompiler
 			{
 				decompilerContext->output->resourceMappingGL.attributeMapping[i] = bindingIndex;
 				decompilerContext->output->resourceMappingVK.attributeMapping[i] = bindingIndex;
+				decompilerContext->output->resourceMappingD3D12.attributeMapping[i] = bindingIndex;
 				decompilerContext->output->resourceMappingMTL.attributeMapping[i] = bindingIndex;
 				bindingIndex++;
 			}
@@ -1154,13 +1171,23 @@ void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteD
 	}
 	// assign binding points
 	if (shaderContext->shaderType == LatteConst::ShaderType::Vertex)
+	{
 		shaderContext->output->resourceMappingVK.setIndex = 0;
+		shaderContext->output->resourceMappingD3D12.setIndex = 0;
+	}
 	else if (shaderContext->shaderType == LatteConst::ShaderType::Pixel)
+	{
 		shaderContext->output->resourceMappingVK.setIndex = 1;
+		shaderContext->output->resourceMappingD3D12.setIndex = 1;
+	}
 	else if (shaderContext->shaderType == LatteConst::ShaderType::Geometry)
+	{
 		shaderContext->output->resourceMappingVK.setIndex = 2;
+		shaderContext->output->resourceMappingD3D12.setIndex = 2;
+	}
 	LatteDecompiler::_initTextureBindingPointsGL(shaderContext);
 	LatteDecompiler::_initTextureBindingPointsVK(shaderContext);
+	LatteDecompiler::_initTextureBindingPointsD3D12(shaderContext);
 #ifdef ENABLE_METAL
 	LatteDecompiler::_initTextureBindingPointsMTL(shaderContext);
 #endif

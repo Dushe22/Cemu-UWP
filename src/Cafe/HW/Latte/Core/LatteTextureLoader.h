@@ -1120,9 +1120,9 @@ public:
 				uint8 c1 = (v0 >> 5) & 0x3F;
 				uint8 c2 = (v0 >> 11) & 0x1F;
 
-				c0 = (c0 << 3) | c0 >> 3;// blue
+				c0 = (c0 << 3) | c0 >> 2;// blue
 				c1 = (c1 << 2) | c1 >> 4;// green
-				c2 = (c2 << 3) | c2 >> 3;// red
+				c2 = (c2 << 3) | c2 >> 2;// red
 
 				*(uint8*)(outputData + pixelOffset + 0) = c0;// blue
 				*(uint8*)(outputData + pixelOffset + 1) = c1;// green
@@ -1138,9 +1138,9 @@ public:
 		uint8 c0 = (v0 & 0x1F);// red
 		uint8 c1 = (v0 >> 5) & 0x3F;// green
 		uint8 c2 = (v0 >> 11) & 0x1F; // blue
-		c0 = (c0 << 3) | c0 >> 3;
+		c0 = (c0 << 3) | c0 >> 2;
 		c1 = (c1 << 2) | c1 >> 4;
-		c2 = (c2 << 3) | c2 >> 3;
+		c2 = (c2 << 3) | c2 >> 2;
 		*(outputPixel + 0) = c0;// red
 		*(outputPixel + 1) = c1;// green
 		*(outputPixel + 2) = c2;// blue
@@ -1956,6 +1956,65 @@ public:
 		*(outputPixel + 1) = 0;
 		*(outputPixel + 2) = 0;
 		*(outputPixel + 3) = 255;
+	}
+};
+
+class TextureDecoder_BC4_SNORM_uncompress : public TextureDecoder, public SingletonClass<TextureDecoder_BC4_SNORM_uncompress>
+{
+public:
+
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 2 * 4;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		for (sint32 y = 0; y < textureLoader->height; y += textureLoader->stepY)
+		{
+			for (sint32 x = 0; x < textureLoader->width; x += textureLoader->stepX)
+			{
+				uint8* blockData = LatteTextureLoader_GetInput(textureLoader, x, y);
+				sint32 blockSizeX = (std::min)(4, textureLoader->width - x);
+				sint32 blockSizeY = (std::min)(4, textureLoader->height - y);
+				float rBlock[4 * 4];
+				decodeBlock(blockData, rBlock);
+				for (sint32 py = 0; py < blockSizeY; py++)
+				{
+					sint32 yc = y + py;
+					for (sint32 px = 0; px < blockSizeX; px++)
+					{
+						sint32 pixelOffset = (x + px + yc * textureLoader->width) * 8; // write to target buffer
+						*(float*)(outputData + pixelOffset + 0) = rBlock[px + py * 4];
+						*(float*)(outputData + pixelOffset + 4) = 0.0f;
+					}
+				}
+			}
+		}
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rBlock[4 * 4];
+		decodeBlock(blockData, rBlock);
+		float red = rBlock[blockOffsetX + blockOffsetY * 4];
+		*(outputPixel + 0) = (uint8)((0.5f + red * 0.5f) * 255.0f);
+		*(outputPixel + 1) = 0;
+		*(outputPixel + 2) = 0;
+		*(outputPixel + 3) = 255;
+	}
+
+private:
+	static void decodeBlock(uint8* blockData, float* rOutput)
+	{
+		// a BC5 block is two BC4 blocks, the red half decodes this block
+		uint8 rgBlockData[16];
+		memcpy(rgBlockData, blockData, 8);
+		memcpy(rgBlockData + 8, blockData, 8);
+		float rgBlock[4 * 4 * 2];
+		decodeBC5Block_SNORM(rgBlockData, rgBlock);
+		for (sint32 i = 0; i < 16; i++)
+			rOutput[i] = rgBlock[i * 2 + 0];
 	}
 };
 

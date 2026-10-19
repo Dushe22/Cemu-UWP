@@ -104,6 +104,9 @@ void WindowSystem::UpdateWindowTitles(bool isIdle, bool isLoading, double fps)
 		case RendererAPI::Metal:
 			renderer = "[Metal]";
 			break;
+		case RendererAPI::Direct3D12:
+			renderer = "[D3D12]";
+			break;
 		default: break;
 		}
 	}

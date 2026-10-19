@@ -36,6 +36,59 @@ struct GameEntry
 	bool is_update = false;
 };
 
+struct UwpGameLayoutEntry
+{
+	uint64 title_id = 0;
+	sint32 layout = 0;
+};
+
+#if defined(CEMU_UWP)
+
+enum class UwpScreenScraperArtwork : sint32
+{
+	Box2D = 0,
+	Box3D,
+	MixRecalboxV1,
+	MixRecalboxV2,
+	FanArt,
+	Screenshot,
+	Logo,
+	BackCover,
+	PhysicalMedia,
+	TitleScreen,
+};
+
+struct UwpDsuServerEntry
+{
+	std::string id;
+	std::string name;
+	std::string host{ "127.0.0.1" };
+	uint16 port = 26760;
+	bool enabled = false;
+	bool companion_transport = false;
+};
+
+struct UwpDsuPlayerRouteEntry
+{
+	uint8 player = 0;
+	std::string server_id;
+	uint8 remote_slot = 0;
+	bool merge = false;
+	bool gamepad = true;
+	bool motion = true;
+	bool touch = true;
+};
+
+enum class UwpScreenScraperRegion : sint32
+{
+	Auto = 0,
+	USA,
+	Europe,
+	Japan,
+	World,
+};
+#endif
+
 struct GraphicPackEntry
 {
 	GraphicPackEntry(std::wstring_view filename,std::string_view category, std::string_view preset)
@@ -70,6 +123,7 @@ enum GraphicAPI
 	kOpenGL = 0,
 	kVulkan,
 	kMetal,
+	kDirect3D12,
 	COUNT
 };
 
@@ -77,6 +131,8 @@ enum GraphicAPI
 constexpr GraphicAPI kDefaultGraphicsAPI = kVulkan;
 #elif defined(ENABLE_METAL)
 constexpr GraphicAPI kDefaultGraphicsAPI = kMetal;
+#elif defined(ENABLE_D3D12)
+constexpr GraphicAPI kDefaultGraphicsAPI = kDirect3D12;
 #elif defined(ENABLE_OPENGL)
 constexpr GraphicAPI kDefaultGraphicsAPI = kOpenGL;
 #endif
@@ -94,6 +150,7 @@ enum UpscalingFilter
 	kBicubicFilter,
 	kBicubicHermiteFilter,
 	kNearestNeighborFilter,
+	kFsrFilter, // AMD FidelityFX Super Resolution 1.0, Direct3D 12 only
 };
 
 enum FullscreenScaling
@@ -407,6 +464,8 @@ struct CemuConfig
 	ConfigValue<bool> permanent_storage{ true };
 
 	ConfigValue<std::string> mlc_path{};
+	// empty uses the graphicPacks folder in the user data directory
+	ConfigValue<std::string> graphic_packs_path{};
 	ConfigValue<std::string> proxy_server{};
 
 	// temporary workaround because feature crashes on macOS
@@ -442,10 +501,12 @@ struct CemuConfig
 	std::array<uint8, 16> legacy_graphic_device_uuid{}; // placeholder option for backwards compatibility with settings from 2.6 and before (renamed to "vkDevice")
 	std::array<uint8, 16> vk_graphic_device_uuid;
 	uint64 mtl_graphic_device_uuid{ 0 };
+	std::array<uint8, 8> d3d12_graphic_device_luid{};
 	ConfigValue<int> vsync{ 0 }; // 0 = off, 1+ = depending on render backend
 	ConfigValue<bool> gx2drawdone_sync { true };
 	ConfigValue<bool> render_upside_down{ false };
 	ConfigValue<bool> async_compile{ true };
+	ConfigValue<bool> skip_resolution_rules_of_packs_with_skipped_shaders{ false };
 #ifdef ENABLE_METAL
 	ConfigValue<bool> force_mesh_shaders{ false };
 #endif
@@ -483,6 +544,8 @@ struct CemuConfig
 	} notification{};
 
 	ConfigValue<sint32> upscale_filter{kBicubicFilter};
+	// FSR sharpening in percent, 100 sharpest
+	ConfigValueBounds<sint32> fsr_sharpness{ 0, 80, 100 };
 	ConfigValue<sint32> downscale_filter{kLinearFilter};
 	ConfigValue<sint32> fullscreen_scaling{kKeepAspectRatio};
 
@@ -507,7 +570,48 @@ struct CemuConfig
 	{
 		ConfigValue<std::string> host{"127.0.0.1"};
 		ConfigValue<uint16> port{ 26760 };
+	#if defined(CEMU_UWP)
+		ConfigValue<bool> enabled{ false };
+		ConfigValue<bool> streaming_enabled{ false };
+		ConfigValue<std::string> streaming_url{};
+		std::vector<UwpDsuServerEntry> servers;
+		std::vector<UwpDsuPlayerRouteEntry> player_routes;
+	#endif
 	}dsu_client{};
+
+	struct
+	{
+		ConfigValue<std::string> ui_language{ "" };
+		ConfigValue<sint32> default_layout{ 0 };
+		ConfigValue<bool> swap_screens{ false };
+		ConfigValue<bool> touch_cursor{ true };
+		ConfigValue<std::string> toggle_swap_binding{ "Gamepad:View+Y" };
+		ConfigValue<std::string> quick_menu_binding{ "Gamepad:Menu+View" };
+		std::unordered_map<uint64, UwpGameLayoutEntry> game_layouts;
+	}uwp_display{};
+
+#if defined(CEMU_UWP)
+
+	struct
+	{
+		ConfigValue<bool> enabled{ false };
+		ConfigValue<bool> download_metadata{ true };
+		ConfigValue<bool> download_box_art{ true };
+		ConfigValue<bool> download_fanart{ true };
+		ConfigValue<bool> download_videos{ false };
+		ConfigValue<bool> download_screenshots{ true };
+		ConfigValue<bool> download_logos{ true };
+		ConfigValue<bool> overwrite_existing{ false };
+		ConfigValue<sint32> list_artwork_source{ static_cast<sint32>(UwpScreenScraperArtwork::Box3D) };
+		ConfigValue<sint32> detail_artwork_source{ static_cast<sint32>(UwpScreenScraperArtwork::Box3D) };
+		ConfigValue<sint32> preferred_region{ static_cast<sint32>(UwpScreenScraperRegion::Auto) };
+		// empty follows the interface language
+		ConfigValue<std::string> metadata_language{ "" };
+		ConfigValue<std::string> media_directory{ "E:\\ES-DE\\downloaded_media" };
+	}uwp_screenscraper{};
+
+
+#endif
 
 	// debug
 	ConfigValueBounds<CrashDump> crash_dump{ CrashDump::Disabled };

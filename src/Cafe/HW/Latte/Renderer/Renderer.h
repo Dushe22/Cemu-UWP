@@ -8,6 +8,10 @@
 #include "Cafe/HW/Latte/Core/LatteQueryObject.h"
 #include "Cafe/HW/Latte/Renderer/RendererOuputShader.h"
 
+#if defined(CEMU_UWP)
+#include <mutex>
+#endif
+
 #if BOOST_OS_WINDOWS
 #include "util/DXGIWrapper/DXGIWrapper.h"
 #endif
@@ -34,6 +38,7 @@ enum class RendererAPI
 	OpenGL,
 	Vulkan,
 	Metal,
+	Direct3D12,
 
 	MAX
 };
@@ -83,6 +88,8 @@ public:
 	virtual void Flush(bool waitIdle = false) = 0; // called when explicit flush is required (e.g. by imgui)
 	virtual void NotifyLatteCommandProcessorIdle() = 0; // called when command processor has no more commands available or when stalled
 	virtual void SurfaceSync(Latte::E_COHER_CNTL coher, MPTR address, uint32 size) {} // triggered by game via GX2Invalidate, can be utilized by the render backend as an optimization hint
+	virtual void NotifyDepthBufferExpanded(MPTR depthBufferMPTR, Latte::E_GX2SURFFMT depthBufferFormat, uint32 width, uint32 height, uint32 pitch, uint32 viewMip, uint32 viewFirstSlice, uint32 viewNumSlices) {}
+	virtual void NotifyTextureDeletion(LatteTexture* texture) {}
 
 	// imgui
 	virtual bool ImguiBegin(bool mainWindow);
@@ -195,3 +202,5 @@ protected:
 };
 
 extern std::unique_ptr<Renderer> g_renderer;
+
+extern std::recursive_mutex g_rendererMutex;

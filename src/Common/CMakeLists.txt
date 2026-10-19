@@ -24,15 +24,19 @@ add_library(CemuCommon
   version.h
 )
 
-set_property(TARGET CemuCommon PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuCommon PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 if(WIN32)
 	target_sources(CemuCommon PRIVATE
 		windows/platform.cpp
 		windows/platform.h
 		windows/FileStream_win32.cpp
-		ExceptionHandler/ExceptionHandler_win32.cpp
 	)
+	if(ENABLE_UWP)
+		target_sources(CemuCommon PRIVATE ExceptionHandler/ExceptionHandler_uwp.cpp)
+	else()
+		target_sources(CemuCommon PRIVATE ExceptionHandler/ExceptionHandler_win32.cpp)
+	endif()
 else()
 target_sources(CemuCommon
 PRIVATE

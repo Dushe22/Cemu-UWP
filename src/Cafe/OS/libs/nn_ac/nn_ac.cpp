@@ -3,7 +3,7 @@
 #include "nn_ac.h"
 #include "Common/socket.h"
 
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 #include <iphlpapi.h>
 #elif BOOST_OS_LINUX
 #include <ifaddrs.h>
@@ -27,7 +27,7 @@ void _GetLocalIPAndSubnetMaskFallback(uint32& localIp, uint32& subnetMask)
 	subnetMask = (255 << 24) | (255 << 16) | (255 << 8) | (0 << 0);
 }
 
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 void _GetLocalIPAndSubnetMask(uint32& localIp, uint32& subnetMask)
 {
 	std::vector<IP_ADAPTER_ADDRESSES> buf_adapter_addresses;

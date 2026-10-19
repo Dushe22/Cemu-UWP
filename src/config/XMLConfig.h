@@ -437,14 +437,25 @@ public:
 		fflush(file);
 		fclose(file);
 
+	#if defined(CEMU_UWP)
+		if (success)
+			fs::copy_file(tmp_name, filename, fs::copy_options::overwrite_existing, err);
+		std::error_code cleanupErr;
+		fs::remove(tmp_name, cleanupErr);
+	#else
 		fs::rename(tmp_name, filename, err);
+	#endif
 		if(err)
 		{
 			cemuLog_log(LogType::Force, "Unable to save settings to file: {}", err.message().c_str());
 			fs::remove(tmp_name, err);
 		}
 
+	#if defined(CEMU_UWP)
+		return success && !err;
+	#else
 		return success;
+	#endif
 	}
 
 	[[nodiscard]] const std::wstring& GetFilename() const { return m_filename; }

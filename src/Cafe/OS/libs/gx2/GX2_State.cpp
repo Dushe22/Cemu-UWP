@@ -40,6 +40,18 @@ namespace GX2
 		GX2SetAlphaTestReg(&tmpReg);
 	}
 
+	void GX2InitAlphaToMaskReg(uint32be* reg, uint32 alphaToMaskEnable, uint32 alphaToMaskDitherEnable)
+	{
+		if (reg)
+			*reg = (alphaToMaskEnable ? 1u : 0u) | (alphaToMaskDitherEnable ? 2u : 0u);
+	}
+
+	void GX2SetAlphaToMaskReg(uint32be* reg)
+	{
+		// todo - alpha-to-coverage, only relevant for MSAA render targets
+		(void)reg;
+	}
+
 	void GX2InitColorControlReg(GX2ColorControlReg* reg, GX2_LOGICOP logicOp, uint32 blendMask, uint32 multiwriteEnable, uint32 colorBufferEnable)
 	{
 		Latte::LATTE_CB_COLOR_CONTROL colorControlReg2;
@@ -490,6 +502,111 @@ namespace GX2
 		GX2SetBlendControlReg(&tmpReg);
 	}
 
+	void GX2GetBlendControlReg(GX2BlendControlReg* reg, uint32be* renderTargetIndex, uint32be* colorSrcFactor, uint32be* colorDstFactor, uint32be* colorCombineFunc, uint32be* separateAlphaBlend, uint32be* alphaSrcFactor, uint32be* alphaDstFactor, uint32be* alphaCombineFunc)
+	{
+		const Latte::LATTE_CB_BLENDN_CONTROL blendControl = reg->reg.value();
+		*renderTargetIndex = (uint32)reg->index;
+		*colorSrcFactor = (uint32)blendControl.get_COLOR_SRCBLEND();
+		*colorDstFactor = (uint32)blendControl.get_COLOR_DSTBLEND();
+		*colorCombineFunc = (uint32)blendControl.get_COLOR_COMB_FCN();
+		*separateAlphaBlend = blendControl.get_SEPARATE_ALPHA_BLEND() ? 1 : 0;
+		*alphaSrcFactor = (uint32)blendControl.get_ALPHA_SRCBLEND();
+		*alphaDstFactor = (uint32)blendControl.get_ALPHA_DSTBLEND();
+		*alphaCombineFunc = (uint32)blendControl.get_ALPHA_COMB_FCN();
+	}
+
+	void GX2GetAlphaTestReg(GX2AlphaTestReg* reg, uint32be* alphaTestEnable, uint32be* alphaFunc, float32be* alphaRef)
+	{
+		*alphaTestEnable = reg->regAlphaTestControl.value().get_ALPHA_TEST_ENABLE() ? 1 : 0;
+		*alphaFunc = (uint32)reg->regAlphaTestControl.value().get_ALPHA_FUNC();
+		*alphaRef = reg->regAlphaTestRef.value().get_ALPHA_TEST_REF();
+	}
+
+	void GX2GetAlphaToMaskReg(uint32be* reg, uint32be* alphaToMaskEnable, uint32be* alphaToMaskDitherEnable)
+	{
+		const uint32 value = *reg;
+		*alphaToMaskEnable = (value & 1) ? 1 : 0;
+		*alphaToMaskDitherEnable = (value & 2) ? 1 : 0;
+	}
+
+	void GX2GetColorControlReg(GX2ColorControlReg* reg, uint32be* logicOp, uint8* blendMask, uint32be* multiwriteEnable, uint32be* colorBufferEnable)
+	{
+		const Latte::LATTE_CB_COLOR_CONTROL colorControl = reg->reg.value();
+		*logicOp = (uint32)colorControl.get_ROP();
+		*blendMask = (uint8)colorControl.get_BLEND_MASK();
+		*multiwriteEnable = colorControl.get_MULTIWRITE_ENABLE() ? 1 : 0;
+		*colorBufferEnable = colorControl.get_SPECIAL_OP() == Latte::LATTE_CB_COLOR_CONTROL::E_SPECIALOP::DISABLE ? 0 : 1;
+	}
+
+	void GX2GetPolygonControlReg(GX2PolygonControlReg* reg, uint32be* frontFace, uint32be* cullFront, uint32be* cullBack, uint32be* usePolygonMode, uint32be* polyModeFront, uint32be* polyModeBack, uint32be* polygonOffsetFrontEnable, uint32be* polygonOffsetBackEnable, uint32be* paraOffsetEnable)
+	{
+		const Latte::LATTE_PA_SU_SC_MODE_CNTL polygonControl = reg->reg.value();
+		*frontFace = (uint32)polygonControl.get_FRONT_FACE();
+		*cullFront = polygonControl.get_CULL_FRONT() ? 1 : 0;
+		*cullBack = polygonControl.get_CULL_BACK() ? 1 : 0;
+		*usePolygonMode = (uint32)polygonControl.get_POLYGON_MODE();
+		*polyModeFront = (uint32)polygonControl.get_FRONT_POLY_MODE();
+		*polyModeBack = (uint32)polygonControl.get_BACK_POLY_MODE();
+		*polygonOffsetFrontEnable = polygonControl.get_OFFSET_FRONT_ENABLED() ? 1 : 0;
+		*polygonOffsetBackEnable = polygonControl.get_OFFSET_BACK_ENABLED() ? 1 : 0;
+		*paraOffsetEnable = polygonControl.get_OFFSET_PARA_ENABLED() ? 1 : 0;
+	}
+
+	void GX2GetPolygonOffsetReg(GX2PolygonOffsetReg* reg, float32be* frontOffset, float32be* frontScale, float32be* backOffset, float32be* backScale, float32be* clampOffset)
+	{
+		*frontOffset = reg->regFrontOffset.value().get_OFFSET();
+		*frontScale = reg->regFrontScale.value().get_SCALE() / 16.0f;
+		*backOffset = reg->regBackOffset.value().get_OFFSET();
+		*backScale = reg->regBackScale.value().get_SCALE() / 16.0f;
+		*clampOffset = reg->regClamp.value().get_CLAMP();
+	}
+
+	void GX2GetViewportReg(GX2ViewportReg* reg, float32be* x, float32be* y, float32be* width, float32be* height, float32be* nearZ, float32be* farZ)
+	{
+		const float xScale = reg->xScale.value().get_SCALE();
+		const float yScale = reg->yScale.value().get_SCALE();
+		const float zScale = reg->zScale.value().get_SCALE();
+		const float zOffset = reg->zOffset.value().get_OFFSET();
+		*x = reg->xOffset.value().get_OFFSET() - xScale;
+		*y = reg->yOffset.value().get_OFFSET() + yScale;
+		*width = xScale * 2.0f;
+		*height = yScale * -2.0f;
+		*nearZ = zOffset - zScale;
+		*farZ = zOffset + zScale;
+	}
+
+	void GX2GetStencilMaskReg(GX2StencilMaskReg* reg, uint8* compareMaskFront, uint8* writeMaskFront, uint8* refFront, uint8* compareMaskBack, uint8* writeMaskBack, uint8* refBack)
+	{
+		const Latte::LATTE_DB_STENCILREFMASK front = reg->stencilRefMaskFrontReg.value();
+		const Latte::LATTE_DB_STENCILREFMASK_BF back = reg->stencilRefMaskBackReg.value();
+		*compareMaskFront = (uint8)front.get_STENCILMASK_F();
+		*writeMaskFront = (uint8)front.get_STENCILWRITEMASK_F();
+		*refFront = (uint8)front.get_STENCILREF_F();
+		*compareMaskBack = (uint8)back.get_STENCILMASK_B();
+		*writeMaskBack = (uint8)back.get_STENCILWRITEMASK_B();
+		*refBack = (uint8)back.get_STENCILREF_B();
+	}
+
+	void GX2GetBlendConstantColorReg(GX2BlendConstantColorReg* reg, float32be* red, float32be* green, float32be* blue, float32be* alpha)
+	{
+		*red = reg->regRed.value().get_RED();
+		*green = reg->regGreen.value().get_GREEN();
+		*blue = reg->regBlue.value().get_BLUE();
+		*alpha = reg->regAlpha.value().get_ALPHA();
+	}
+
+	void GX2GetPointSizeReg(GX2PointSizeReg* reg, float32be* width, float32be* height)
+	{
+		*width = (float)reg->reg.value().get_WIDTH() / 8.0f;
+		*height = (float)reg->reg.value().get_HEIGHT() / 8.0f;
+	}
+
+	void GX2GetPointLimitsReg(GX2PointLimitsReg* reg, float32be* minSize, float32be* maxSize)
+	{
+		*minSize = (float)reg->reg.value().get_MIN_SIZE() / 8.0f;
+		*maxSize = (float)reg->reg.value().get_MAX_SIZE() / 8.0f;
+	}
+
 	void GX2InitBlendConstantColorReg(GX2BlendConstantColorReg* reg, float red, float green, float blue, float alpha)
 	{
 		reg->regRed = Latte::LATTE_CB_BLEND_RED().set_RED(red);
@@ -660,6 +777,8 @@ namespace GX2
 		cafeExportRegister("gx2", GX2InitAlphaTestReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetAlphaTestReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetAlphaTest, LogType::GX2);
+		cafeExportRegister("gx2", GX2InitAlphaToMaskReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2SetAlphaToMaskReg, LogType::GX2);
 
 		cafeExportRegister("gx2", GX2InitColorControlReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetColorControl, LogType::GX2);
@@ -707,6 +826,17 @@ namespace GX2
 		cafeExportRegister("gx2", GX2InitBlendControlReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetBlendControlReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetBlendControl, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetBlendControlReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetAlphaTestReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetAlphaToMaskReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetColorControlReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetPolygonControlReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetPolygonOffsetReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetViewportReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetStencilMaskReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetBlendConstantColorReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetPointSizeReg, LogType::GX2);
+		cafeExportRegister("gx2", GX2GetPointLimitsReg, LogType::GX2);
 
 		cafeExportRegister("gx2", GX2InitBlendConstantColorReg, LogType::GX2);
 		cafeExportRegister("gx2", GX2SetBlendConstantColorReg, LogType::GX2);

@@ -12,6 +12,8 @@
 
 std::unique_ptr<Renderer> g_renderer;
 
+std::recursive_mutex g_rendererMutex;
+
 bool Renderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const
 {
 	usageInMB = totalInMB = -1;

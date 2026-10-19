@@ -65,12 +65,13 @@ namespace InputAPI
 			return DSUClient;
 		else if (str == to_string(SDLController))
 			return SDLController;
+#if defined(CEMU_UWP)
+		else if (str == to_string(WGIGamepad))
+			return WGIGamepad;
+#endif
 		else if (str == "DSU") // legacy
 			return DSUClient;
-		
-		//else if (str == "WGIGamepad")
-		//	return WGIGamepad;
-		//
+
 		//else if (str == "WGIRawController")
 		//	return WGIRawController;
 

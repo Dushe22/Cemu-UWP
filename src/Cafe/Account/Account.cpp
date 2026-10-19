@@ -5,7 +5,6 @@
 #include "config/ActiveSettings.h"
 #include "Cafe/IOSU/legacy/iosu_crypto.h"
 #include "Common/FileStream.h"
-#include <boost/random/uniform_int.hpp>
 
 #include <random>
 
@@ -66,10 +65,9 @@ Account::Account(uint32 persistent_id, std::wstring_view mii_name)
 	static std::random_device s_random_device;
 	static std::mt19937 s_mte(s_random_device());
 
-        // use boost library to escape static asserts in linux builds
-        boost::random::uniform_int_distribution<uint16> dist(std::numeric_limits<uint8>::min(), std::numeric_limits<uint8>::max());
-        
-        std::generate(m_uuid.begin(), m_uuid.end(), [&]() { return (uint8)dist(s_mte); });
+	std::uniform_int_distribution<int> dist(std::numeric_limits<uint8>::min(), std::numeric_limits<uint8>::max());
+
+	std::generate(m_uuid.begin(), m_uuid.end(), [&]() { return (uint8)dist(s_mte); });
 
 	// 1000004 or 2000004 | lower uint32 from uuid from uuid
 	m_transferable_id_base = (0x2000004ULL << 32);

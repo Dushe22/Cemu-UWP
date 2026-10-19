@@ -15,7 +15,56 @@
 #include "Cafe/TitleList/TitleId.h"
 #include "util/helpers/StringHelpers.h"
 
+#include <algorithm>
+#include <cctype>
+
+#if defined(CEMU_UWP)
+void requireConsole()
+{
+}
+#else
 void requireConsole();
+#endif
+
+namespace
+{
+#if defined(CEMU_UWP)
+uint32 ParsePersistentId(std::string value)
+{
+	if (!value.empty() && value.front() == '=')
+		value.erase(value.begin());
+	if (value.size() != 8 || !std::all_of(value.begin(), value.end(), [](unsigned char ch) { return std::isxdigit(ch) != 0; }))
+		throw std::invalid_argument("--account requires an 8-digit hexadecimal persistent ID");
+
+	const auto id = ConvertString<uint32>(value, 16);
+	if (id < Account::kMinPersistendId)
+		throw std::invalid_argument("--account does not identify a valid Wii U account");
+	return id;
+}
+
+NetworkService ParseNetworkService(std::string value)
+{
+	if (!value.empty() && value.front() == '=')
+		value.erase(value.begin());
+	std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
+	if (value == "offline")
+		return NetworkService::Offline;
+	if (value == "pretendo")
+		return NetworkService::Pretendo;
+	if (value == "custom")
+		return NetworkService::Custom;
+	throw std::invalid_argument("--network-service must be offline, pretendo, or custom");
+}
+#endif
+}
+
+void LaunchSettings::ResetGameLaunchOverrides()
+{
+	s_load_game_file.reset();
+	s_load_title_id.reset();
+	s_persistent_id.reset();
+	s_network_service.reset();
+}
 
 std::optional<int> LaunchSettings::HandleCommandline(const wchar_t* lpCmdLine)
 {
@@ -52,8 +101,11 @@ std::optional<int> LaunchSettings::HandleCommandline(int argc, char* argv[])
 	return HandleCommandline(args);
 }
 
-std::optional<int> LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args)
+std::optional<int> LaunchSettings::HandleCommandline(const std::vector<std::wstring>& args, std::string* errorMessage)
 {
+	if (errorMessage)
+		errorMessage->clear();
+
 	namespace po = boost::program_options;
 	po::options_description desc{ "Launch options" };
 	desc.add_options()
@@ -71,6 +123,9 @@ std::optional<int> LaunchSettings::HandleCommandline(const std::vector<std::wstr
 		("ud,u", po::value<bool>()->implicit_value(true), "Render output upside-down")
 
 		("account,a", po::value<std::string>(), "Persistent id of account")
+#if defined(CEMU_UWP)
+		("network-service", po::value<std::string>(), "Network service for this launch: offline, pretendo, or custom")
+#endif
 
 		("cos-mounts", po::wvalue<std::vector<std::wstring>>()->composing(), "A series of mounts in the form of: (path on host:path within emulated system, e.g. `/tmp:/vol/temporary/`)")
 		("forward-console-logging", "Forward OSReport, OSConsoleWrite, etc. to stdout/stderr.")
@@ -174,10 +229,19 @@ std::optional<int> LaunchSettings::HandleCommandline(const std::vector<std::wstr
 
 		if (vm.count("account"))
 		{
+#if defined(CEMU_UWP)
+			s_persistent_id = ParsePersistentId(vm["account"].as<std::string>());
+#else
 			const auto id = ConvertString<uint32>(vm["account"].as<std::string>(), 16);
 			if (id >= Account::kMinPersistendId)
 				s_persistent_id = id;
+#endif
 		}
+
+#if defined(CEMU_UWP)
+		if (vm.count("network-service"))
+			s_network_service = ParseNetworkService(vm["network-service"].as<std::string>());
+#endif
 		
 		if (vm.count("fullscreen"))
 			s_fullscreen = vm["fullscreen"].as<bool>();
@@ -277,6 +341,8 @@ std::optional<int> LaunchSettings::HandleCommandline(const std::vector<std::wstr
 		std::string errorMsg;
 		errorMsg.append("Error while trying to parse command line parameter:\n");
 		errorMsg.append(ex.what());
+		if (errorMessage)
+			*errorMessage = errorMsg;
 		std::cout << errorMsg << std::endl;
 		return 1;
 	}

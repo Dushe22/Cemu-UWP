@@ -468,6 +468,9 @@ void swkbd_render(bool mainWindow)
 
 	if (ImGui::Begin(fmt::format("Software keyboard##SoftwareKeyboard{}",mainWindow).c_str(), nullptr, kPopupFlags))
 	{
+#if defined(CEMU_UWP)
+		bool setInitialGamepadFocus = true;
+#endif
 		if(swkbdInternalState->shiftActivated)
 		{
 			const char* keys[] =
@@ -482,7 +485,17 @@ void swkbd_render(bool mainWindow)
 			{
 				if (*key != '\n')
 				{
+#if defined(CEMU_UWP)
+					const bool pressed = ImGui::Button(key, { *key == ' ' ? 537 : (button_len + 5), 0});
+					if (setInitialGamepadFocus)
+					{
+						ImGui::SetItemDefaultFocus();
+						setInitialGamepadFocus = false;
+					}
+					if (pressed)
+#else
 					if (ImGui::Button(key, { *key == ' ' ? 537 : (button_len + 5), 0}))
+#endif
 					{
 						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
 							swkbd_keyInput(8);
@@ -514,7 +527,17 @@ void swkbd_render(bool mainWindow)
 			{
 				if (*key != '\n')
 				{
+#if defined(CEMU_UWP)
+					const bool pressed = ImGui::Button(key, { *key == ' ' ? 537 : (button_len + 5), 0 });
+					if (setInitialGamepadFocus)
+					{
+						ImGui::SetItemDefaultFocus();
+						setInitialGamepadFocus = false;
+					}
+					if (pressed)
+#else
 					if (ImGui::Button(key, { *key == ' ' ? 537 : (button_len + 5), 0 }))
+#endif
 					{
 						if (strcmp(key, _utf8WrapperPtr(ICON_FA_ARROW_CIRCLE_LEFT)) == 0)
 							swkbd_keyInput(8);
@@ -536,6 +559,13 @@ void swkbd_render(bool mainWindow)
 	}
 	ImGui::End();
 
+#if defined(CEMU_UWP)
+	// NavInputs is not filled by the key event API, poll gamepad keys directly
+	if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false))
+		swkbd_keyInput(8); // B: backspace
+	if (ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false))
+		swkbd_keyInput(13); // Menu: accept
+#else
 	if (io.NavInputs[ImGuiNavInput_Cancel] > 0)
 	{
 		if(!swkbdInternalState->cancelState)
@@ -553,6 +583,7 @@ void swkbd_render(bool mainWindow)
 	}
 	else
 		swkbdInternalState->returnState = false;
+#endif
 
 	ImGui::PopFont();
 	ImGui::PopStyleColor();

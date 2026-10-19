@@ -7,6 +7,10 @@
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "util/MemMapper/MemMapper.h"
 #include "Common/cpu_features.h"
+#if defined(CEMU_UWP)
+#include <Windows.h>
+#include <atomic>
+#endif
 #include <boost/container/static_vector.hpp>
 
 static x86Assembler64::GPR32 _reg32(IMLReg physReg)
@@ -1304,15 +1308,81 @@ void PPCRecompilerX64Gen_imlInstruction_name_r(PPCRecFunction_t* PPCRecFunction,
 
 }
 
+std::mutex mtx_allocExecutableMemory;
+
+#if defined(CEMU_UWP)
+constexpr size_t kUwpCodeMemoryBlockDefaultSize = 4 * 1024 * 1024;
+constexpr size_t kUwpCodePageSize = 4 * 1024;
+uint8* s_uwpWritableCodeBlock{};
+size_t s_uwpWritableCodeBlockSize{};
+size_t s_uwpWritableCodeBlockUsed{};
+#if defined(CEMU_DEBUG_ASSERT)
+std::atomic_uint64_t s_uwpRecompilerSlabsAllocated{ 0 };
+std::atomic_uint64_t s_uwpRecompilerReservedBytes{ 0 };
+std::atomic_uint64_t s_uwpRecompilerCommittedFunctions{ 0 };
+std::atomic_uint64_t s_uwpRecompilerCommittedBytes{ 0 };
+#endif
+#else
 uint8* codeMemoryBlock = nullptr;
 sint32 codeMemoryBlockIndex = 0;
 sint32 codeMemoryBlockSize = 0;
+#endif
 
-std::mutex mtx_allocExecutableMemory;
+struct ExecutableMemoryAllocation
+{
+	uint8* executable{};
+	uint8* writable{};
+	size_t reservedSize{};
+};
 
-uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size)
+ExecutableMemoryAllocation PPCRecompilerX86_allocateExecutableMemory(sint32 size)
 {
 	std::lock_guard<std::mutex> lck(mtx_allocExecutableMemory);
+#if defined(CEMU_UWP)
+	if (size <= 0)
+		throw std::invalid_argument("UWP recompiler requested an empty executable allocation");
+
+	const size_t requestedSize = static_cast<size_t>(size);
+	auto alignUp = [](size_t value, size_t alignment)
+	{
+		return (value + alignment - 1) & ~(alignment - 1);
+	};
+	const size_t allocationSize = alignUp(requestedSize, kUwpCodePageSize);
+
+	if (!s_uwpWritableCodeBlock ||
+		s_uwpWritableCodeBlockUsed > s_uwpWritableCodeBlockSize ||
+		allocationSize > s_uwpWritableCodeBlockSize - s_uwpWritableCodeBlockUsed)
+	{
+		s_uwpWritableCodeBlockSize = std::max(kUwpCodeMemoryBlockDefaultSize, allocationSize);
+		s_uwpWritableCodeBlockUsed = 0;
+		s_uwpWritableCodeBlock = static_cast<uint8*>(VirtualAllocFromApp(
+			nullptr,
+			s_uwpWritableCodeBlockSize,
+			MEM_RESERVE | MEM_COMMIT,
+			PAGE_READWRITE));
+		if (!s_uwpWritableCodeBlock)
+		{
+			const DWORD error = GetLastError();
+			const auto message = fmt::format("failed to allocate UWP recompiler memory slab of {} bytes. VirtualAllocFromApp error: {}", s_uwpWritableCodeBlockSize, error);
+			cemuLog_log(LogType::Force, message);
+			throw std::runtime_error(message);
+		}
+
+#if defined(CEMU_DEBUG_ASSERT)
+		const uint64 slabCount = s_uwpRecompilerSlabsAllocated.fetch_add(1, std::memory_order_relaxed) + 1;
+		const uint64 reservedBytes = s_uwpRecompilerReservedBytes.fetch_add(s_uwpWritableCodeBlockSize, std::memory_order_relaxed) + s_uwpWritableCodeBlockSize;
+		cemuLog_log(LogType::Force, "UWP recompiler allocated {} byte writable slab #{} at 0x{:016x} (reserved total {} bytes)",
+					s_uwpWritableCodeBlockSize,
+					slabCount,
+					(uint64)s_uwpWritableCodeBlock,
+					reservedBytes);
+#endif
+	}
+
+	uint8* codeMemory = s_uwpWritableCodeBlock + s_uwpWritableCodeBlockUsed;
+	s_uwpWritableCodeBlockUsed += allocationSize;
+	return { codeMemory, codeMemory, allocationSize };
+#else
 	if( codeMemoryBlockIndex+size > codeMemoryBlockSize )
 	{
 		// allocate new block
@@ -1328,7 +1398,40 @@ uint8* PPCRecompilerX86_allocateExecutableMemory(sint32 size)
 		codeMemoryBlock[codeMemoryBlockIndex] = 0x90;
 		codeMemoryBlockIndex++;
 	}
-	return codeMem;
+	return { codeMem, codeMem, static_cast<size_t>(size) };
+#endif
+}
+
+void PPCRecompilerX86_commitExecutableMemory(const ExecutableMemoryAllocation& allocation, std::span<const uint8> codeBuffer)
+{
+	if (codeBuffer.size_bytes() > allocation.reservedSize)
+		throw std::runtime_error("generated recompiler code exceeds its executable allocation");
+
+	memcpy(allocation.writable, codeBuffer.data(), codeBuffer.size_bytes());
+#if defined(CEMU_UWP)
+	DWORD oldProtect = 0;
+	if (!VirtualProtectFromApp(allocation.executable, allocation.reservedSize, PAGE_EXECUTE_READ, &oldProtect))
+	{
+		const DWORD error = GetLastError();
+		const auto message = fmt::format("failed to mark UWP recompiler memory executable. VirtualProtectFromApp error: {}", error);
+		cemuLog_log(LogType::Force, message);
+		throw std::runtime_error(message);
+	}
+
+	if (!FlushInstructionCache(GetCurrentProcess(), allocation.executable, codeBuffer.size_bytes()))
+	{
+		const DWORD error = GetLastError();
+		const auto message = fmt::format("failed to publish UWP recompiler code. FlushInstructionCache error: {}", error);
+		cemuLog_log(LogType::Force, message);
+		throw std::runtime_error(message);
+	}
+#if defined(CEMU_DEBUG_ASSERT)
+	const uint64 functionCount = s_uwpRecompilerCommittedFunctions.fetch_add(1, std::memory_order_relaxed) + 1;
+	const uint64 committedBytes = s_uwpRecompilerCommittedBytes.fetch_add(codeBuffer.size_bytes(), std::memory_order_relaxed) + codeBuffer.size_bytes();
+	if (functionCount == 1 || (functionCount % 512) == 0)
+		cemuLog_log(LogType::Force, "UWP recompiler committed {} functions ({} executable bytes)", functionCount, committedBytes);
+#endif
+#endif
 }
 
 bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenContext_t* ppcImlGenContext)
@@ -1516,7 +1619,8 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 		return false;
 	}
 	// allocate executable memory
-	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	const auto executableAllocation = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	uint8* executableMemory = executableAllocation.executable;
 	size_t baseAddress = (size_t)executableMemory;
 	// fix relocs
 	for(auto& relocIt : x64GenContext.relocateOffsetTable2)
@@ -1563,7 +1667,7 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 
 	// copy code to executable memory
 	std::span<uint8> codeBuffer = x64GenContext.emitter->GetBuffer();
-	memcpy(executableMemory, codeBuffer.data(), codeBuffer.size_bytes());
+	PPCRecompilerX86_commitExecutableMemory(executableAllocation, codeBuffer);
 	// set code
 	PPCRecFunction->x86Code = executableMemory;
 	PPCRecFunction->x86Size = codeBuffer.size_bytes();
@@ -1637,9 +1741,10 @@ void PPCRecompilerX64Gen_generateEnterRecompilerCode()
 	// RET
 	x64Gen_ret(&x64GenContext);
 
-	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	const auto executableAllocation = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	uint8* executableMemory = executableAllocation.executable;
 	// copy code to executable memory
-	memcpy(executableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
+	PPCRecompilerX86_commitExecutableMemory(executableAllocation, x64GenContext.emitter->GetBuffer());
 	PPCRecompiler_enterRecompilerCode = (void ATTR_MS_ABI (*)(uint64,uint64))executableMemory;
 }
 
@@ -1656,16 +1761,26 @@ void* PPCRecompilerX64Gen_generateLeaveRecompilerCode()
 	// RET
 	x64Gen_ret(&x64GenContext);
 
-	uint8* executableMemory = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	const auto executableAllocation = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
+	uint8* executableMemory = executableAllocation.executable;
 	// copy code to executable memory
-	memcpy(executableMemory, x64GenContext.emitter->GetBuffer().data(), x64GenContext.emitter->GetBuffer().size_bytes());
+	PPCRecompilerX86_commitExecutableMemory(executableAllocation, x64GenContext.emitter->GetBuffer());
 	return executableMemory;
 }
 
 void PPCRecompilerX64Gen_generateRecompilerInterfaceFunctions()
 {
+#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler generating enter stub");
+#endif
 	PPCRecompilerX64Gen_generateEnterRecompilerCode();
+#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler generating unvisited leave stub");
+#endif
 	PPCRecompiler_leaveRecompilerCode_unvisited = (void ATTR_MS_ABI (*)())PPCRecompilerX64Gen_generateLeaveRecompilerCode();
+#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler generating visited leave stub");
+#endif
 	PPCRecompiler_leaveRecompilerCode_visited = (void ATTR_MS_ABI (*)())PPCRecompilerX64Gen_generateLeaveRecompilerCode();
 	cemu_assert_debug(PPCRecompiler_leaveRecompilerCode_unvisited != PPCRecompiler_leaveRecompilerCode_visited);
 }

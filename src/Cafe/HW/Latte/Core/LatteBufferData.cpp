@@ -280,16 +280,28 @@ void LatteBufferCache_Sync(uint32 maxIndex, uint32 baseInstance, uint32 instance
 	if (vertexShader && vertexShader->uniformMode == LATTE_DECOMPILER_UNIFORM_MODE_FULL_CBANK)
 	{
 		if (LatteBufferCache_syncGPUUniformBuffers(vertexShader, mmSQ_VTX_UNIFORM_BLOCK_START, LatteConst::ShaderType::Vertex, vsUniformBufferDirtyMask))
+#if defined(CEMU_UWP) && !defined(ENABLE_VULKAN)
+			stageUniformModifiedMask |= (1 << static_cast<int>(LatteConst::ShaderType::Vertex));
+#else
 			stageUniformModifiedMask |= (1<<VulkanRendererConst::SHADER_STAGE_INDEX_VERTEX);
+#endif
 	}
 	if (pixelShader && pixelShader->uniformMode == LATTE_DECOMPILER_UNIFORM_MODE_FULL_CBANK)
 	{
 		if (LatteBufferCache_syncGPUUniformBuffers(pixelShader, mmSQ_PS_UNIFORM_BLOCK_START, LatteConst::ShaderType::Pixel, psUniformBufferDirtyMask))
+#if defined(CEMU_UWP) && !defined(ENABLE_VULKAN)
+			stageUniformModifiedMask |= (1 << static_cast<int>(LatteConst::ShaderType::Pixel));
+#else
 			stageUniformModifiedMask |= (1<<VulkanRendererConst::SHADER_STAGE_INDEX_FRAGMENT); // todo - move this enum to Latte?
+#endif
 	}
 	if (geometryShader && geometryShader->uniformMode == LATTE_DECOMPILER_UNIFORM_MODE_FULL_CBANK)
 	{
 		if ( LatteBufferCache_syncGPUUniformBuffers(geometryShader, mmSQ_GS_UNIFORM_BLOCK_START, LatteConst::ShaderType::Geometry, gsUniformBufferDirtyMask) )
+#if defined(CEMU_UWP) && !defined(ENABLE_VULKAN)
+			stageUniformModifiedMask |= (1 << static_cast<int>(LatteConst::ShaderType::Geometry));
+#else
 			stageUniformModifiedMask |= (1<<VulkanRendererConst::SHADER_STAGE_INDEX_GEOMETRY);
+#endif
 	}
 }

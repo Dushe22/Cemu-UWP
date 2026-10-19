@@ -18,18 +18,18 @@ struct _FileCacheAsyncWriter
 {
 	_FileCacheAsyncWriter()
 	{
-		m_isRunning.store(true);
 		m_fileCacheThread = std::thread(&_FileCacheAsyncWriter::FileCacheThread, this);
 	}
 
 	~_FileCacheAsyncWriter()
 	{
-		if (m_isRunning.load())
 		{
-			m_isRunning.store(false);
-			m_fileCacheCondVar.notify_one();
-			m_fileCacheThread.join();
+			std::lock_guard lock(m_fileCacheMutex);
+			m_isRunning = false;
 		}
+		m_fileCacheCondVar.notify_all();
+		if (m_fileCacheThread.joinable())
+			m_fileCacheThread.join();
 	}
 
 	void AddJob(FileCache* fileCache, const FileCache::FileName& name, const uint8* fileData, sint32 fileSize)
@@ -41,6 +41,8 @@ struct _FileCacheAsyncWriter
 		async.fileData = { fileData, fileData + fileSize };
 
 		std::unique_lock lock(m_fileCacheMutex);
+		if (!m_isRunning)
+			throw std::runtime_error("File cache async writer is shutting down");
 		m_writeRequests.emplace_back(std::move(async));
 
 		lock.unlock();
@@ -54,12 +56,9 @@ private:
 		while (true)
 		{
 			std::unique_lock lock(m_fileCacheMutex);
-			while (m_writeRequests.empty())
-			{
-				m_fileCacheCondVar.wait(lock);
-				if (!m_isRunning.load(std::memory_order::relaxed))
-					return;
-			}
+			m_fileCacheCondVar.wait(lock, [this]() { return !m_isRunning || !m_writeRequests.empty(); });
+			if (!m_isRunning && m_writeRequests.empty())
+				return;
 
 			std::vector<FileCacheAsyncJob> requestsCopy;
 			requestsCopy.swap(m_writeRequests); // fast copy & clear
@@ -67,7 +66,19 @@ private:
 
 			for (const auto& entry : requestsCopy)
 			{
-				entry.fileCache->AddFile({ entry.name1, entry.name2 }, entry.fileData.data(), (sint32)entry.fileData.size());
+				try
+				{
+					entry.fileCache->AddFile({ entry.name1, entry.name2 }, entry.fileData.data(), (sint32)entry.fileData.size());
+				}
+				catch (const std::exception& ex)
+				{
+					cemuLog_log(LogType::Force, "Asynchronous file cache write failed: {}", ex.what());
+				}
+				catch (...)
+				{
+					cemuLog_log(LogType::Force, "Asynchronous file cache write failed with an unknown exception");
+				}
+				entry.fileCache->asyncWriteFinished();
 			}
 		}
 	}
@@ -76,7 +87,7 @@ private:
 	std::mutex m_fileCacheMutex;
 	std::condition_variable m_fileCacheCondVar;
 	std::vector<FileCacheAsyncJob> m_writeRequests;
-	std::atomic_bool m_isRunning;
+	bool m_isRunning{true};
 }FileCacheAsyncWriter;
 
 #define FILECACHE_MAGIC_V1					0x8371b694 // used prior to Cemu 1.7.4, only supported caches up to 4GB
@@ -236,6 +247,11 @@ FileCache* FileCache::Open(const fs::path& path)
 
 FileCache::~FileCache()
 {
+	{
+		std::unique_lock lock(asyncWriteMutex);
+		acceptingAsyncWrites = false;
+		asyncWriteCondition.wait(lock, [this]() { return asyncWritesPending == 0; });
+	}
 	free(this->fileTableEntries);
 	delete fileStream;
 }
@@ -508,7 +524,33 @@ bool FileCache::DeleteFile(const FileName&& name)
 
 void FileCache::AddFileAsync(const FileName& name, const uint8* fileData, sint32 fileSize)
 {
-	FileCacheAsyncWriter.AddJob(this, name, fileData, fileSize);
+	{
+		std::lock_guard lock(asyncWriteMutex);
+		if (!acceptingAsyncWrites)
+			return;
+		asyncWritesPending++;
+	}
+
+	try
+	{
+		FileCacheAsyncWriter.AddJob(this, name, fileData, fileSize);
+	}
+	catch (...)
+	{
+		asyncWriteFinished();
+		throw;
+	}
+}
+
+void FileCache::asyncWriteFinished()
+{
+	std::lock_guard lock(asyncWriteMutex);
+	cemu_assert_debug(asyncWritesPending != 0);
+	if (asyncWritesPending == 0)
+		return;
+	asyncWritesPending--;
+	if (asyncWritesPending == 0)
+		asyncWriteCondition.notify_all();
 }
 
 bool FileCache::_getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut)
@@ -570,6 +612,40 @@ bool FileCache::GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::
 	if(name1)
 		*name1 = entry->name1;
 	if(name2)
+		*name2 = entry->name2;
+	return _getFileDataInternal(entry, dataOut);
+}
+
+bool FileCache::GetUncompressedFileInfoByIndexBounded(sint32 index, uint64& name1, uint64& name2, uint32& size, size_t maxBytes)
+{
+	std::unique_lock lock(this->mutex);
+	if (!fileTableEntries || index < 0 || index >= fileTableEntryCount)
+		return false;
+	const FileTableEntry* entry = fileTableEntries + index;
+	if ((entry->name1 == FILECACHE_FILETABLE_FREE_NAME && entry->name2 == FILECACHE_FILETABLE_FREE_NAME) ||
+		(entry->name1 == FILECACHE_FILETABLE_NAME1 && entry->name2 == FILECACHE_FILETABLE_NAME2) ||
+		entry->flags != FileTableEntry::FLAG_NONE || entry->fileSize > maxBytes)
+		return false;
+	name1 = entry->name1;
+	name2 = entry->name2;
+	size = entry->fileSize;
+	return true;
+}
+
+bool FileCache::GetUncompressedFileByIndexBounded(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut, size_t maxBytes)
+{
+	std::unique_lock lock(this->mutex);
+	dataOut.clear();
+	if (!fileTableEntries || index < 0 || index >= fileTableEntryCount)
+		return false;
+	const FileTableEntry* entry = fileTableEntries + index;
+	if ((entry->name1 == FILECACHE_FILETABLE_FREE_NAME && entry->name2 == FILECACHE_FILETABLE_FREE_NAME) ||
+		(entry->name1 == FILECACHE_FILETABLE_NAME1 && entry->name2 == FILECACHE_FILETABLE_NAME2) ||
+		entry->flags != FileTableEntry::FLAG_NONE || entry->fileSize > maxBytes)
+		return false;
+	if (name1)
+		*name1 = entry->name1;
+	if (name2)
 		*name2 = entry->name2;
 	return _getFileDataInternal(entry, dataOut);
 }

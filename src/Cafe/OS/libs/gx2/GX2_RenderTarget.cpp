@@ -259,10 +259,47 @@ void gx2Export_GX2SetDepthBuffer(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 0);
 }
 
+void gx2Export_GX2ExpandDepthBuffer(PPCInterpreter_t* hCPU)
+{
+	cemuLog_log(LogType::GX2, "GX2ExpandDepthBuffer(0x{:08x})", hCPU->gpr[3]);
+	GX2DepthBuffer* depthBuffer = (GX2DepthBuffer*)memory_getPointerFromVirtualOffset(hCPU->gpr[3]);
+	if (!depthBuffer)
+	{
+		osLib_returnFromFunction(hCPU, 0);
+		return;
+	}
+
+	GX2::GX2ReserveCmdSpace(9);
+	gx2WriteGather_submitU32AsBE(pm4HeaderType3(IT_HLE_EXPAND_DEPTH_BUFFER, 8));
+	gx2WriteGather_submitU32AsBE(memory_virtualToPhysical(depthBuffer->surface.imagePtr));
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->surface.format.value());
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->surface.width);
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->surface.height);
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->surface.pitch);
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->viewMip);
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->viewFirstSlice);
+	gx2WriteGather_submitU32AsBE((uint32)depthBuffer->viewNumSlices);
+	osLib_returnFromFunction(hCPU, 0);
+}
+
+void gx2Export_GX2InitDepthBufferHiZEnable(PPCInterpreter_t* hCPU)
+{
+	cemuLog_log(LogType::GX2, "GX2InitDepthBufferHiZEnable(0x{:08x},{})", hCPU->gpr[3], hCPU->gpr[4]);
+	GX2DepthBuffer* depthBuffer = (GX2DepthBuffer*)memory_getPointerFromVirtualOffset(hCPU->gpr[3]);
+	if (depthBuffer)
+	{
+		// HiZ is not emulated, only the guest-visible HTile reg is tracked
+		depthBuffer->reg_htile_surface = hCPU->gpr[4] ? 1 : 0;
+	}
+	osLib_returnFromFunction(hCPU, 0);
+}
+
 void gx2Export_GX2SetDRCBuffer(PPCInterpreter_t* hCPU)
 {
 	Latte::E_GX2SURFFMT format = (Latte::E_GX2SURFFMT)hCPU->gpr[6];
 	LatteGPUState.drcBufferUsesSRGB = HAS_FLAG(format, Latte::E_GX2SURFFMT::FMT_BIT_SRGB);
+	LatteGPUState.drcScanBufferAddr = hCPU->gpr[3];
+	LatteGPUState.drcScanBufferSize = hCPU->gpr[4];
 	osLib_returnFromFunction(hCPU, 0);
 }
 

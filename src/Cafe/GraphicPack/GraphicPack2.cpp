@@ -14,12 +14,110 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Renderer/RendererOuputShader.h"
 #include <cinttypes>
+#include <string_view>
+#include <unordered_set>
 
 std::vector<GraphicPackPtr> GraphicPack2::s_graphic_packs;
 std::vector<GraphicPackPtr> GraphicPack2::s_active_graphic_packs;
 std::atomic_bool GraphicPack2::s_isReady;
 
 #define GP_LEGACY_VERSION		(2)
+
+namespace
+{
+GraphicPack2::GP_SHADER_LANGUAGE GetCustomShaderLanguageForRenderer(RendererAPI rendererApi)
+{
+	switch (rendererApi)
+	{
+	case RendererAPI::Metal:
+		return GraphicPack2::GP_SHADER_LANGUAGE::MSL;
+	case RendererAPI::Direct3D12:
+		return GraphicPack2::GP_SHADER_LANGUAGE::HLSL;
+	case RendererAPI::OpenGL:
+	case RendererAPI::Vulkan:
+	default:
+		return GraphicPack2::GP_SHADER_LANGUAGE::GLSL;
+	}
+}
+
+GraphicPack2::GP_SHADER_LANGUAGE GetCustomShaderLanguageFromSuffix(std::wstring_view shaderType)
+{
+	if (const size_t extensionPos = shaderType.find(L'.'); extensionPos != std::wstring_view::npos)
+		shaderType = shaderType.substr(0, extensionPos);
+	if (shaderType.ends_with(L"_msl"))
+		return GraphicPack2::GP_SHADER_LANGUAGE::MSL;
+	if (shaderType.ends_with(L"_hlsl"))
+		return GraphicPack2::GP_SHADER_LANGUAGE::HLSL;
+	return GraphicPack2::GP_SHADER_LANGUAGE::GLSL;
+}
+
+const char* GetCustomShaderLanguageName(GraphicPack2::GP_SHADER_LANGUAGE language)
+{
+	switch (language)
+	{
+	case GraphicPack2::GP_SHADER_LANGUAGE::GLSL:
+		return "GLSL";
+	case GraphicPack2::GP_SHADER_LANGUAGE::MSL:
+		return "MSL";
+	case GraphicPack2::GP_SHADER_LANGUAGE::HLSL:
+		return "HLSL";
+	default:
+		return "unknown";
+	}
+}
+
+const char* GetRendererName(RendererAPI rendererApi)
+{
+	switch (rendererApi)
+	{
+	case RendererAPI::OpenGL:
+		return "OpenGL";
+	case RendererAPI::Vulkan:
+		return "Vulkan";
+	case RendererAPI::Metal:
+		return "Metal";
+	case RendererAPI::Direct3D12:
+		return "Direct3D12";
+	default:
+		return "unknown";
+	}
+}
+
+std::string GetAvailableShaderLanguageList(uint32 languageMask)
+{
+	std::string result;
+	auto appendLanguage = [&result](GraphicPack2::GP_SHADER_LANGUAGE language)
+	{
+		if (!result.empty())
+			result.append("/");
+		result.append(GetCustomShaderLanguageName(language));
+	};
+	if (languageMask & (1u << (uint8)GraphicPack2::GP_SHADER_LANGUAGE::GLSL))
+		appendLanguage(GraphicPack2::GP_SHADER_LANGUAGE::GLSL);
+	if (languageMask & (1u << (uint8)GraphicPack2::GP_SHADER_LANGUAGE::MSL))
+		appendLanguage(GraphicPack2::GP_SHADER_LANGUAGE::MSL);
+	if (languageMask & (1u << (uint8)GraphicPack2::GP_SHADER_LANGUAGE::HLSL))
+		appendLanguage(GraphicPack2::GP_SHADER_LANGUAGE::HLSL);
+	return result.empty() ? "none" : result;
+}
+
+std::string LoadGraphicPackShaderText(const fs::path& path)
+{
+	std::ifstream file(path);
+	if (!file.is_open())
+		throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(path.filename())));
+
+	file.seekg(0, std::ios::end);
+	std::string source;
+	source.reserve(file.tellg());
+	file.seekg(0, std::ios::beg);
+	source.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+	return source;
+}
+
+std::unordered_set<std::string> s_loggedIncompatibleCustomShaders;
+std::unordered_set<std::string> s_loggedD3D12OutputShaderSkips;
+}
 
 template<typename T>
 bool ParseRule(const ExpressionParser& parser, IniParser& iniParser, const char* option_name, T* valueOut)
@@ -96,7 +194,7 @@ void GraphicPack2::LoadGraphicPack(fs::path graphicPackPath)
 void GraphicPack2::LoadAll()
 {
 	std::error_code ec;
-	fs::path basePath = ActiveSettings::GetUserDataPath("graphicPacks");
+	fs::path basePath = ActiveSettings::GetGraphicPacksPath();
 	for (fs::recursive_directory_iterator it(basePath, ec); it != end(it); ++it)
 	{
 		if (!it->is_directory(ec))
@@ -306,6 +404,8 @@ GraphicPack2::GraphicPack2(fs::path rulesPath, IniParser& rules)
 			m_renderer_api = RendererAPI::OpenGL;
 		else if (boost::iequals(*option_rendererFilter, "metal"))
 			m_renderer_api = RendererAPI::Metal;
+		else if (boost::iequals(*option_rendererFilter, "direct3d12") || boost::iequals(*option_rendererFilter, "d3d12") || boost::iequals(*option_rendererFilter, "directx12"))
+			m_renderer_api = RendererAPI::Direct3D12;
 		else
 			cemuLog_log(LogType::Force, "Unknown value '{}' for rendererFilter option", *option_rendererFilter);
 	}
@@ -591,7 +691,8 @@ bool GraphicPack2::Reload()
 
 std::string GraphicPack2::GetNormalizedPathString() const
 {
-	return _pathToUtf8(MakeRelativePath(ActiveSettings::GetUserDataPath(), GetRulesPath()).lexically_normal());
+	// keyed as graphicPacks/<relative path> so settings stay valid when the graphic packs folder moves
+	return _pathToUtf8((fs::path("graphicPacks") / MakeRelativePath(ActiveSettings::GetGraphicPacksPath(), GetRulesPath())).lexically_normal());
 }
 
 bool GraphicPack2::ContainsTitleId(uint64_t title_id) const
@@ -754,53 +855,44 @@ void GraphicPack2::LoadShaders()
 			wchar_t shader_type[256]{};
 			if (filename.size() < 256 && swscanf(filename.c_str(), L"%" SCNx64 "_%" SCNx64 "_%ls", &shader_base_hash, &shader_aux_hash, shader_type) == 3)
 			{
-			    bool isMetalShader = (shader_type[2] == '_' && shader_type[3] == 'm' && shader_type[4] == 's' && shader_type[5] == 'l');
+				const auto language = GetCustomShaderLanguageFromSuffix(shader_type);
 
 				if (shader_type[0] == 'p' && shader_type[1] == 's')
-					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::PIXEL, isMetalShader));
+					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::PIXEL, language));
 				else if (shader_type[0] == 'v' && shader_type[1] == 's')
-					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::VERTEX, isMetalShader));
+					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::VERTEX, language));
 				else if (shader_type[0] == 'g' && shader_type[1] == 's')
-					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::GEOMETRY, isMetalShader));
+					m_custom_shaders.emplace_back(LoadShader(p, shader_base_hash, shader_aux_hash, GP_SHADER_TYPE::GEOMETRY, language));
 			}
 			else if (filename == L"output.glsl")
 			{
-				std::ifstream file(p);
-				if (!file.is_open())
-					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
-
-				file.seekg(0, std::ios::end);
-				m_output_shader_source.reserve(file.tellg());
-				file.seekg(0, std::ios::beg);
-
-				m_output_shader_source.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+				m_output_shader_source = LoadGraphicPackShaderText(p);
 				ApplyShaderPresets(m_output_shader_source);
+			}
+			else if (filename == L"output.hlsl")
+			{
+				m_output_shader_source_hlsl = LoadGraphicPackShaderText(p);
+				ApplyShaderPresets(m_output_shader_source_hlsl);
 			}
 			else if (filename == L"upscaling.glsl")
 			{
-				std::ifstream file(p);
-				if (!file.is_open())
-					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
-
-				file.seekg(0, std::ios::end);
-				m_upscaling_shader_source.reserve(file.tellg());
-				file.seekg(0, std::ios::beg);
-
-				m_upscaling_shader_source.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+				m_upscaling_shader_source = LoadGraphicPackShaderText(p);
 				ApplyShaderPresets(m_upscaling_shader_source);
+			}
+			else if (filename == L"upscaling.hlsl")
+			{
+				m_upscaling_shader_source_hlsl = LoadGraphicPackShaderText(p);
+				ApplyShaderPresets(m_upscaling_shader_source_hlsl);
 			}
 			else if (filename == L"downscaling.glsl")
 			{
-				std::ifstream file(p);
-				if (!file.is_open())
-					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
-
-				file.seekg(0, std::ios::end);
-				m_downscaling_shader_source.reserve(file.tellg());
-				file.seekg(0, std::ios::beg);
-
-				m_downscaling_shader_source.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+				m_downscaling_shader_source = LoadGraphicPackShaderText(p);
 				ApplyShaderPresets(m_downscaling_shader_source);
+			}
+			else if (filename == L"downscaling.hlsl")
+			{
+				m_downscaling_shader_source_hlsl = LoadGraphicPackShaderText(p);
+				ApplyShaderPresets(m_downscaling_shader_source_hlsl);
 			}
 		}
 		catch (const std::exception& ex)
@@ -904,7 +996,8 @@ void GraphicPack2::_iterateReplacedFiles(const fs::path& currentPath, bool isAOC
 	{
 		if (fs::is_regular_file(it))
 		{
-			fs::path virtualMountPath = fs::relative(it.path(), currentPath);
+			// lexical: fs::relative resolves the real path, which the Xbox app container is denied
+			fs::path virtualMountPath = it.path().lexically_relative(currentPath);
 			if (isAOC)
 			{
 				virtualMountPath = fs::path(fmt::format("/vol/aoc{:016x}/", aocTitleId)) / virtualMountPath;
@@ -964,10 +1057,30 @@ void GraphicPack2::LoadReplacedFiles()
 	}
 }
 
+void GraphicPack2::UpdateSkippedShaders()
+{
+	m_skipped_shaders.clear();
+	m_skip_resolution_rules = false;
+	if (!g_renderer || g_renderer->GetType() != RendererAPI::Direct3D12)
+		return;
+	ShaderAvailability shaderAvailability = GetShaderAvailability(RendererAPI::Direct3D12);
+	m_skipped_shaders = std::move(shaderAvailability.skippedShaders);
+	if (m_skipped_shaders.empty())
+		return;
+	m_skip_resolution_rules = GetConfig().skip_resolution_rules_of_packs_with_skipped_shaders.GetValue();
+	cemuLog_log(LogType::Force, "graphicPack: {} of {} shader(s) from '{}' have no HLSL variant and are skipped on Direct3D12{}",
+		m_skipped_shaders.size(), m_skipped_shaders.size() + shaderAvailability.usableCount, GetVirtualPath(),
+		m_skip_resolution_rules ? "; resolution rules of this pack are not applied" : "");
+}
+
 bool GraphicPack2::Activate()
 {
 	if (m_activated)
+	{
+		// packs stay activated across title restarts
+		UpdateSkippedShaders();
 		return true;
+	}
 
 	// check if gp should be loaded
 	if (m_renderer_api.has_value() && m_renderer_api.value() != g_renderer->GetType())
@@ -1068,6 +1181,7 @@ bool GraphicPack2::Activate()
 
 	// load shaders
 	LoadShaders();
+	UpdateSkippedShaders();
 
 	// load patches
 	LoadPatchFiles();
@@ -1107,6 +1221,8 @@ bool GraphicPack2::Deactivate()
 
 	m_activated = false;
 	m_custom_shaders.clear();
+	m_skipped_shaders.clear();
+	m_skip_resolution_rules = false;
 	m_texture_rules.clear();
 
 	m_output_shader.reset();
@@ -1120,6 +1236,9 @@ bool GraphicPack2::Deactivate()
 	m_output_shader_source.clear();
 	m_upscaling_shader_source.clear();
 	m_downscaling_shader_source.clear();
+	m_output_shader_source_hlsl.clear();
+	m_upscaling_shader_source_hlsl.clear();
+	m_downscaling_shader_source_hlsl.clear();
 
 	if (HasCustomVSyncFrequency())
 	{
@@ -1131,23 +1250,60 @@ bool GraphicPack2::Deactivate()
 	return true;
 }
 
-const std::string* GraphicPack2::FindCustomShaderSource(uint64 shaderBaseHash, uint64 shaderAuxHash, GP_SHADER_TYPE type, bool isVulkanRenderer, bool isMetalRenderer)
+const std::string* GraphicPack2::FindCustomShaderSource(uint64 shaderBaseHash, uint64 shaderAuxHash, GP_SHADER_TYPE type, RendererAPI rendererApi)
+{
+	const auto requiredLanguage = GetCustomShaderLanguageForRenderer(rendererApi);
+	for (const auto& gp : GraphicPack2::GetActiveGraphicPacks())
+	{
+		uint32 availableLanguageMask = 0;
+		bool hasMatchingShader = false;
+		for (const auto& shader : gp->m_custom_shaders)
+		{
+			if (shader.shader_base_hash != shaderBaseHash || shader.shader_aux_hash != shaderAuxHash || shader.type != type)
+				continue;
+
+			hasMatchingShader = true;
+			availableLanguageMask |= 1u << (uint8)shader.language;
+
+			if (shader.language != requiredLanguage)
+				continue;
+
+			if (rendererApi == RendererAPI::Vulkan && shader.isPreVulkanShader)
+				continue;
+
+			return &shader.source;
+		}
+
+		if (!hasMatchingShader)
+			continue;
+
+		if (availableLanguageMask & (1u << (uint8)requiredLanguage))
+			continue;
+		// the caller converts GLSL pixel shaders for Direct3D12
+		if (rendererApi == RendererAPI::Direct3D12 && type == GP_SHADER_TYPE::PIXEL && (availableLanguageMask & (1u << (uint8)GP_SHADER_LANGUAGE::GLSL)))
+			continue;
+
+		const auto logKey = fmt::format("{}:{:016x}:{:016x}:{}:{}", gp->GetNormalizedPathString(), shaderBaseHash, shaderAuxHash, (uint32)type, (uint32)rendererApi);
+		if (s_loggedIncompatibleCustomShaders.insert(logKey).second)
+		{
+			cemuLog_log(LogType::Force,
+				"graphicPack: skipping custom shader {:016x}_{:016x} type {} from '{}' for {}; available language(s): {}, required: {}",
+				shaderBaseHash, shaderAuxHash, (uint32)type, gp->GetVirtualPath(), GetRendererName(rendererApi),
+				GetAvailableShaderLanguageList(availableLanguageMask), GetCustomShaderLanguageName(requiredLanguage));
+		}
+	}
+	return nullptr;
+}
+
+const std::string* GraphicPack2::FindConvertibleCustomShaderSource(uint64 shaderBaseHash, uint64 shaderAuxHash, GP_SHADER_TYPE type)
 {
 	for (const auto& gp : GraphicPack2::GetActiveGraphicPacks())
 	{
-		const auto it = std::find_if(gp->m_custom_shaders.begin(), gp->m_custom_shaders.end(),
-			[shaderBaseHash, shaderAuxHash, type](const auto& s) { return s.shader_base_hash == shaderBaseHash && s.shader_aux_hash == shaderAuxHash && s.type == type; });
-
-		if (it == gp->m_custom_shaders.end())
-			continue;
-
-		if (isVulkanRenderer && (*it).isPreVulkanShader)
-			continue;
-
-		if (isMetalRenderer != (*it).isMetalShader)
-		    continue;
-
-		return &it->source;
+		for (const auto& shader : gp->m_custom_shaders)
+		{
+			if (shader.shader_base_hash == shaderBaseHash && shader.shader_aux_hash == shaderAuxHash && shader.type == type && shader.language == GP_SHADER_LANGUAGE::GLSL)
+				return &shader.source;
+		}
 	}
 	return nullptr;
 }
@@ -1171,18 +1327,115 @@ std::unordered_map<std::string, std::vector<GraphicPack2::PresetPtr>> GraphicPac
 bool GraphicPack2::HasShaders() const
 {
 	return !GetCustomShaders().empty()
-	|| !m_output_shader_source.empty() || !m_upscaling_shader_source.empty() || !m_downscaling_shader_source.empty();
+	|| !m_output_shader_source.empty() || !m_upscaling_shader_source.empty() || !m_downscaling_shader_source.empty()
+	|| !m_output_shader_source_hlsl.empty() || !m_upscaling_shader_source_hlsl.empty() || !m_downscaling_shader_source_hlsl.empty();
+}
+
+GraphicPack2::ShaderAvailability GraphicPack2::GetShaderAvailability(RendererAPI rendererApi) const
+{
+	struct ShaderVariants
+	{
+		std::string fileName;
+		uint32 languageMask = 0;
+	};
+	std::map<std::tuple<uint64, uint64, GP_SHADER_TYPE>, ShaderVariants> customShaders;
+	std::map<std::wstring, ShaderVariants> presentationShaders;
+
+	fs::path packPath = GetRulesPath();
+	packPath.remove_filename();
+	std::error_code ec;
+	for (fs::directory_iterator it(packPath, ec), end; !ec && it != end; it.increment(ec))
+	{
+		if (!it->is_regular_file(ec))
+			continue;
+		const fs::path& p = it->path();
+		const auto filename = p.filename().wstring();
+		uint64 shaderBaseHash = 0;
+		uint64 shaderAuxHash = 0;
+		wchar_t shaderType[256]{};
+		if (filename.size() < 256 && swscanf(filename.c_str(), L"%" SCNx64 "_%" SCNx64 "_%ls", &shaderBaseHash, &shaderAuxHash, shaderType) == 3)
+		{
+			GP_SHADER_TYPE type;
+			if (shaderType[0] == 'p' && shaderType[1] == 's')
+				type = GP_SHADER_TYPE::PIXEL;
+			else if (shaderType[0] == 'v' && shaderType[1] == 's')
+				type = GP_SHADER_TYPE::VERTEX;
+			else if (shaderType[0] == 'g' && shaderType[1] == 's')
+				type = GP_SHADER_TYPE::GEOMETRY;
+			else
+				continue;
+			auto& variants = customShaders[{shaderBaseHash, shaderAuxHash, type}];
+			if (variants.fileName.empty())
+				variants.fileName = _pathToUtf8(p.filename());
+			variants.languageMask |= 1u << (uint8)GetCustomShaderLanguageFromSuffix(shaderType);
+		}
+		else
+		{
+			const auto stem = p.stem().wstring();
+			const auto extension = p.extension().wstring();
+			if (stem != L"output" && stem != L"upscaling" && stem != L"downscaling")
+				continue;
+			GP_SHADER_LANGUAGE language;
+			if (extension == L".glsl")
+				language = GP_SHADER_LANGUAGE::GLSL;
+			else if (extension == L".hlsl")
+				language = GP_SHADER_LANGUAGE::HLSL;
+			else
+				continue;
+			auto& variants = presentationShaders[stem];
+			if (variants.fileName.empty())
+				variants.fileName = _pathToUtf8(p.filename());
+			variants.languageMask |= 1u << (uint8)language;
+		}
+	}
+
+	ShaderAvailability result;
+	const bool preVulkanShadersUnusable = rendererApi == RendererAPI::Vulkan && m_version <= 3;
+	const uint32 customLanguageBit = 1u << (uint8)GetCustomShaderLanguageForRenderer(rendererApi);
+	const uint32 metalLanguageBit = 1u << (uint8)GP_SHADER_LANGUAGE::MSL;
+	for (const auto& entry : customShaders)
+	{
+		// Metal ports are keyed by a Metal-specific aux hash and duplicate a GLSL or HLSL shader
+		if (rendererApi != RendererAPI::Metal && entry.second.languageMask == metalLanguageBit)
+			continue;
+		const bool convertible = rendererApi == RendererAPI::Direct3D12 && std::get<2>(entry.first) == GP_SHADER_TYPE::PIXEL && (entry.second.languageMask & (1u << (uint8)GP_SHADER_LANGUAGE::GLSL)) != 0;
+		if (!preVulkanShadersUnusable && ((entry.second.languageMask & customLanguageBit) != 0 || convertible))
+			result.usableCount++;
+		else
+			result.skippedShaders.emplace_back(entry.second.fileName);
+	}
+	// output, upscaling and downscaling shaders only have GLSL and Direct3D12 HLSL variants
+	const uint32 presentationLanguageBit = 1u << (uint8)(rendererApi == RendererAPI::Direct3D12 ? GP_SHADER_LANGUAGE::HLSL : GP_SHADER_LANGUAGE::GLSL);
+	for (const auto& entry : presentationShaders)
+	{
+		if ((entry.second.languageMask & presentationLanguageBit) != 0)
+			result.usableCount++;
+		else
+			result.skippedShaders.emplace_back(entry.second.fileName);
+	}
+	return result;
 }
 
 RendererOutputShader* GraphicPack2::GetOuputShader(bool render_upside_down)
 {
+	const bool useHLSL = g_renderer && g_renderer->GetType() == RendererAPI::Direct3D12;
+	const std::string& outputShaderSource = useHLSL ? m_output_shader_source_hlsl : m_output_shader_source;
+	if (useHLSL && outputShaderSource.empty() && !m_output_shader_source.empty())
+	{
+		const auto logKey = fmt::format("{}:output", GetNormalizedPathString());
+		if (s_loggedD3D12OutputShaderSkips.insert(logKey).second)
+			cemuLog_log(LogType::Force, "graphicPack: skipping output.glsl from '{}' for Direct3D12; provide output.hlsl for a D3D12 output shader variant", GetVirtualPath());
+	}
+
 	if(render_upside_down)
 	{
 		if (m_output_shader_ud)
 			return m_output_shader_ud.get();
 
-		if (!m_output_shader_source.empty())
-			m_output_shader_ud = std::make_unique<RendererOutputShader>(RendererOutputShader::GetOpenGlVertexSource(render_upside_down), m_output_shader_source);
+		if (!outputShaderSource.empty())
+			m_output_shader_ud = std::make_unique<RendererOutputShader>(
+				useHLSL ? RendererOutputShader::GetD3D12VertexSource(render_upside_down) : RendererOutputShader::GetOpenGlVertexSource(render_upside_down),
+				outputShaderSource);
 
 		return m_output_shader_ud.get();
 	}
@@ -1191,8 +1444,10 @@ RendererOutputShader* GraphicPack2::GetOuputShader(bool render_upside_down)
 		if (m_output_shader)
 			return m_output_shader.get();
 
-		if (!m_output_shader_source.empty())
-			m_output_shader = std::make_unique<RendererOutputShader>(RendererOutputShader::GetOpenGlVertexSource(render_upside_down), m_output_shader_source);
+		if (!outputShaderSource.empty())
+			m_output_shader = std::make_unique<RendererOutputShader>(
+				useHLSL ? RendererOutputShader::GetD3D12VertexSource(render_upside_down) : RendererOutputShader::GetOpenGlVertexSource(render_upside_down),
+				outputShaderSource);
 
 		return m_output_shader.get();
 	}
@@ -1200,13 +1455,24 @@ RendererOutputShader* GraphicPack2::GetOuputShader(bool render_upside_down)
 
 RendererOutputShader* GraphicPack2::GetUpscalingShader(bool render_upside_down)
 {
+	const bool useHLSL = g_renderer && g_renderer->GetType() == RendererAPI::Direct3D12;
+	const std::string& upscalingShaderSource = useHLSL ? m_upscaling_shader_source_hlsl : m_upscaling_shader_source;
+	if (useHLSL && upscalingShaderSource.empty() && !m_upscaling_shader_source.empty())
+	{
+		const auto logKey = fmt::format("{}:upscaling", GetNormalizedPathString());
+		if (s_loggedD3D12OutputShaderSkips.insert(logKey).second)
+			cemuLog_log(LogType::Force, "graphicPack: skipping upscaling.glsl from '{}' for Direct3D12; provide upscaling.hlsl for a D3D12 upscaling shader variant", GetVirtualPath());
+	}
+
 	if (render_upside_down)
 	{
 		if (m_upscaling_shader_ud)
 			return m_upscaling_shader_ud.get();
 
-		if (!m_upscaling_shader_source.empty())
-			m_upscaling_shader_ud = std::make_unique<RendererOutputShader>(RendererOutputShader::GetOpenGlVertexSource(render_upside_down), m_upscaling_shader_source);
+		if (!upscalingShaderSource.empty())
+			m_upscaling_shader_ud = std::make_unique<RendererOutputShader>(
+				useHLSL ? RendererOutputShader::GetD3D12VertexSource(render_upside_down) : RendererOutputShader::GetOpenGlVertexSource(render_upside_down),
+				upscalingShaderSource);
 
 		return m_upscaling_shader_ud.get();
 	}
@@ -1215,8 +1481,10 @@ RendererOutputShader* GraphicPack2::GetUpscalingShader(bool render_upside_down)
 		if (m_upscaling_shader)
 			return m_upscaling_shader.get();
 
-		if (!m_upscaling_shader_source.empty())
-			m_upscaling_shader = std::make_unique<RendererOutputShader>(RendererOutputShader::GetOpenGlVertexSource(render_upside_down), m_upscaling_shader_source);
+		if (!upscalingShaderSource.empty())
+			m_upscaling_shader = std::make_unique<RendererOutputShader>(
+				useHLSL ? RendererOutputShader::GetD3D12VertexSource(render_upside_down) : RendererOutputShader::GetOpenGlVertexSource(render_upside_down),
+				upscalingShaderSource);
 
 		return m_upscaling_shader.get();
 	}
@@ -1224,13 +1492,24 @@ RendererOutputShader* GraphicPack2::GetUpscalingShader(bool render_upside_down)
 
 RendererOutputShader* GraphicPack2::GetDownscalingShader(bool render_upside_down)
 {
+	const bool useHLSL = g_renderer && g_renderer->GetType() == RendererAPI::Direct3D12;
+	const std::string& downscalingShaderSource = useHLSL ? m_downscaling_shader_source_hlsl : m_downscaling_shader_source;
+	if (useHLSL && downscalingShaderSource.empty() && !m_downscaling_shader_source.empty())
+	{
+		const auto logKey = fmt::format("{}:downscaling", GetNormalizedPathString());
+		if (s_loggedD3D12OutputShaderSkips.insert(logKey).second)
+			cemuLog_log(LogType::Force, "graphicPack: skipping downscaling.glsl from '{}' for Direct3D12; provide downscaling.hlsl for a D3D12 downscaling shader variant", GetVirtualPath());
+	}
+
 	if (render_upside_down)
 	{
 		if (m_downscaling_shader_ud)
 			return m_downscaling_shader_ud.get();
 
-		if (!m_downscaling_shader_source.empty())
-			m_downscaling_shader_ud = std::make_unique<RendererOutputShader>(RendererOutputShader::GetOpenGlVertexSource(render_upside_down), m_downscaling_shader_source);
+		if (!downscalingShaderSource.empty())
+			m_downscaling_shader_ud = std::make_unique<RendererOutputShader>(
+				useHLSL ? RendererOutputShader::GetD3D12VertexSource(render_upside_down) : RendererOutputShader::GetOpenGlVertexSource(render_upside_down),
+				downscalingShaderSource);
 
 		return m_downscaling_shader_ud.get();
 	}
@@ -1239,8 +1518,10 @@ RendererOutputShader* GraphicPack2::GetDownscalingShader(bool render_upside_down
 		if (m_downscaling_shader)
 			return m_downscaling_shader.get();
 
-		if (!m_downscaling_shader_source.empty())
-			m_downscaling_shader = std::make_unique<RendererOutputShader>(RendererOutputShader::GetOpenGlVertexSource(render_upside_down), m_downscaling_shader_source);
+		if (!downscalingShaderSource.empty())
+			m_downscaling_shader = std::make_unique<RendererOutputShader>(
+				useHLSL ? RendererOutputShader::GetD3D12VertexSource(render_upside_down) : RendererOutputShader::GetOpenGlVertexSource(render_upside_down),
+				downscalingShaderSource);
 
 		return m_downscaling_shader.get();
 	}
@@ -1310,7 +1591,7 @@ void GraphicPack2::ApplyShaderPresets(std::string& shader_source) const
 	}
 }
 
-GraphicPack2::CustomShader GraphicPack2::LoadShader(const fs::path& path, uint64 shader_base_hash, uint64 shader_aux_hash, GP_SHADER_TYPE shader_type, bool isMetalShader) const
+GraphicPack2::CustomShader GraphicPack2::LoadShader(const fs::path& path, uint64 shader_base_hash, uint64 shader_aux_hash, GP_SHADER_TYPE shader_type, GP_SHADER_LANGUAGE language) const
 {
 	CustomShader shader;
 
@@ -1328,8 +1609,8 @@ GraphicPack2::CustomShader GraphicPack2::LoadShader(const fs::path& path, uint64
 	shader.shader_base_hash = shader_base_hash;
 	shader.shader_aux_hash = shader_aux_hash;
 	shader.type = shader_type;
+	shader.language = language;
 	shader.isPreVulkanShader = this->m_version <= 3;
-	shader.isMetalShader = isMetalShader;
 
 	return shader;
 }

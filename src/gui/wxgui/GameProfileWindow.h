@@ -6,6 +6,9 @@
 #include <wx/combobox.h>
 #include <wx/slider.h>
 
+#include <optional>
+#include <vector>
+
 #include "Cafe/GameProfile/GameProfile.h"
 
 class GameProfileWindow : public wxFrame
@@ -38,6 +41,7 @@ private:
 	//wxCheckBox* m_extended_texture_readback;
 	//wxChoice* m_precompiled;
 	wxChoice* m_graphic_api;
+	std::vector<std::optional<GraphicAPI>> m_graphic_api_map;
 
 	wxChoice* m_shader_mul_accuracy;
 #ifdef ENABLE_METAL

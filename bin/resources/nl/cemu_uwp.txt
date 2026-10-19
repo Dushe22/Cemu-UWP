@@ -1,0 +1,336 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, versie %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu van %zu titels hebben nog geen afbeelding van dit type voor de spellijst.
+%zu packs across %zu games (LB/RB change game)	%zu packs voor %zu spellen (LB/RB wisselt van spel)
+(none)	(geen)
+2D box	2D-doos
+2D box back	Achterkant 2D-doos
+2D cartridge	2D-cartridge
+3D box	3D-doos
+A Apply    B Cancel	A Toepassen    B Annuleren
+A Select    B Back    Menu Close	A Selecteren    B Terug    Menu Sluiten
+A file or folder picker is already open	Er is al een bestands- of mapkiezer geopend
+A title scan is already running	Er wordt al naar titels gezocht
+A: activate  B: back/home  D-pad/left stick: move focus	A: activeren  B: terug/start  D-pad/linkerstick: focus verplaatsen
+APP Store	APP Store
+Accelerometer	Versnellingsmeter
+Accelerometer sensitivity	Gevoeligheid van de versnellingsmeter
+Account	Account
+Account ID: %s	Account-ID: %s
+Action	Actie
+Activated: %s	Ingeschakeld: %s
+Add another game folder	Nog een spelmap toevoegen
+Added to favorites	Toegevoegd aan favorieten
+Advanced PPC logging	Uitgebreide PPC-logging
+Always on	Altijd aan
+An unfinished scan is saved; it resumes automatically on the next launch.	Een onvoltooide scan is opgeslagen; die wordt bij de volgende start automatisch hervat.
+App Store	App Store
+Apply Quick Menu combo	Snelmenu-combinatie toepassen
+Artwork	Afbeeldingen
+Audio latency	Audiovertraging
+Backend	Backend
+CPU mode	CPU-modus
+CPU usage	CPU belasting
+Can't change the MLC path while a game is running	Het MLC-pad kan niet worden gewijzigd terwijl er een spel draait
+Cancel	Annuleer
+Cancel installation	Installatie annuleren
+Cancel this installation? The previous installed version will remain unchanged.	Deze installatie annuleren? De reeds geïnstalleerde versie blijft ongewijzigd.
+Cancelling installation...	Installatie annuleren...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWP-schil
+Choose side-by-side underlay	Achtergrond naast elkaar kiezen
+Choose stacked underlay	Achtergrond gestapeld kiezen
+Clear account credentials	Accountgegevens wissen
+Clear side-by-side	Naast elkaar herstellen
+Clear stacked	Gestapeld herstellen
+Close	Sluit
+Community	Community
+Community graphic packs installed	Community-graphic packs geïnstalleerd
+Console language	Consoletaal
+Controller Mapping	Controllertoewijzing
+Controller battery notifications	Meldingen over controllerbatterij
+Controller mapping saved	Controllertoewijzing opgeslagen
+Controller profile notifications	Meldingen over controllerprofielen
+Controllers	Controllers
+Could not open the MLC folder picker	De MLC-mapkiezer kon niet worden geopend
+Could not open the ScreenScraper media folder picker	De ScreenScraper-mapkiezer kon niet worden geopend
+Could not open the game folder picker	De spelmapkiezer kon niet worden geopend
+Could not open the title picker	De titelkiezer kon niet worden geopend
+Could not prepare that MLC folder - is the drive connected and writable?	Die MLC-map kon niet worden voorbereid - is het station aangesloten en beschrijfbaar?
+Could not save the nickname	De bijnaam kon niet worden opgeslagen
+Could not save title metadata	De metagegevens van de titel konden niet worden opgeslagen
+Crash dump	Crash dump
+Current game override	Instelling voor huidig spel
+Custom	Aangepast
+DLC directory was not found	De DLC-map is niet gevonden
+Debug overlay	Debug-overlay
+Debugger	Debugger
+Default	Standaard
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	Standaard: Gamepad:Menu+View. Eigen voorbeelden: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Bestemming: %s
+Developer API credentials are missing from this build.	In deze build ontbreken de API-gegevens voor ontwikkelaars.
+Disable screen saver	Schermbeveiliging uitschakelen
+Discord	Discord
+Display gamma	Schermgamma
+Display uses sRGB curve	Scherm gebruikt sRGB-curve
+Download box art	Hoesillustraties downloaden
+Download community packs	Community-pakketten downloaden
+Download fanart backgrounds	Fanart-achtergronden downloaden
+Download logos	Logo's downloaden
+Download metadata	Metagegevens downloaden
+Download screenshots	Schermafbeeldingen downloaden
+Download videos	Video's downloaden
+Downloaded media location	Locatie van gedownloade bestanden
+Downloads	Downloads
+Downscale filter	Verklein filter
+Draw calls	Tekenopdrachten
+Dump libcurl requests	libcurl-verzoeken exporteren
+Dump recompiler functions	Recompiler-functies exporteren
+Dump shaders	Shaders exporteren
+Dump textures	Texturen exporteren
+Emulate Disney Infinity Base	Disney Infinity-basis emuleren
+Emulate LEGO Dimensions Toy Pad	LEGO Dimensions Toy Pad emuleren
+Emulate Skylander Portal	Skylanders-portaal emuleren
+Emulated USB devices	Geëmuleerde USB-apparaten
+Enable Screenscraper	Screenscraper inschakelen
+Enable Screenscraper first	Schakel eerst Screenscraper in
+Enable intro sound	Startgeluid inschakelen
+Enabled	Ingeschakeld
+Every refresh	Elke verversing
+Every second refresh	Elke tweede verversing
+Every third refresh	Elke derde verversing
+Exit Cemu	Cemu afsluiten
+FPS	FPS
+Failed to copy title image	De titelafbeelding kon niet worden gekopieerd
+Failed to save Screenscraper account	Het Screenscraper-account kon niet worden opgeslagen
+Failed to save settings	De instellingen konden niet worden opgeslagen
+Fan art	Fanart
+Files: %llu / %llu	Bestanden: %llu / %llu
+Flush log	Logboek wegschrijven
+Follow interface language	De taal van de interface volgen
+Free space: %s	Vrije ruimte: %s
+Friend service notifications	Meldingen van de vriendenservice
+Fullscreen scaling	Volledig scherm schalen
+GDB port	GDB port
+Game directory was not found	De spelmap is niet gevonden
+Game folder added	Spelmap toegevoegd
+Game folder added, but it is not accessible - is the drive connected?	Spelmap toegevoegd, maar niet toegankelijk - is het station aangesloten?
+Game layout	Spelindeling
+Game logo	Spellogo
+Game profile saved	Spelprofiel opgeslagen
+Game-list artwork	Afbeeldingen van de spellijst
+GamePad	Gamepad
+GamePad channels	GamePad-kanalen
+GamePad device	GamePad-apparaat
+GamePad only	Alleen GamePad
+GamePad picture in picture	GamePad als beeld in beeld
+GamePad screen	GamePad-scherm
+GamePad volume	GamePad-volume
+Games directory	Spellenmap
+Games directory updated	Spelmap bijgewerkt
+Games directory updated, but it is not accessible - is the drive connected?	Spelmap bijgewerkt, maar niet toegankelijk - is het station aangesloten?
+Gamma	Gamma
+General	Algemeen
+Global controller profiles saved	Globale controllerprofielen opgeslagen
+Global default layout	Algemene standaardindeling
+Graphic packs reloaded	Graphic packs opnieuw geladen
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Gyroscoop
+Gyroscope dead zone	Dode zone van de gyroscoop
+Gyroscope sensitivity	Gevoeligheid van de gyroscoop
+Hold stick button	Stickknop ingedrukt houden
+Home	Start
+Horizontal pointer sensitivity	Horizontale aanwijzergevoeligheid
+Input	Invoer
+Input channels	Invoerkanalen
+Input volume	Invoervolume
+Install	Installeren
+Install size: %s (%llu files)	Installatiegrootte: %s (%llu bestanden)
+Install title, update or DLC	Titel, update of DLC installeren
+Installation cancelled	Installatie geannuleerd
+Installation complete	Installatie voltooid
+Installation failed	Installatie mislukt
+Installed	Geïnstalleerd
+Installed version %u will be replaced.	De geïnstalleerde versie %u wordt vervangen.
+Installing...	Bezig met installeren...
+Interface	Interface
+Interface language	Taal van de interface
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Ongeldige combinatie. Losse knoppen, dubbele knoppen en toetsenbord- of aanwijzersneltoetsen zijn niet toegestaan. Je opgeslagen combinatie blijft ongewijzigd.
+Invert pointer X	X-as van de aanwijzer omkeren
+Invert pointer Y	Y-as van de aanwijzer omkeren
+Keep installing	Doorgaan met installeren
+Large information artwork	Grote informatieafbeelding
+Layout Mode	Indelingsmodus
+Layout mode	Indelingsmodus
+Left Stick	Linkerstick
+Left stick	Linkerstick
+Left stick deadzone	Dode zone van de linkerstick
+Left stick range	Bereik van de linkerstick
+Logs	Logboeken
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	MLC-pad opgeslagen - start Cemu opnieuw om het te gebruiken (accounts en saves worden niet verplaatst)
+MLC storage	MLC-opslag
+Metadata language	Taal van de metagegevens
+Metadata saved; another ScreenScraper download is running	Metagegevens opgeslagen; er loopt al een andere ScreenScraper-download
+Metadata saved; sign in to ScreenScraper to download media	Metagegevens opgeslagen; meld je aan bij ScreenScraper om bestanden te downloaden
+Microphone and portal	Microfoon en portaal
+Missing	Ontbreekt
+Native UWP app-container frontend for Cemu.	Native UWP-appcontainerinterface voor Cemu.
+Nearest neighbor	Dichtstbijzijnde buur
+Network service	Netwerkdienst
+Nickname	Bijnaam
+Nickname saved	Bijnaam opgeslagen
+No Cemu Wiki ID is available	Er is geen Cemu Wiki-ID beschikbaar
+No DLC installed	Geen DLC geïnstalleerd
+No bootstrap log available.	Geen opstartlogboek beschikbaar.
+No graphic packs are installed in the UWP user data graphicPacks folder.	Er zijn geen graphic packs geïnstalleerd in de map graphicPacks van de UWP-gebruikersgegevens.
+No graphic packs target this title	Geen enkele graphic pack is voor deze titel bedoeld
+No log text available.	Geen logboektekst beschikbaar.
+No save data found	Geen savegegevens gevonden
+No shader caches found	Geen shadercaches gevonden
+No title image is available to copy	Er is geen titelafbeelding om te kopiëren
+No titles to scrape	Geen titels om op te halen
+No update installed	Geen update geïnstalleerd
+None	Geen
+Not installed	Niet geïnstalleerd
+Nothing left to resume	Er valt niets meer te hervatten
+Notification scale	Grootte van meldingen
+Notifications	Notificaties
+Offline	Offline
+Online files: %s	Onlinebestanden: %s
+Open title	Titel openen
+Open title file	Titelbestand openen
+Overlay	Overlay
+Overlay scale	Overlaygrootte
+Override application gamma	Gamma van de toepassing overschrijven
+Overwrite existing media	Bestaande bestanden overschrijven
+Password	Wachtwoord
+Per-game profile	Profiel per spel
+Permanent storage	Permanente opslag
+Persistent ID: %08x	Permanente ID: %08x
+Picture in picture	Beeld in beeld
+Platform media: %s	Platformbestanden: %s
+Platform: Windows UWP	Platform: Windows UWP
+Pointer	Aanwijzer
+Pointer activation	Activering van de aanwijzer
+Pointer speed	Snelheid van de aanwijzer
+Pointer stick	Aanwijzerstick
+Pointer stick dead zone	Dode zone van de aanwijzerstick
+Portal device	Portaalapparaat
+Portal volume	Portaalvolume
+Portuguese	Portugees
+Power	Aan/uit
+Preferred region	Voorkeursregio
+Quick Menu	Snelmenu
+Quick Menu combo reset to Menu + View	Snelmenucombinatie teruggezet op Menu + View
+Quick Menu combo saved	Snelmenucombinatie opgeslagen
+Quick menu combo	Snelmenucombinatie
+Quit Game	Spel afsluiten
+RAM usage	RAM gebruik
+Ready	Gereed
+Refresh list	Lijst vernieuwen
+Refresh logs	Logboeken vernieuwen
+Refresh titles	Titels vernieuwen
+Refreshing game list	Spellijst vernieuwen
+Reload packs	Pakketten herladen
+Remove	Verwijder
+Removed from favorites	Verwijderd uit favorieten
+Render upside down	Ondersteboven renderen
+Renderer	Renderer
+Renderer: Direct3D 12 CoreWindow	Renderer: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Vereist minstens twee verschillende controllerknoppen die tegelijk ingedrukt worden.
+Reset Quick Menu to Menu + View	Snelmenu terugzetten op Menu + Weergave
+Restart Game	Spel opnieuw starten
+Restart on enable/preset: %s / %s	Herstart bij inschakelen/voorinstelling: %s / %s
+Restart the title if this pack needs a full reload	Start de titel opnieuw als deze pack volledig opnieuw geladen moet worden
+Restart unavailable	Opnieuw starten niet beschikbaar
+Resume scan	Scan hervatten
+Resuming unfinished Screenscraper scan	Onvoltooide Screenscraper-scan hervatten
+Return to Game	Terug naar het spel
+Right Stick	Rechterstick
+Right stick	Rechterstick
+Right stick deadzone	Dode zone van de rechterstick
+Right stick range	Bereik van de rechterstick
+Rumble strength	Trilsterkte
+Runtime dumps	Runtime-exports
+Save account credentials	Accountgegevens opslaan
+Save nickname	Bijnaam opslaan
+Scaling	Schaling
+Screens restored	Schermen hersteld
+Screens swapped	Schermen verwisseld
+Screenscraper	Screenscraper
+Screenscraper account cleared	Screenscraper-account gewist
+Screenscraper account saved	Screenscraper-account opgeslagen
+Screenscraper download is already running	Er loopt al een Screenscraper-download
+Screenshot	Schermafbeelding
+Selected account is not a complete online account	Het gekozen account is geen volledig onlineaccount
+Set	Ingesteld
+Shader compiling notifications	Meldingen over shadercompilatie
+Shaders: %s	Shaders: %s
+Shared title media: %s	Gedeelde titelbestanden: %s
+Shell theme	Interfacethema
+Show controls hint	Besturingshint tonen
+Side by side	Naast elkaar
+Side-by-side underlay: %s	Achtergrond naast elkaar: %s
+Sign in to Screenscraper first	Meld je eerst aan bij Screenscraper
+Stable-input calibration period	Kalibratietijd bij rust
+Stacked	Boven elkaar
+Stacked underlay: %s	Achtergrond boven elkaar: %s
+Start Stream	Stream starten
+Status: %s	Status: %s
+Stop Stream	Stream stoppen
+Stop the running game before installing content.	Stop het draaiende spel voordat je inhoud installeert.
+Storage	Opslag
+Storage: %s	Opslag: %s
+Stream: working...	Stream: bezig ...
+Swap TV and GamePad screens	TV- en GamePad-scherm verwisselen
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Voorbeelden voor verwisselen: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	Systeem
+TV	TV
+TV channels	TV-kanalen
+TV device	TV-apparaat
+TV only	Alleen TV
+TV volume	TV-volume
+Target gamma	Doelgamma
+That folder is already in the list	Die map staat al in de lijst
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	De indeling volgt het Cemu UWP-startmenu: speltegels, zijbalken, zachte systeempanelen en navigatie met de controller voorop.
+This entry cannot be launched	Dit item kan niet worden gestart
+This graphic pack has no description.	Deze graphic pack heeft geen beschrijving.
+Title ID	Titel-ID
+Title ID: %016llX	Titel-ID: %016llX
+Title Manager	Titelbeheer
+Title image copied	Titelafbeelding gekopieerd
+Title information is no longer available	De titelinformatie is niet meer beschikbaar
+Title installed	Titel geïnstalleerd
+Title screen	Titelscherm
+Titles	Titels
+Toggle GamePad display	GamePad-scherm in- of uitschakelen
+Treat the mapped Screen control as a toggle instead of a hold action	Gebruik de toegewezen Scherm-knop als schakelaar in plaats van ingedrukt houden
+Trigger deadzone	Dode zone van de triggers
+Trigger range	Bereik van de triggers
+Triggers	Triggers
+UWP shell	UWP-schil
+UWP storage	UWP-opslag
+Underlays use titleImages/%s/*.png	Achtergronden gebruiken titleImages/%s/*.png
+Up to %d characters, used as the console profile name	Maximaal %d tekens, wordt gebruikt als profielnaam van de console
+Update directory was not found	De updatemap is niet gevonden
+Upscale filter	Opschaal filter
+Use motion	Bewegingsbesturing gebruiken
+Username	Gebruikersnaam
+VRAM usage	VRAM gebruik
+VSync	VSync
+Version %u is already installed. Continuing will reinstall it.	Versie %u is al geïnstalleerd. Doorgaan installeert die opnieuw.
+Version: %d	Versie: %d
+Vertical pointer sensitivity	Verticale aanwijzergevoeligheid
+Video	Video
+Video backgrounds use more storage and bandwidth.	Video-achtergronden gebruiken meer opslag en bandbreedte.
+Virtual touch / IR pointer	Virtuele aanraking / IR-aanwijzer
+Who's playing?	Wie speelt er?
+Wii Remote extension	Wii Remote-uitbreiding
+World	Wereld
+missing or incomplete	ontbreken of zijn onvolledig
+no	nee
+otp.bin is missing or invalid	otp.bin ontbreekt of is ongeldig
+seeprom.bin is missing or invalid	seeprom.bin ontbreekt of is ongeldig
+valid	geldig
+yes	ja

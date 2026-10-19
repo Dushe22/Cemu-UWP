@@ -548,6 +548,46 @@ if (ENABLE_VULKAN)
   )
 endif()
 
+if (ENABLE_D3D12)
+  target_sources(CemuCafe PRIVATE
+    HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitHLSL.cpp
+    HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitHLSL.hpp
+    HW/Latte/Renderer/D3D12/CachedFBOD3D12.cpp
+    HW/Latte/Renderer/D3D12/CachedFBOD3D12.h
+    HW/Latte/Renderer/D3D12/D3D12DescriptorManager.cpp
+    HW/Latte/Renderer/D3D12/D3D12DescriptorManager.h
+    HW/Latte/Renderer/D3D12/D3D12Formats.cpp
+    HW/Latte/Renderer/D3D12/D3D12Formats.h
+    HW/Latte/Renderer/D3D12/D3D12GeometryProbe.cpp
+    HW/Latte/Renderer/D3D12/D3D12GeometryProbe.h
+    HW/Latte/Renderer/D3D12/D3D12GpuWatchdog.cpp
+    HW/Latte/Renderer/D3D12/D3D12GpuWatchdog.h
+    HW/Latte/Renderer/D3D12/D3D12MemoryManager.cpp
+    HW/Latte/Renderer/D3D12/D3D12MemoryManager.h
+    HW/Latte/Renderer/D3D12/D3D12RingRange.h
+    HW/Latte/Renderer/D3D12/D3D12ViewDescription.cpp
+    HW/Latte/Renderer/D3D12/D3D12ViewDescription.h
+    HW/Latte/Renderer/D3D12/D3D12PipelineCompiler.cpp
+    HW/Latte/Renderer/D3D12/D3D12PipelineCompiler.h
+    HW/Latte/Renderer/D3D12/D3D12PipelineRecipe.cpp
+    HW/Latte/Renderer/D3D12/D3D12PipelineRecipe.h
+    HW/Latte/Renderer/D3D12/D3D12PipelineStableCache.cpp
+    HW/Latte/Renderer/D3D12/D3D12PipelineStableCache.h
+    HW/Latte/Renderer/D3D12/D3D12Query.cpp
+    HW/Latte/Renderer/D3D12/D3D12Query.h
+    HW/Latte/Renderer/D3D12/D3D12Renderer.cpp
+    HW/Latte/Renderer/D3D12/D3D12Renderer.h
+    HW/Latte/Renderer/D3D12/LatteTextureD3D12.cpp
+    HW/Latte/Renderer/D3D12/LatteTextureD3D12.h
+    HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.cpp
+    HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h
+    HW/Latte/Renderer/D3D12/RendererShaderD3D12.cpp
+    HW/Latte/Renderer/D3D12/RendererShaderD3D12.h
+    HW/Latte/Renderer/D3D12/TextureReadbackD3D12.cpp
+    HW/Latte/Renderer/D3D12/TextureReadbackD3D12.h
+  )
+endif()
+
 if(APPLE)
 	target_sources(CemuCafe PRIVATE
 	    HW/Latte/Renderer/MetalView.mm
@@ -626,7 +666,7 @@ if(CEMU_ARCHITECTURE MATCHES "(aarch64)|(AARCH64)|(arm64)|(ARM64)")
   target_link_libraries(CemuCafe PRIVATE xbyak_aarch64)
 endif()
 
-set_property(TARGET CemuCafe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuCafe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 cemu_use_precompiled_header(CemuCafe)
 
@@ -660,6 +700,24 @@ target_link_libraries(CemuCafe PRIVATE
   OpenSSL::SSL
 )
 
+if (ENABLE_D3D12)
+  target_link_libraries(CemuCafe PRIVATE
+    d3d12
+    dxgi
+    dxguid
+  )
+  if (ENABLE_UWP)
+    target_link_libraries(CemuCafe PRIVATE dxcompiler)
+  else()
+    target_link_libraries(CemuCafe PRIVATE Microsoft::DirectXShaderCompiler)
+  endif()
+  if (TARGET GPUOpen::D3D12MemoryAllocator)
+    target_link_libraries(CemuCafe PRIVATE GPUOpen::D3D12MemoryAllocator)
+  elseif (TARGET D3D12MemoryAllocator)
+    target_link_libraries(CemuCafe PRIVATE D3D12MemoryAllocator)
+  endif()
+endif()
+
 if (ENABLE_WAYLAND)
 	# PUBLIC because wayland-client.h is included in VulkanAPI.h
   target_link_libraries(CemuCafe PUBLIC Wayland::Client)
@@ -679,6 +737,6 @@ if (ENABLE_LIBUSB)
   endif ()
 endif()
 
-if(WIN32)
+if(WIN32 AND NOT ENABLE_UWP)
 	target_link_libraries(CemuCafe PRIVATE iphlpapi)
 endif()

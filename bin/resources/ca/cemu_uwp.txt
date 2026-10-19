@@ -1,0 +1,337 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, versió %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu de %zu títols encara no tenen imatges d'aquest tipus per a la llista de jocs.
+%zu packs across %zu games (LB/RB change game)	%zu paquets per a %zu jocs (LB/RB canvia de joc)
+(none)	(cap)
+2D box	Caixa 2D
+2D box back	Contraportada 2D
+2D cartridge	Cartutx 2D
+3D box	Caixa 3D
+A Apply    B Cancel	A Aplica    B Cancel·la
+A Select    B Back    Menu Close	A Selecciona    B Enrere    Menu Tanca
+A file or folder picker is already open	Ja hi ha un selector de fitxers o carpetes obert
+A title scan is already running	Ja s'està executant una exploració de títols
+A: activate  B: back/home  D-pad/left stick: move focus	A: activa  B: enrere/inici  Creueta/palanca esquerra: mou el focus
+APP Store	APP Store
+Accelerometer	Acceleròmetre
+Accelerometer sensitivity	Sensibilitat de l'acceleròmetre
+Account	Compte
+Account ID: %s	ID del compte: %s
+Action	Acció
+Activated: %s	Activat: %s
+Add another game folder	Afegeix una altra carpeta de jocs
+Added to favorites	Afegit als preferits
+Advanced PPC logging	Registre PPC avançat
+Always on	Sempre actiu
+An unfinished scan is saved	S'ha desat una exploració inacabada
+An unfinished scan is saved; it resumes automatically on the next launch.	S'ha desat una exploració inacabada; es reprendrà automàticament en el proper inici.
+App Store	App Store
+Apply Quick Menu combo	Aplica la combinació del menú ràpid
+Artwork	Imatges
+Audio latency	Latència d'àudio
+Backend	Motor
+CPU mode	Mode de CPU
+CPU usage	Ús de CPU
+Can't change the MLC path while a game is running	No es pot canviar el camí MLC mentre hi ha un joc en marxa
+Cancel	Cancel·lar
+Cancel installation	Cancel·la la instal·lació
+Cancel this installation? The previous installed version will remain unchanged.	Voleu cancel·lar aquesta instal·lació? La versió ja instal·lada no es modificarà.
+Cancelling installation...	S'està cancel·lant la instal·lació...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Interfície Cemu UWP
+Choose side-by-side underlay	Tria el fons de costat
+Choose stacked underlay	Tria el fons apilat
+Clear account credentials	Esborra les credencials
+Clear side-by-side	Restableix de costat
+Clear stacked	Restableix apilat
+Close	Tancar
+Community	Comunitat
+Community graphic packs installed	Paquets gràfics de la comunitat instal·lats
+Console language	Idioma de la consola
+Controller Mapping	Assignació de comandaments
+Controller battery notifications	Avisos de bateria del comandament
+Controller mapping saved	Assignació del comandament desada
+Controller profile notifications	Avisos de perfil del comandament
+Controllers	Comandaments
+Could not open the MLC folder picker	No s'ha pogut obrir el selector de carpeta MLC
+Could not open the ScreenScraper media folder picker	No s'ha pogut obrir el selector de carpeta de ScreenScraper
+Could not open the game folder picker	No s'ha pogut obrir el selector de carpeta de jocs
+Could not open the title picker	No s'ha pogut obrir el selector de títols
+Could not prepare that MLC folder - is the drive connected and writable?	No s'ha pogut preparar aquesta carpeta MLC: la unitat està connectada i permet escriptura?
+Could not save the nickname	No s'ha pogut desar el sobrenom
+Could not save title metadata	No s'han pogut desar les metadades del títol
+Crash dump	Bolcat de tancaments inesperats
+Current game override	Ajust del joc actual
+Custom	Personalitzat
+DLC directory was not found	No s'ha trobat la carpeta de DLC
+Debug overlay	Superposició de depuració
+Debugger	Depurador
+Default	Valor Predeterminat
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	Per defecte: Gamepad:Menu+View. Exemples personalitzats: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Destinació: %s
+Developer API credentials are missing from this build.	A aquesta compilació li manquen les credencials de l'API de desenvolupador.
+Disable screen saver	Desactiva l'estalvi de pantalla
+Discord	Discord
+Display gamma	Gamma de la pantalla
+Display uses sRGB curve	La pantalla usa la corba sRGB
+Download box art	Baixa les caràtules
+Download community packs	Baixa els paquets de la comunitat
+Download fanart backgrounds	Baixa els fons de fan art
+Download logos	Baixa els logotips
+Download metadata	Baixa les metadades
+Download screenshots	Baixa les captures de pantalla
+Download videos	Baixa els vídeos
+Downloaded media location	Ubicació dels fitxers baixats
+Downloads	Baixades
+Downscale filter	Filtre de reducció d’escala
+Draw calls	Crides de dibuix
+Dump libcurl requests	Exporta les peticions de libcurl
+Dump recompiler functions	Exporta les funcions del recompilador
+Dump shaders	Exporta els shaders
+Dump textures	Exporta les textures
+Emulate Disney Infinity Base	Emula la base de Disney Infinity
+Emulate LEGO Dimensions Toy Pad	Emula el Toy Pad de LEGO Dimensions
+Emulate Skylander Portal	Emula el portal Skylanders
+Emulated USB devices	Dispositius USB emulats
+Enable Screenscraper	Activa Screenscraper
+Enable Screenscraper first	Activeu primer Screenscraper
+Enable intro sound	Activa el so d'inici
+Enabled	Activat
+Every refresh	Cada actualització
+Every second refresh	Cada dues actualitzacions
+Every third refresh	Cada tres actualitzacions
+Exit Cemu	Surt de Cemu
+FPS	FPS
+Failed to copy title image	No s'ha pogut copiar la imatge del títol
+Failed to save Screenscraper account	No s'ha pogut desar el compte de Screenscraper
+Failed to save settings	No s'han pogut desar els paràmetres
+Fan art	Art de fans
+Files: %llu / %llu	Fitxers: %llu / %llu
+Flush log	Desa el registre
+Follow interface language	Segueix l'idioma de la interfície
+Free space: %s	Espai lliure: %s
+Friend service notifications	Avisos del servei d'amics
+Fullscreen scaling	Escalat a pantalla completa
+GDB port	GDB port
+Game directory was not found	No s'ha trobat la carpeta del joc
+Game folder added	Carpeta de jocs afegida
+Game folder added, but it is not accessible - is the drive connected?	Carpeta de jocs afegida, però no és accessible: la unitat està connectada?
+Game layout	Disposició del joc
+Game logo	Logotip del joc
+Game profile saved	Perfil del joc desat
+Game-list artwork	Imatges de la llista
+GamePad	GamePad
+GamePad channels	Canals del GamePad
+GamePad device	Dispositiu del GamePad
+GamePad only	Només el GamePad
+GamePad picture in picture	GamePad en imatge dins imatge
+GamePad screen	Pantalla del GamePad
+GamePad volume	Volum del GamePad
+Games directory	Carpeta de jocs
+Games directory updated	Carpeta de jocs actualitzada
+Games directory updated, but it is not accessible - is the drive connected?	Carpeta de jocs actualitzada, però no és accessible: la unitat està connectada?
+Gamma	Gamma
+General	General
+Global controller profiles saved	Perfils globals de comandament desats
+Global default layout	Disposició per defecte
+Graphic packs reloaded	Paquets gràfics tornats a carregar
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Giroscopi
+Gyroscope dead zone	Zona morta del giroscopi
+Gyroscope sensitivity	Sensibilitat del giroscopi
+Hold stick button	Mantén el botó de la palanca
+Home	Inici
+Horizontal pointer sensitivity	Sensibilitat horitzontal del punter
+Input	Entrada
+Input channels	Canals d'entrada
+Input volume	Volum d'entrada
+Install	Instal·la
+Install size: %s (%llu files)	Mida de la instal·lació: %s (%llu fitxers)
+Install title, update or DLC	Instal·la un títol, actualització o DLC
+Installation cancelled	Instal·lació cancel·lada
+Installation complete	Instal·lació completada
+Installation failed	La instal·lació ha fallat
+Installed	Instal·lat
+Installed version %u will be replaced.	Es reemplaçarà la versió instal·lada %u.
+Installing...	S'està instal·lant...
+Interface	Interfície
+Interface language	Idioma de la interfície
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Combinació no vàlida. No es permeten botons solts, botons repetits ni dreceres de teclat o de punter. La combinació desada no s'ha modificat.
+Invert pointer X	Inverteix l'eix X del punter
+Invert pointer Y	Inverteix l'eix Y del punter
+Keep installing	Continua instal·lant
+Large information artwork	Imatge informativa gran
+Layout Mode	Mode de disposició
+Layout mode	Mode de disposició
+Left Stick	Palanca esquerra
+Left stick	Palanca esquerra
+Left stick deadzone	Zona morta de la palanca esquerra
+Left stick range	Abast de la palanca esquerra
+Logs	Registres
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	Camí MLC desat: reinicieu Cemu per fer-lo servir (els comptes i les partides no es mouen)
+MLC storage	Emmagatzematge MLC
+Metadata language	Idioma de les metadades
+Metadata saved; another ScreenScraper download is running	Metadades desades; hi ha una altra baixada de ScreenScraper en curs
+Metadata saved; sign in to ScreenScraper to download media	Metadades desades; inicieu sessió a ScreenScraper per baixar els fitxers
+Microphone and portal	Micròfon i portal
+Missing	Manca
+Native UWP app-container frontend for Cemu.	Interfície nativa en contenidor UWP per a Cemu.
+Nearest neighbor	Veí més proper
+Network service	Servei de xarxa
+Nickname	Sobrenom
+Nickname saved	Sobrenom desat
+No Cemu Wiki ID is available	No hi ha cap identificador de Cemu Wiki disponible
+No DLC installed	Cap DLC instal·lat
+No bootstrap log available.	No hi ha cap registre d'arrencada disponible.
+No graphic packs are installed in the UWP user data graphicPacks folder.	No hi ha paquets gràfics instal·lats a la carpeta graphicPacks de les dades d'usuari UWP.
+No graphic packs target this title	Cap paquet gràfic s'aplica a aquest títol
+No log text available.	No hi ha cap text de registre disponible.
+No save data found	No s'han trobat partides desades
+No shader caches found	No s'han trobat memòries cau d'ombrejadors
+No title image is available to copy	No hi ha cap imatge del títol per copiar
+No titles to scrape	No hi ha títols per analitzar
+No update installed	Cap actualització instal·lada
+None	Cap
+Not installed	No instal·lat
+Nothing left to resume	No queda res per reprendre
+Notification scale	Mida de les notificacions
+Notifications	Notificacions
+Offline	Fora de línia
+Online files: %s	Fitxers en línia: %s
+Open title	Obre un títol
+Open title file	Obre el fitxer del títol
+Overlay	Superposició
+Overlay scale	Mida de l'overlay
+Override application gamma	Sobreescriu la gamma de l'aplicació
+Overwrite existing media	Sobreescriu els fitxers existents
+Password	Contrasenya
+Per-game profile	Perfil per joc
+Permanent storage	Emmagatzematge permanent
+Persistent ID: %08x	ID persistent: %08x
+Picture in picture	Imatge dins imatge
+Platform media: %s	Fitxers de la plataforma: %s
+Platform: Windows UWP	Plataforma: Windows UWP
+Pointer	Punter
+Pointer activation	Activació del punter
+Pointer speed	Velocitat del punter
+Pointer stick	Palanca del punter
+Pointer stick dead zone	Zona morta de la palanca del punter
+Portal device	Dispositiu del portal
+Portal volume	Volum del portal
+Portuguese	Portuguès
+Power	Energia
+Preferred region	Regió preferida
+Quick Menu	Menú ràpid
+Quick Menu combo reset to Menu + View	Combinació del menú ràpid restablerta a Menu + View
+Quick Menu combo saved	Combinació del menú ràpid desada
+Quick menu combo	Combinació del menú ràpid
+Quit Game	Tanca el joc
+RAM usage	Ús de RAM
+Ready	A punt
+Refresh list	Actualitza la llista
+Refresh logs	Actualitza els registres
+Refresh titles	Actualitza els títols
+Refreshing game list	S'està actualitzant la llista de jocs
+Reload packs	Torna a carregar els paquets
+Remove	Eliminar
+Removed from favorites	Suprimit dels preferits
+Render upside down	Renderitza cap per avall
+Renderer	Renderitzador
+Renderer: Direct3D 12 CoreWindow	Renderitzador: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Cal mantenir premuts almenys dos botons diferents del comandament.
+Reset Quick Menu to Menu + View	Restableix el menú ràpid a Menú + Vista
+Restart Game	Reinicia el joc
+Restart on enable/preset: %s / %s	Reinici en activar o canviar de predefinit: %s / %s
+Restart the title if this pack needs a full reload	Reinicieu el títol si aquest paquet necessita una recàrrega completa
+Restart unavailable	Reinici no disponible
+Resume scan	Reprèn l'exploració
+Resuming unfinished Screenscraper scan	S'està reprenent l'exploració inacabada de Screenscraper
+Return to Game	Torna al joc
+Right Stick	Palanca dreta
+Right stick	Palanca dreta
+Right stick deadzone	Zona morta de la palanca dreta
+Right stick range	Abast de la palanca dreta
+Rumble strength	Intensitat de la vibració
+Runtime dumps	Bolcats d'execució
+Save account credentials	Desa les credencials
+Save nickname	Desa el sobrenom
+Scaling	Escalat
+Screens restored	Pantalles restaurades
+Screens swapped	Pantalles intercanviades
+Screenscraper	Screenscraper
+Screenscraper account cleared	Compte de Screenscraper esborrat
+Screenscraper account saved	Compte de Screenscraper desat
+Screenscraper download is already running	Ja hi ha una baixada de Screenscraper en curs
+Screenshot	Captura de pantalla
+Selected account is not a complete online account	El compte seleccionat no és un compte en línia complet
+Set	Definit
+Shader compiling notifications	Avisos de compilació de shaders
+Shaders: %s	Ombrejadors: %s
+Shared title media: %s	Fitxers compartits dels títols: %s
+Shell theme	Tema de la interfície
+Show controls hint	Mostra els controls
+Side by side	Un al costat de l'altre
+Side-by-side underlay: %s	Fons un al costat de l'altre: %s
+Sign in to Screenscraper first	Inicieu primer sessió a Screenscraper
+Stable-input calibration period	Temps de calibratge en repòs
+Stacked	Apilats
+Stacked underlay: %s	Fons apilat: %s
+Start Stream	Inicia la transmissió
+Status: %s	Estat: %s
+Stop Stream	Atura la transmissió
+Stop the running game before installing content.	Atureu el joc en marxa abans d'instal·lar contingut.
+Storage	Emmagatzematge
+Storage: %s	Emmagatzematge: %s
+Stream: working...	Transmissió: treballant...
+Swap TV and GamePad screens	Intercanvia les pantalles TV i GamePad
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Exemples d'intercanvi: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	Sistema
+TV	TV
+TV channels	Canals de TV
+TV device	Dispositiu de la TV
+TV only	Només la TV
+TV volume	Volum de la TV
+Target gamma	Gamma objectiu
+That folder is already in the list	Aquesta carpeta ja és a la llista
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	La disposició reprodueix el menú d'inici de Cemu UWP: mosaics de jocs, barres laterals, panells de sistema suaus i navegació pensada per al comandament.
+This entry cannot be launched	Aquesta entrada no es pot iniciar
+This graphic pack has no description.	Aquest paquet gràfic no té descripció.
+Title ID	ID del títol
+Title ID: %016llX	ID del títol: %016llX
+Title Manager	Gestor de títols
+Title image copied	Imatge del títol copiada
+Title information is no longer available	La informació del títol ja no està disponible
+Title installed	Títol instal·lat
+Title screen	Pantalla de títol
+Titles	Títols
+Toggle GamePad display	Commuta la pantalla del GamePad
+Treat the mapped Screen control as a toggle instead of a hold action	Fes servir el control Pantalla com a commutador en lloc de mantenir premut
+Trigger deadzone	Zona morta dels gallets
+Trigger range	Abast dels gallets
+Triggers	Gallets
+UWP shell	Interfície UWP
+UWP storage	Emmagatzematge UWP
+Underlays use titleImages/%s/*.png	Els fons fan servir titleImages/%s/*.png
+Up to %d characters, used as the console profile name	Fins a %d caràcters, s'utilitza com a nom del perfil de la consola
+Update directory was not found	No s'ha trobat la carpeta de l'actualització
+Upscale filter	Filtre d’augment d’escala
+Use motion	Utilitza el moviment
+Username	Usuari
+VRAM usage	Ús de VRAM
+VSync	Sincronització Vertical (VSync)
+Version %u is already installed. Continuing will reinstall it.	La versió %u ja està instal·lada. Si continueu, es tornarà a instal·lar.
+Version: %d	Versió: %d
+Vertical pointer sensitivity	Sensibilitat vertical del punter
+Video	Vídeo
+Video backgrounds use more storage and bandwidth.	Els fons de vídeo consumeixen més espai i amplada de banda.
+Virtual touch / IR pointer	Toc virtual / punter IR
+Who's playing?	Qui juga?
+Wii Remote extension	Extensió del Wii Remote
+World	Món
+missing or incomplete	manquen o són incomplets
+no	no
+otp.bin is missing or invalid	otp.bin manca o no és vàlid
+seeprom.bin is missing or invalid	seeprom.bin manca o no és vàlid
+valid	vàlids
+yes	sí

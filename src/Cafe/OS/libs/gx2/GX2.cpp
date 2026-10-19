@@ -112,6 +112,52 @@ void gx2Export_GX2CopyColorBufferToScanBuffer(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, 0);
 }
 
+// frames copied straight into a scan buffer never pass through GX2CopyColorBufferToScanBuffer
+// hardware scales the copy over the whole scan buffer, so the source surface is what gets displayed
+void gx2SubmitScanBufferCopy(GX2Surface* srcSurface, uint32 srcMip, uint32 srcSlice, GX2Surface* dstSurface, uint32 dstMip, uint32 dstSlice)
+{
+	// the scan buffer copy presents the base level and first slice of the source
+	if (srcMip != 0 || srcSlice != 0 || dstMip != 0 || dstSlice != 0)
+		return;
+	const uint32 dstPtr = dstSurface->imagePtr;
+	uint32 scanTarget = 0;
+	if (LatteGPUState.tvScanBufferSize != 0 && dstPtr >= LatteGPUState.tvScanBufferAddr && dstPtr < LatteGPUState.tvScanBufferAddr + LatteGPUState.tvScanBufferSize)
+		scanTarget = GX2_SCAN_TARGET_TV;
+	else if (LatteGPUState.drcScanBufferSize != 0 && dstPtr >= LatteGPUState.drcScanBufferAddr && dstPtr < LatteGPUState.drcScanBufferAddr + LatteGPUState.drcScanBufferSize)
+		scanTarget = GX2_SCAN_TARGET_DRC_FIRST;
+	if (scanTarget == 0)
+		return;
+	GX2::GX2ReserveCmdSpace(10);
+	gx2WriteGather_submitU32AsBE(pm4HeaderType3(IT_HLE_COPY_COLORBUFFER_TO_SCANBUFFER, 9));
+	gx2WriteGather_submitU32AsBE(memory_virtualToPhysical(srcSurface->imagePtr));
+	gx2WriteGather_submitU32AsBE((uint32)srcSurface->width);
+	gx2WriteGather_submitU32AsBE((uint32)srcSurface->height);
+	gx2WriteGather_submitU32AsBE((uint32)srcSurface->pitch);
+	gx2WriteGather_submitU32AsBE((uint32)srcSurface->tileMode.value());
+	gx2WriteGather_submitU32AsBE((uint32)srcSurface->swizzle);
+	gx2WriteGather_submitU32AsBE(srcSlice);
+	gx2WriteGather_submitU32AsBE((uint32)srcSurface->format.value());
+	gx2WriteGather_submitU32AsBE(scanTarget);
+}
+
+void gx2Export_GX2SetTVEnable(PPCInterpreter_t* hCPU)
+{
+	cemuLog_log(LogType::GX2, "GX2SetTVEnable({})", hCPU->gpr[3]);
+	osLib_returnFromFunction(hCPU, 0);
+}
+
+void gx2Export_GX2SetTVScale(PPCInterpreter_t* hCPU)
+{
+	cemuLog_log(LogType::GX2, "GX2SetTVScale({},{})", hCPU->gpr[3], hCPU->gpr[4]);
+	osLib_returnFromFunction(hCPU, 0);
+}
+
+void gx2Export_GX2SetDRCEnable(PPCInterpreter_t* hCPU)
+{
+	cemuLog_log(LogType::GX2, "GX2SetDRCEnable({})", hCPU->gpr[3]);
+	osLib_returnFromFunction(hCPU, 0);
+}
+
 void gx2Export_GX2WaitForFreeScanBuffer(PPCInterpreter_t* hCPU)
 {
 	// todo: proper implementation
@@ -348,9 +394,14 @@ namespace GX2
 			osLib_addFunction("gx2", "GX2InitDepthBufferRegs", gx2Export_GX2InitDepthBufferRegs);
 			osLib_addFunction("gx2", "GX2SetColorBuffer", gx2Export_GX2SetColorBuffer);
 			osLib_addFunction("gx2", "GX2SetDepthBuffer", gx2Export_GX2SetDepthBuffer);
+			osLib_addFunction("gx2", "GX2ExpandDepthBuffer", gx2Export_GX2ExpandDepthBuffer);
+			osLib_addFunction("gx2", "GX2InitDepthBufferHiZEnable", gx2Export_GX2InitDepthBufferHiZEnable);
 
 			osLib_addFunction("gx2", "GX2SetDRCBuffer", gx2Export_GX2SetDRCBuffer);
 			osLib_addFunction("gx2", "GX2MarkScanBufferCopied", gx2Export_GX2MarkScanBufferCopied);
+			osLib_addFunction("gx2", "GX2SetTVEnable", gx2Export_GX2SetTVEnable);
+			osLib_addFunction("gx2", "GX2SetTVScale", gx2Export_GX2SetTVScale);
+			osLib_addFunction("gx2", "GX2SetDRCEnable", gx2Export_GX2SetDRCEnable);
 
 			// misc
 			osLib_addFunction("gx2", "GX2TempGetGPUVersion", gx2Export_GX2TempGetGPUVersion);

@@ -16,6 +16,10 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/RendererShaderVk.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineStableCache.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
+#endif
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/RendererShaderMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCache.h"
@@ -284,6 +288,11 @@ void LatteShaderCache_finish()
 		RendererShaderVk::ShaderCacheLoading_end();
 		return;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		RendererShaderD3D12::ShaderCacheLoading_end();
+		return;
+#endif
 #ifdef ENABLE_OPENGL
 	case RendererAPI::OpenGL:
 		RendererShaderGL::ShaderCacheLoading_end();
@@ -380,6 +389,11 @@ void LatteShaderCache_Load()
 		RendererShaderVk::ShaderCacheLoading_begin(cacheTitleId);
 		break;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		RendererShaderD3D12::ShaderCacheLoading_begin(cacheTitleId);
+		break;
+#endif
 #ifdef ENABLE_OPENGL
 	case RendererAPI::OpenGL:
 		RendererShaderGL::ShaderCacheLoading_begin(cacheTitleId);
@@ -451,8 +465,13 @@ void LatteShaderCache_Load()
 		}
 	};
 
-	loadBackgroundTexture(true, g_shaderCacheLoaderState.textureTVId);
-	loadBackgroundTexture(false, g_shaderCacheLoaderState.textureDRCId);
+	{
+#if defined(CEMU_UWP)
+		std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+		loadBackgroundTexture(true, g_shaderCacheLoaderState.textureTVId);
+		loadBackgroundTexture(false, g_shaderCacheLoaderState.textureDRCId);
+	}
 
 	if(GetConfig().play_boot_sound)
 		g_bootSndPlayer.StartSound();
@@ -499,32 +518,39 @@ void LatteShaderCache_Load()
 	cemuLog_log(LogType::Force, "Shader cache loaded with {} shaders. Commited mem {}MB. Took {}ms", numLoadedShaders, (sint32)(memCommited/1024/1024), timeLoad);
 #endif
 	LatteShaderCache_finish();
-	// if Vulkan or Metal then also load pipeline cache
-#if defined(ENABLE_VULKAN) || defined(ENABLE_METAL)
-	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
+	// if Vulkan, D3D12, or Metal then also load pipeline cache
+#if defined(ENABLE_VULKAN) || defined(ENABLE_D3D12) || defined(ENABLE_METAL)
+	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Direct3D12 || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
 
 
-	g_renderer->BeginFrame(true);
-	if (g_renderer->ImguiBegin(true))
 	{
-		LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
-		g_renderer->ImguiEnd();
-	}
-	g_renderer->BeginFrame(false);
-	if (g_renderer->ImguiBegin(false))
-	{
-		LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureDRCId, 854, 480);
-		g_renderer->ImguiEnd();
-	}
+#if defined(CEMU_UWP)
+		std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
+		g_renderer->BeginFrame(true);
+		if (g_renderer->ImguiBegin(true))
+		{
+			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureTVId, 1280, 720);
+			g_renderer->ImguiEnd();
+		}
+#if !defined(CEMU_UWP)
+		g_renderer->BeginFrame(false);
+		if (g_renderer->ImguiBegin(false))
+		{
+			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureDRCId, 854, 480);
+			g_renderer->ImguiEnd();
+		}
+#endif
 
-	g_renderer->SwapBuffers(true, true);
+		g_renderer->SwapBuffers(true, true);
 
-	if (g_shaderCacheLoaderState.textureTVId)
-		g_renderer->DeleteTexture(g_shaderCacheLoaderState.textureTVId);
-	if (g_shaderCacheLoaderState.textureDRCId)
-		g_renderer->DeleteTexture(g_shaderCacheLoaderState.textureDRCId);
+		if (g_shaderCacheLoaderState.textureTVId)
+			g_renderer->DeleteTexture(g_shaderCacheLoaderState.textureTVId);
+		if (g_shaderCacheLoaderState.textureDRCId)
+			g_renderer->DeleteTexture(g_shaderCacheLoaderState.textureDRCId);
+	}
 
 	g_bootSndPlayer.FadeOutSound();
 
@@ -552,6 +578,10 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 		if ((tick_cached() - lastFrameUpdate) < std::chrono::milliseconds(1000 / 20)) // -> aim for 20 FPS
 			continue;
 
+	{
+#if defined(CEMU_UWP)
+		std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+#endif
 		int w, h;
 		WindowSystem::GetWindowPhysSize(w, h);
 		const Vector2f window_size{ (float)w,(float)h };
@@ -651,15 +681,18 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 			lastFrameUpdate = tick_cached();
 		}
 
+#if !defined(CEMU_UWP)
 		g_renderer->BeginFrame(false);
 		if (g_renderer->ImguiBegin(false))
 		{
 			LatteShaderCache_drawBackgroundImage(g_shaderCacheLoaderState.textureDRCId, 854, 480);
 			g_renderer->ImguiEnd();
 		}
+#endif
 
 		// finish frame
 		g_renderer->SwapBuffers(true, true);
+	}
 	}
 }
 
@@ -667,11 +700,16 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 {
 	switch(g_renderer->GetType())
 	{
-	#ifdef ENABLE_VULKAN
+#ifdef ENABLE_VULKAN
 	case RendererAPI::Vulkan:
 	    g_shaderCacheLoaderState.pipelineFileCount = VulkanPipelineStableCache::GetInstance().BeginLoading(cacheTitleId);
 	    break;
 	#endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		g_shaderCacheLoaderState.pipelineFileCount = D3D12PipelineStableCache::GetInstance().BeginLoading(cacheTitleId);
+		break;
+#endif
 #ifdef ENABLE_METAL
 	case RendererAPI::Metal:
 		g_shaderCacheLoaderState.pipelineFileCount = MetalPipelineCache::GetInstance().BeginLoading(cacheTitleId);
@@ -689,6 +727,11 @@ void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 	    VulkanPipelineStableCache::GetInstance().EndLoading();
 	    break;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		D3D12PipelineStableCache::GetInstance().EndLoading();
+		break;
+#endif
 #ifdef ENABLE_METAL
 	case RendererAPI::Metal:
 		MetalPipelineCache::GetInstance().EndLoading();
@@ -705,6 +748,10 @@ bool LatteShaderCache_updatePipelineLoadingProgress()
 #ifdef ENABLE_VULKAN
 	case RendererAPI::Vulkan:
 	    return VulkanPipelineStableCache::GetInstance().UpdateLoading(g_shaderCacheLoaderState.loadedPipelines, pipelinesMissingShaders);
+#endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		return D3D12PipelineStableCache::GetInstance().UpdateLoading(g_shaderCacheLoaderState.loadedPipelines, pipelinesMissingShaders);
 #endif
 #ifdef ENABLE_METAL
 	case RendererAPI::Metal:
@@ -977,6 +1024,11 @@ void LatteShaderCache_Close()
 		RendererShaderVk::ShaderCacheLoading_Close();
 		break;
 #endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		RendererShaderD3D12::ShaderCacheLoading_Close();
+		break;
+#endif
 #ifdef ENABLE_OPENGL
 	case RendererAPI::OpenGL:
 		RendererShaderGL::ShaderCacheLoading_Close();
@@ -995,6 +1047,11 @@ void LatteShaderCache_Close()
 #ifdef ENABLE_VULKAN
 	case RendererAPI::Vulkan:
 	    VulkanPipelineStableCache::GetInstance().Close();
+		break;
+#endif
+#ifdef ENABLE_D3D12
+	case RendererAPI::Direct3D12:
+		D3D12PipelineStableCache::GetInstance().Close();
 		break;
 #endif
 #ifdef ENABLE_METAL

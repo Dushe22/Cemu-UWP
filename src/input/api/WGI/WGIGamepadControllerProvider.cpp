@@ -1,0 +1,50 @@
+#include "input/api/WGI/WGIGamepadControllerProvider.h"
+
+#if defined(CEMU_UWP)
+
+#include "input/api/WGI/WGIGamepadController.h"
+
+std::vector<std::shared_ptr<ControllerBase>> WGIGamepadControllerProvider::get_controllers()
+{
+	std::vector<std::shared_ptr<ControllerBase>> result;
+	const auto gamepads = winrt::Windows::Gaming::Input::Gamepad::Gamepads();
+	result.reserve(gamepads.Size());
+	for (uint32 i = 0; i < gamepads.Size(); ++i)
+		result.emplace_back(std::make_shared<WGIGamepadController>(i));
+	return result;
+}
+
+winrt::Windows::Gaming::Input::Gamepad WGIGamepadControllerProvider::GetGamepad(uint32 index) const
+{
+	const auto gamepads = winrt::Windows::Gaming::Input::Gamepad::Gamepads();
+	if (index >= gamepads.Size())
+		return nullptr;
+	return gamepads.GetAt(index);
+}
+
+winrt::Windows::Gaming::Input::Gamepad WGIGamepadControllerProvider::GetGamepad(
+	std::string_view nonRoamableId, uint32 fallbackIndex) const
+{
+	if (!nonRoamableId.empty())
+	{
+		for (const auto& gamepad : winrt::Windows::Gaming::Input::Gamepad::Gamepads())
+		{
+			if (GetNonRoamableId(gamepad) == nonRoamableId)
+				return gamepad;
+		}
+		return nullptr;
+	}
+	return GetGamepad(fallbackIndex);
+}
+
+std::string WGIGamepadControllerProvider::GetNonRoamableId(
+	const winrt::Windows::Gaming::Input::Gamepad& gamepad)
+{
+	if (!gamepad)
+		return {};
+	const auto raw = winrt::Windows::Gaming::Input::RawGameController::
+		FromGameController(gamepad);
+	return raw ? winrt::to_string(raw.NonRoamableId()) : std::string{};
+}
+
+#endif

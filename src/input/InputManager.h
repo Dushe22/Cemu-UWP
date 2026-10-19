@@ -1,7 +1,9 @@
 #pragma once
 
-#if BOOST_OS_WINDOWS
+#ifdef HAS_DIRECTINPUT
 #include "input/api/DirectInput/DirectInputControllerProvider.h"
+#endif
+#ifdef HAS_XINPUT
 #include "input/api/XInput/XInputControllerProvider.h"
 #endif
 
@@ -11,6 +13,10 @@
 
 #ifdef HAS_SDL
 #include "input/api/SDL/SDLControllerProvider.h"
+#endif
+
+#if defined(CEMU_UWP)
+#include "input/api/WGI/WGIGamepadControllerProvider.h"
 #endif
 
 #include "input/api/Keyboard/KeyboardControllerProvider.h"
@@ -72,7 +78,19 @@ public:
 	}
 
 	void apply_game_profile();
+#if defined(CEMU_UWP)
+	[[nodiscard]] bool can_set_controller(size_t player_index,
+		EmulatedController::Type type) const;
+	bool activate_uwp_title_profile(size_t player_index, std::string_view filename);
+	void restore_uwp_default_profiles();
+	void reset_uwp_expression_state();
+	void set_uwp_gameprofile_state(size_t player_index, bool active);
+#endif
 	void on_device_changed();
+#if defined(CEMU_UWP) && HAS_DSU
+	void refresh_uwp_dsu_provider();
+	void apply_uwp_dsu_routes();
+#endif
 
 
 	static std::vector<std::string> get_profiles();
@@ -107,6 +125,10 @@ private:
 	std::array<EmulatedControllerPtr, kMaxWPADControllers> m_wpad;
 
 	std::array<bool, kMaxController> m_is_gameprofile_set{};
+#if defined(CEMU_UWP)
+	std::array<EmulatedControllerPtr, kMaxController> m_uwp_pre_game_controllers{};
+	std::array<bool, kMaxController> m_uwp_pre_game_controller_captured{};
+#endif
 
 	template<std::derived_from<ControllerProviderBase> TProvider>
 	void create_provider()

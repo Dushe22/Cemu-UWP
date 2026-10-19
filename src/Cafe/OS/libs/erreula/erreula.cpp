@@ -11,6 +11,10 @@
 #include "Cafe/OS/libs/vpad/vpad.h"
 #include "OS/libs/coreinit/coreinit_DynLoad.h"
 
+#if defined(CEMU_UWP)
+#include "uwp/UwpFrontend.h"
+#endif
+
 namespace nn
 {
 namespace erreula
@@ -352,6 +356,16 @@ namespace erreula
 			g_errEula.errEulaInstance->DoCalc();
 	}
 
+#if defined(CEMU_UWP)
+	bool hasInputHook()
+	{
+		if (!g_errEula.errEulaInstance)
+			return false;
+		const auto state = g_errEula.errEulaInstance->GetState();
+		return state == ErrEulaState::Visible || state == ErrEulaState::Appearing || state == ErrEulaState::Disappearing;
+	}
+#endif
+
 	void render(bool mainWindow)
 	{
 		if(!g_errEula.errEulaInstance)
@@ -372,7 +386,10 @@ namespace erreula
 		if (!font)
 			return;
 
-		const auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+		auto kPopupFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings;
+#if defined(CEMU_UWP)
+		kPopupFlags |= ImGuiWindowFlags_NoTitleBar;
+#endif
 
 		auto& io = ImGui::GetIO();
 		ImVec2 position = { io.DisplaySize.x / 2.0f, io.DisplaySize.y / 2.0f };
@@ -387,6 +404,13 @@ namespace erreula
 		if (title.empty()) // ImGui doesn't allow empty titles, so set one if appearArg.title is not set or empty
 			title = "ErrEula";
 
+#if defined(CEMU_UWP)
+		const std::string windowId = fmt::format("{}##ErrEula{}", title, mainWindow ? "TV" : "Pad");
+		CemuUwp::Frontend::PushGameplayDialogStyle();
+#else
+		const std::string& windowId = title;
+#endif
+
 		float fadeTransparency = 1.0f;
 		if (g_errEula.errEulaInstance->GetState() == ErrEulaState::Appearing || g_errEula.errEulaInstance->GetState() == ErrEulaState::Disappearing)
 		{
@@ -396,8 +420,14 @@ namespace erreula
 		float originalAlpha = ImGui::GetStyle().Alpha;
 		ImGui::GetStyle().Alpha = fadeTransparency;
 		ImGui::SetNextWindowBgAlpha(0.9f * fadeTransparency);
-		if (ImGui::Begin(title.c_str(), nullptr, kPopupFlags))
+		if (ImGui::Begin(windowId.c_str(), nullptr, kPopupFlags))
 		{
+#if defined(CEMU_UWP)
+			ImGui::TextUnformatted(title.c_str());
+			ImGui::Separator();
+			ImGui::Spacing();
+			bool setDefaultFocus = ImGui::IsWindowAppearing();
+#endif
 			const float startx = ImGui::GetWindowSize().x / 2.0f;
 			bool hasLeftButtonPressed = false, hasRightButtonPressed = false;
 
@@ -410,6 +440,13 @@ namespace erreula
 				ImGui::Spacing();
 				ImGui::SetCursorPosX(startx - 50);
 				hasLeftButtonPressed = ImGui::Button("OK", {100, 0});
+#if defined(CEMU_UWP)
+				if (setDefaultFocus)
+				{
+					ImGui::SetItemDefaultFocus();
+					setDefaultFocus = false;
+				}
+#endif
 				break;
 			}
 			case ErrorDialogType::Text:
@@ -424,6 +461,13 @@ namespace erreula
 					
 				ImGui::SetCursorPosX(startx - 50);
 				hasLeftButtonPressed = ImGui::Button("OK", { 100, 0 });
+#if defined(CEMU_UWP)
+				if (setDefaultFocus)
+				{
+					ImGui::SetItemDefaultFocus();
+					setDefaultFocus = false;
+				}
+#endif
 				break;
 			}
 			case ErrorDialogType::TextOneButton:
@@ -443,6 +487,13 @@ namespace erreula
 				float width = std::max(100.0f, ImGui::CalcTextSize(button1.c_str()).x + 10.0f);
 				ImGui::SetCursorPosX(startx - (width / 2.0f));
 				hasLeftButtonPressed = ImGui::Button(button1.c_str(), { width, 0 });
+#if defined(CEMU_UWP)
+				if (setDefaultFocus)
+				{
+					ImGui::SetItemDefaultFocus();
+					setDefaultFocus = false;
+				}
+#endif
 				break;
 			}
 			case ErrorDialogType::TextTwoButton:
@@ -467,6 +518,13 @@ namespace erreula
 				ImGui::SetCursorPosX(startx - (width1 / 2.0f) - (width2 / 2.0f) - 10);
 					
 				hasLeftButtonPressed = ImGui::Button(button1.c_str(), { width1, 0 });
+#if defined(CEMU_UWP)
+				if (setDefaultFocus)
+				{
+					ImGui::SetItemDefaultFocus();
+					setDefaultFocus = false;
+				}
+#endif
 				ImGui::SameLine();
 					
 				hasRightButtonPressed = ImGui::Button(button2.c_str(), { width2, 0 });
@@ -484,6 +542,9 @@ namespace erreula
 		ImGui::End();
 		ImGui::PopFont();
 		ImGui::GetStyle().Alpha = originalAlpha;
+#if defined(CEMU_UWP)
+		CemuUwp::Frontend::PopGameplayDialogStyle();
+#endif
 	}
 
 	class : public COSModule

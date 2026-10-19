@@ -21,6 +21,12 @@ public:
 		VERTEX = 1,
 		GEOMETRY = 2,
 	};
+	enum class GP_SHADER_LANGUAGE : uint8
+	{
+		GLSL = 0,
+		MSL = 1,
+		HLSL = 2,
+	};
 
 	enum
 	{
@@ -68,8 +74,14 @@ public:
 		uint64 shader_base_hash;
 		uint64 shader_aux_hash;
 		GP_SHADER_TYPE type;
+		GP_SHADER_LANGUAGE language{};
 		bool isPreVulkanShader{}; // set to true for V3 packs since the shaders are not compatible with the Vulkan renderer
-		bool isMetalShader{}; // set to true if the shader is written in Metal Shading Language
+	};
+
+	struct ShaderAvailability
+	{
+		uint32 usableCount = 0;
+		std::vector<std::string> skippedShaders; // file names of shaders without a variant for the renderer's shader language
 	};
 
 	enum VarType
@@ -156,8 +168,14 @@ public:
 	void LoadShaders();
 	bool HasShaders() const;
 	const std::vector<CustomShader>& GetCustomShaders() const { return m_custom_shaders; }
+	ShaderAvailability GetShaderAvailability(RendererAPI rendererApi) const;
+	const std::vector<std::string>& GetSkippedShaders() const { return m_skipped_shaders; }
+	bool HasSkippedShaders() const { return !m_skipped_shaders.empty(); }
+	bool SkipsResolutionRules() const { return m_skip_resolution_rules; }
 
-	static const std::string* FindCustomShaderSource(uint64 shaderBaseHash, uint64 shaderAuxHash, GP_SHADER_TYPE type, bool isVulkanRenderer, bool isMetalRenderer);
+	static const std::string* FindCustomShaderSource(uint64 shaderBaseHash, uint64 shaderAuxHash, GP_SHADER_TYPE type, RendererAPI rendererApi);
+	// GLSL variant of a replacement shader, for renderers that convert it
+	static const std::string* FindConvertibleCustomShaderSource(uint64 shaderBaseHash, uint64 shaderAuxHash, GP_SHADER_TYPE type);
 
 	const std::string& GetOutputShaderSource() const { return m_output_shader_source; }
 	const std::string& GetDownscalingShaderSource() const { return m_downscaling_shader_source; }
@@ -179,6 +197,7 @@ public:
 	static bool DeactivateGraphicPack(const std::shared_ptr<GraphicPack2>& graphic_pack);
 	static void ClearGraphicPacks();
 	static void WaitUntilReady(); // wait until all graphic packs finished activation
+	static bool IsReady() { return s_isReady; }
 
 	static void ActivateForCurrentTitle();
 	static void Reset();
@@ -186,6 +205,7 @@ public:
 private:
 	bool Activate();
 	bool Deactivate();
+	void UpdateSkippedShaders();
 
 	static std::vector<std::shared_ptr<GraphicPack2>> s_graphic_packs;
 	static std::vector<std::shared_ptr<GraphicPack2>> s_active_graphic_packs;
@@ -253,15 +273,18 @@ private:
 	std::unordered_map<std::string, PresetVar> m_preset_vars;
 
 	std::vector<CustomShader> m_custom_shaders;
+	std::vector<std::string> m_skipped_shaders;
+	bool m_skip_resolution_rules = false;
 	std::vector<TextureRule> m_texture_rules;
 	std::string m_output_shader_source, m_upscaling_shader_source, m_downscaling_shader_source;
+	std::string m_output_shader_source_hlsl, m_upscaling_shader_source_hlsl, m_downscaling_shader_source_hlsl;
 	std::unique_ptr<RendererOutputShader> m_output_shader, m_upscaling_shader, m_downscaling_shader, m_output_shader_ud, m_upscaling_shader_ud, m_downscaling_shader_ud;
 
 	std::unordered_map<std::string, PresetVar> ParsePresetVars(IniParser& rules) const;
 
 	std::vector<uint64> ParseTitleIds(IniParser& rules, const char* option_name);
 
-	CustomShader LoadShader(const fs::path& path, uint64 shader_base_hash, uint64 shader_aux_hash, GP_SHADER_TYPE shader_type, bool isMetalShader) const;
+	CustomShader LoadShader(const fs::path& path, uint64 shader_base_hash, uint64 shader_aux_hash, GP_SHADER_TYPE shader_type, GP_SHADER_LANGUAGE language) const;
 	void ApplyShaderPresets(std::string& shader_source) const;
 	void LoadReplacedFiles();
 	void _iterateReplacedFiles(const fs::path& currentPath, bool isAOC, const char* virtualMountBase);

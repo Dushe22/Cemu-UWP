@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config/NetworkSettings.h"
+
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -14,7 +16,8 @@ public:
 	// main (unix)
 	static std::optional<int> HandleCommandline(int argc, char* argv[]);
 
-	static std::optional<int> HandleCommandline(const std::vector<std::wstring>& args);
+	static std::optional<int> HandleCommandline(const std::vector<std::wstring>& args, std::string* errorMessage = nullptr);
+	static void ResetGameLaunchOverrides();
 
 	static std::optional<fs::path> GetLoadFile() { return s_load_game_file; }
 	static std::optional<uint64> GetLoadTitleID() {return s_load_title_id;}
@@ -38,6 +41,7 @@ public:
 	static bool ForceMultiCoreInterpreter() { return s_force_multicore_interpreter; }
 
 	static std::optional<uint32> GetPersistentId() { return s_persistent_id; }
+	static std::optional<NetworkService> GetNetworkService() { return s_network_service; }
 
 	static uint32 GetPPCRecLowerAddr() { return ppcRec_limitLowerAddr; };
 	static uint32 GetPPCRecUpperAddr() { return ppcRec_limitUpperAddr; };
@@ -64,6 +68,7 @@ private:
 	inline static bool s_force_multicore_interpreter = false;
 	
 	inline static std::optional<uint32> s_persistent_id{};
+	inline static std::optional<NetworkService> s_network_service{};
 
 	// for recompiler debugging
 	inline static uint32 ppcRec_limitLowerAddr{};

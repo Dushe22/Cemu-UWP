@@ -1,0 +1,371 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, wersja %u
+%zu of %zu titles have no game-list artwork of this type yet.	%zu z %zu tytułów nie ma jeszcze grafiki tego typu do listy gier.
+%zu packs across %zu games (LB/RB change game)	%zu paczek dla %zu gier (LB/RB zmienia grę)
+(none)	(brak)
+2D box	Pudełko 2D
+2D box back	Tył pudełka 2D
+2D cartridge	Kartridż 2D
+3D box	Pudełko 3D
+A Apply    B Cancel	A Zastosuj    B Anuluj
+A Select    B Back    Menu Close	A Wybierz    B Wstecz    Menu Zamknij
+A file or folder picker is already open	Okno wyboru pliku lub folderu jest już otwarte
+A title scan is already running	Skanowanie tytułów już trwa
+A: activate  B: back/home  D-pad/left stick: move focus	A: wybierz  B: wstecz/ekran główny  Krzyżak/lewa gałka: zmiana zaznaczenia
+APP Store	APP Store
+Accelerometer	Akcelerometr
+Accelerometer sensitivity	Czułość akcelerometru
+Account	Konto
+Account ID: %s	Identyfikator konta: %s
+Action	Akcja
+Activated: %s	Włączona: %s
+Add another game folder	Dodaj kolejny folder gier
+Added to favorites	Dodano do ulubionych
+Advanced PPC logging	Zaawansowane rejestrowanie PPC
+Always on	Zawsze włączony
+An unfinished scan is saved; it resumes automatically on the next launch.	Zapisano nieukończone skanowanie; zostanie wznowione automatycznie przy następnym uruchomieniu.
+App Store	App Store
+Apply Quick Menu combo	Zastosuj kombinację szybkiego menu
+Artwork	Grafiki
+Async shader compile	Asynchroniczna kompilacja shaderów
+Audio latency	Opóźnienie dźwięku
+Auto	Automatycznie
+Backend	Backend
+Bottom center	Na dole pośrodku
+Bottom left	Na dole po lewej
+Bottom right	Na dole po prawej
+CPU mode	Tryb procesora
+CPU usage	Użycie CPU
+Can't change the MLC path while a game is running	Nie można zmienić ścieżki MLC, gdy gra jest uruchomiona
+Cancel	Anuluj
+Cancel installation	Anuluj instalację
+Cancel this installation? The previous installed version will remain unchanged.	Anulować tę instalację? Już zainstalowana wersja pozostanie bez zmian.
+Cancelling installation...	Anulowanie instalacji...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Powłoka Cemu UWP
+Chinese	Chiński
+Choose side-by-side underlay	Wybierz tło obok siebie
+Choose stacked underlay	Wybierz tło jeden nad drugim
+Clear account credentials	Wyczyść dane konta
+Clear side-by-side	Zresetuj układ obok siebie
+Clear stacked	Zresetuj układ pionowy
+Close	Zamknij
+Community	Społeczność
+Community graphic packs installed	Zainstalowano społecznościowe paczki graficzne
+Console language	Język konsoli
+Controller Mapping	Mapowanie kontrolerów
+Controller battery notifications	Powiadomienia o baterii kontrolera
+Controller mapping saved	Zapisano mapowanie kontrolera
+Controller profile notifications	Powiadomienia o profilach kontrolera
+Controllers	Kontrolery
+Could not open the MLC folder picker	Nie udało się otworzyć okna wyboru folderu MLC
+Could not open the ScreenScraper media folder picker	Nie udało się otworzyć okna wyboru folderu ScreenScraper
+Could not open the game folder picker	Nie udało się otworzyć okna wyboru folderu gier
+Could not open the title picker	Nie udało się otworzyć okna wyboru tytułu
+Could not prepare that MLC folder - is the drive connected and writable?	Nie udało się przygotować tego folderu MLC - czy dysk jest podłączony i zapisywalny?
+Could not save the nickname	Nie udało się zapisać pseudonimu
+Could not save title metadata	Nie udało się zapisać metadanych tytułu
+Crash dump	Zrzut awarii
+Current game override	Ustawienie bieżącej gry
+Custom	Własny
+DLC directory was not found	Nie znaleziono folderu DLC
+Debug	Debugowanie
+Debug overlay	Nakładka debugowania
+Debugger	Debuger
+Default	Domyślne
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	Domyślnie: Gamepad:Menu+View. Przykłady własne: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Miejsce docelowe: %s
+Developer API credentials are missing from this build.	W tej kompilacji brakuje danych logowania do API dla deweloperów.
+Disable screen saver	Wyłącz wygaszacz ekranu
+Discord	Discord
+Display gamma	Gamma ekranu
+Display uses sRGB curve	Ekran używa krzywej sRGB
+Download box art	Pobierz okładki
+Download community packs	Pobierz paczki społeczności
+Download fanart backgrounds	Pobierz tła fanart
+Download logos	Pobierz logotypy
+Download metadata	Pobierz metadane
+Download screenshots	Pobierz zrzuty ekranu
+Download videos	Pobierz filmy
+Downloaded media location	Lokalizacja pobranych plików
+Downloads	Pobrane
+Downscale filter	Filtr pomniejszania
+Draw calls	Wywołania rysowania
+Dump libcurl requests	Zrzucaj żądania libcurl
+Dump recompiler functions	Zrzucaj funkcje rekompilatora
+Dump shaders	Zrzucaj shadery
+Dump textures	Zrzucaj tekstury
+Dutch	Niderlandzki
+Emulate Disney Infinity Base	Emuluj podstawkę Disney Infinity
+Emulate LEGO Dimensions Toy Pad	Emuluj Toy Pad LEGO Dimensions
+Emulate Skylander Portal	Emuluj portal Skylanders
+Emulated USB devices	Emulowane urządzenia USB
+Enable Screenscraper	Włącz Screenscraper
+Enable Screenscraper first	Najpierw włącz Screenscraper
+Enable intro sound	Włącz dźwięk startowy
+Enabled	Włączone
+Europe	Europa
+Every refresh	Co odświeżenie
+Every second refresh	Co drugie odświeżenie
+Every third refresh	Co trzecie odświeżenie
+Exit Cemu	Zakończ Cemu
+FPS	FPS
+Failed to copy title image	Nie udało się skopiować obrazu tytułu
+Failed to save Screenscraper account	Nie udało się zapisać konta Screenscraper
+Failed to save settings	Nie udało się zapisać ustawień
+Fan art	Fanart
+Files: %llu / %llu	Pliki: %llu / %llu
+Flush log	Zapisz dziennik
+Follow interface language	Zgodnie z językiem interfejsu
+Free space: %s	Wolne miejsce: %s
+French	Francuski
+Friend service notifications	Powiadomienia usługi znajomych
+Full	Pełny
+Fullscreen scaling	Skalowanie pełnoekranowe
+GDB port	GDB port
+Game directory was not found	Nie znaleziono folderu gry
+Game folder added	Dodano folder gier
+Game folder added, but it is not accessible - is the drive connected?	Dodano folder gier, ale jest niedostępny - czy dysk jest podłączony?
+Game layout	Układ gry
+Game logo	Logo gry
+Game profile saved	Zapisano profil gry
+Game-list artwork	Grafiki listy gier
+GamePad	Kontroler
+GamePad channels	Kanały GamePada
+GamePad device	Urządzenie GamePad
+GamePad only	Tylko GamePad
+GamePad picture in picture	GamePad jako obraz w obrazie
+GamePad screen	Ekran GamePada
+GamePad volume	Głośność GamePad
+Games directory	Katalog gier
+Games directory updated	Zaktualizowano folder gier
+Games directory updated, but it is not accessible - is the drive connected?	Zaktualizowano folder gier, ale jest niedostępny - czy dysk jest podłączony?
+Gamma	Gamma
+General	Ogólne
+German	Niemiecki
+Global controller profiles saved	Zapisano globalne profile kontrolerów
+Global default layout	Globalny układ domyślny
+Graphic packs reloaded	Przeładowano paczki graficzne
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Żyroskop
+Gyroscope dead zone	Martwa strefa żyroskopu
+Gyroscope sensitivity	Czułość żyroskopu
+Hermite	Hermite
+Hold stick button	Przytrzymaj przycisk gałki
+Home	Start
+Horizontal pointer sensitivity	Czułość pozioma wskaźnika
+Input	Sterowanie
+Input channels	Kanały wejściowe
+Input volume	Głośność wejścia
+Install	Zainstaluj
+Install size: %s (%llu files)	Rozmiar instalacji: %s (pliki: %llu)
+Install title, update or DLC	Zainstaluj grę, aktualizację lub DLC
+Installation cancelled	Anulowano instalację
+Installation complete	Instalacja zakończona
+Installation failed	Instalacja nie powiodła się
+Installed	Zainstalowano
+Installed version %u will be replaced.	Zainstalowana wersja %u zostanie zastąpiona.
+Installing...	Instalowanie...
+Interface	Interfejs
+Interface language	Język interfejsu
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Nieprawidłowa kombinacja. Pojedyncze przyciski, powtórzone przyciski oraz skróty klawiatury i wskaźnika są niedozwolone. Zapisana kombinacja pozostaje bez zmian.
+Invert pointer X	Odwróć oś X wskaźnika
+Invert pointer Y	Odwróć oś Y wskaźnika
+Italian	Włoski
+Japan	Japonia
+Japanese	Japoński
+Keep installing	Kontynuuj instalację
+Korean	Koreański
+Large information artwork	Duża grafika informacyjna
+Layout Mode	Tryb układu
+Layout mode	Tryb układu
+Left Stick	Lewa gałka
+Left stick	Lewa gałka
+Left stick deadzone	Martwa strefa lewej gałki
+Left stick range	Zakres lewej gałki
+Lite	Uproszczony
+Logs	Dzienniki
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	Zapisano ścieżkę MLC - uruchom Cemu ponownie, aby jej użyć (konta i zapisy nie są przenoszone)
+MLC storage	Pamięć MLC
+Metadata language	Język metadanych
+Metadata saved; another ScreenScraper download is running	Zapisano metadane; trwa już inne pobieranie ScreenScraper
+Metadata saved; sign in to ScreenScraper to download media	Zapisano metadane; zaloguj się do ScreenScraper, aby pobrać pliki
+Microphone and portal	Mikrofon i portal
+Missing	Brak
+Mono	Mono
+Multi-core recompiler	Rekompilator wielordzeniowy
+Native UWP app-container frontend for Cemu.	Natywny interfejs Cemu w kontenerze aplikacji UWP.
+Nearest neighbor	Najbliższy sąsiad
+Network service	Usługa sieciowa
+Nickname	Pseudonim
+Nickname saved	Zapisano pseudonim
+No Cemu Wiki ID is available	Brak dostępnego identyfikatora Cemu Wiki
+No DLC installed	Nie zainstalowano DLC
+No bootstrap log available.	Brak dziennika uruchamiania.
+No graphic packs are installed in the UWP user data graphicPacks folder.	W folderze graphicPacks danych użytkownika UWP nie zainstalowano żadnych paczek graficznych.
+No graphic packs target this title	Żadna paczka graficzna nie dotyczy tego tytułu
+No log text available.	Brak treści dziennika.
+No save data found	Nie znaleziono zapisów gry
+No shader caches found	Nie znaleziono pamięci podręcznych shaderów
+No title image is available to copy	Brak obrazu tytułu do skopiowania
+No titles to scrape	Brak tytułów do pobrania danych
+No update installed	Nie zainstalowano aktualizacji
+None	Brak
+Not installed	Nie zainstalowano
+Nothing left to resume	Nie ma czego wznawiać
+Notification scale	Rozmiar powiadomień
+Notifications	Powiadomienia
+Off	Wyłączone
+Offline	Offline
+On	Wł.
+Online files: %s	Pliki online: %s
+Open title	Otwórz grę
+Open title file	Otwórz plik gry
+Overlay	Nakładka
+Overlay scale	Rozmiar nakładki
+Override application gamma	Zastąp gammę aplikacji
+Overwrite existing media	Nadpisz istniejące pliki
+Password	Hasło
+Per-game profile	Profil dla gry
+Permanent storage	Pamięć trwała
+Persistent ID: %08x	Trwały identyfikator: %08x
+Picture in picture	Obraz w obrazie
+Platform media: %s	Pliki platformy: %s
+Platform: Windows UWP	Platforma: Windows UWP
+Pointer	Wskaźnik
+Pointer activation	Włączanie wskaźnika
+Pointer speed	Szybkość wskaźnika
+Pointer stick	Gałka wskaźnika
+Pointer stick dead zone	Martwa strefa gałki wskaźnika
+Portal device	Urządzenie portalu
+Portal volume	Głośność portalu
+Portuguese	Portugalski
+Power	Zasilanie
+Preferred region	Preferowany region
+Quick Menu	Szybkie menu
+Quick Menu combo reset to Menu + View	Przywrócono kombinację szybkiego menu: Menu + View
+Quick Menu combo saved	Zapisano kombinację szybkiego menu
+Quick menu combo	Kombinacja szybkiego menu
+Quit Game	Zamknij grę
+RAM usage	Użycie RAM
+Ready	Gotowe
+Refresh list	Odśwież listę
+Refresh logs	Odśwież dzienniki
+Refresh titles	Odśwież gry
+Refreshing game list	Odświeżanie listy gier
+Region	Region
+Reload packs	Przeładuj paczki
+Remove	Usuń
+Removed from favorites	Usunięto z ulubionych
+Render upside down	Renderuj do góry nogami
+Renderer	Renderer
+Renderer: Direct3D 12 CoreWindow	Renderer: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Wymaga przytrzymania co najmniej dwóch różnych przycisków kontrolera naraz.
+Reset Quick Menu to Menu + View	Przywróć szybkie menu do Menu + Widok
+Restart Game	Uruchom grę ponownie
+Restart on enable/preset: %s / %s	Restart przy włączeniu/zmianie ustawienia: %s / %s
+Restart the title if this pack needs a full reload	Uruchom tytuł ponownie, jeśli ta paczka wymaga pełnego przeładowania
+Restart unavailable	Restart niedostępny
+Resume scan	Wznów skanowanie
+Resuming unfinished Screenscraper scan	Wznawianie nieukończonego skanowania Screenscraper
+Return to Game	Wróć do gry
+Right Stick	Prawa gałka
+Right stick	Prawa gałka
+Right stick deadzone	Martwa strefa prawej gałki
+Right stick range	Zakres prawej gałki
+Rumble strength	Siła wibracji
+Runtime dumps	Zrzuty czasu działania
+Russian	Rosyjski
+Save account credentials	Zapisz dane konta
+Save nickname	Zapisz pseudonim
+Scaling	Skalowanie
+Screens restored	Przywrócono ekrany
+Screens swapped	Zamieniono ekrany
+Screenscraper	Screenscraper
+Screenscraper account cleared	Wyczyszczono konto Screenscraper
+Screenscraper account saved	Zapisano konto Screenscraper
+Screenscraper download is already running	Pobieranie Screenscraper już trwa
+Screenshot	Zrzut ekranu
+Selected account is not a complete online account	Wybrane konto nie jest pełnym kontem online
+Set	Ustawiono
+Settings	Ustawienia
+Shader compiling notifications	Powiadomienia o kompilacji shaderów
+Shaders: %s	Shadery: %s
+Shared title media: %s	Wspólne pliki tytułów: %s
+Shell theme	Motyw interfejsu
+Show controls hint	Pokaż podpowiedź sterowania
+Side by side	Obok siebie
+Side-by-side underlay: %s	Tło obok siebie: %s
+Sign in to Screenscraper first	Najpierw zaloguj się do Screenscraper
+Single-core interpreter	Interpreter jednordzeniowy
+Single-core recompiler	Rekompilator jednordzeniowy
+Spanish	Hiszpański
+Stable-input calibration period	Czas kalibracji w spoczynku
+Stacked	Jeden nad drugim
+Stacked underlay: %s	Tło jeden nad drugim: %s
+Start Stream	Rozpocznij transmisję
+Status: %s	Stan: %s
+Stop Stream	Zatrzymaj transmisję
+Stop the running game before installing content.	Zatrzymaj uruchomioną grę przed instalacją zawartości.
+Storage	Pamięć
+Storage: %s	Pamięć: %s
+Stream: working...	Transmisja: w toku...
+Surround	Dźwięk przestrzenny
+Swap TV and GamePad screens	Zamień ekrany TV i GamePad
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Przykłady zamiany: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	System
+TV	TV
+TV channels	Kanały TV
+TV device	Urządzenie TV
+TV only	Tylko TV
+TV volume	Głośność TV
+Taiwanese	Tajwański
+Target gamma	Gamma docelowa
+That folder is already in the list	Ten folder jest już na liście
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	Układ odwzorowuje menu główne Cemu UWP: kafelki gier, boczne paski, miękkie panele systemowe i nawigację przystosowaną do kontrolera.
+This entry cannot be launched	Tej pozycji nie można uruchomić
+This graphic pack has no description.	Ta paczka graficzna nie ma opisu.
+Title ID	Identyfikator tytułu
+Title ID: %016llX	Identyfikator tytułu: %016llX
+Title Manager	Menedżer tytułów
+Title image copied	Skopiowano obraz tytułu
+Title information is no longer available	Informacje o tytule nie są już dostępne
+Title installed	Zainstalowano tytuł
+Title screen	Ekran tytułowy
+Titles	Gry
+Toggle GamePad display	Przełącz ekran GamePad
+Top center	Na górze pośrodku
+Top left	Na górze po lewej
+Top right	Na górze po prawej
+Treat the mapped Screen control as a toggle instead of a hold action	Traktuj przypisany przycisk Ekran jako przełącznik zamiast przytrzymania
+Trigger deadzone	Martwa strefa spustów
+Trigger range	Zakres spustów
+Triggers	Spusty
+USA	USA
+UWP shell	Powłoka UWP
+UWP storage	Pamięć UWP
+Underlays use titleImages/%s/*.png	Tła korzystają z titleImages/%s/*.png
+Up to %d characters, used as the console profile name	Do %d znaków, używane jako nazwa profilu konsoli
+Update	Aktualizacja
+Update directory was not found	Nie znaleziono folderu aktualizacji
+Upscale filter	Filtr upskalowania
+Use motion	Używaj ruchu
+Username	Nazwa użytkownika
+VRAM usage	Użycie VRAM
+VSync	VSync
+Version %u is already installed. Continuing will reinstall it.	Wersja %u jest już zainstalowana. Kontynuacja zainstaluje ją ponownie.
+Version: %d	Wersja: %d
+Vertical pointer sensitivity	Czułość pionowa wskaźnika
+Video	Wideo
+Video backgrounds use more storage and bandwidth.	Tła wideo zajmują więcej miejsca i pasma.
+Virtual touch / IR pointer	Wirtualny dotyk / wskaźnik IR
+Who's playing?	Kto gra?
+Wii Remote extension	Rozszerzenie Wii Remote
+World	Świat
+missing or incomplete	brak lub niekompletne
+no	nie
+otp.bin is missing or invalid	Brak pliku otp.bin lub jest nieprawidłowy
+seeprom.bin is missing or invalid	Brak pliku seeprom.bin lub jest nieprawidłowy
+valid	prawidłowe
+yes	tak

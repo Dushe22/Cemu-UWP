@@ -280,7 +280,7 @@ void DownloadCustomGraphicPackWindow::UpdateThread()
 		return;
 	}
     
-    auto path = ActiveSettings::GetUserDataPath("graphicPacks/customGraphicPacks");
+    auto path = ActiveSettings::GetGraphicPacksPath("customGraphicPacks");
     fs::create_directories(path);
     
     // check if zip root directly contains a rules.txt

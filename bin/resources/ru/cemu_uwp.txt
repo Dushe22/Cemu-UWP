@@ -1,0 +1,328 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, версия %u
+%zu of %zu titles have no game-list artwork of this type yet.	У %zu из %zu игр пока нет изображения этого типа для списка игр.
+%zu packs across %zu games (LB/RB change game)	%zu пакетов для %zu игр (LB/RB меняет игру)
+(none)	(нет)
+2D box	Коробка 2D
+2D box back	Обратная сторона коробки 2D
+2D cartridge	Картридж 2D
+3D box	Коробка 3D
+A Apply    B Cancel	A Применить    B Отмена
+A Select    B Back    Menu Close	A Выбрать    B Назад    Menu Закрыть
+A file or folder picker is already open	Окно выбора файла или папки уже открыто
+A title scan is already running	Поиск игр уже выполняется
+A: activate  B: back/home  D-pad/left stick: move focus	A: выбрать  B: назад/на главную  Крестовина/левый стик: перемещение
+APP Store	APP Store
+Accelerometer	Акселерометр
+Accelerometer sensitivity	Чувствительность акселерометра
+Account	Аккаунт
+Account ID: %s	Идентификатор аккаунта: %s
+Action	Действие
+Activated: %s	Включён: %s
+Add another game folder	Добавить ещё одну папку с играми
+Added to favorites	Добавлено в избранное
+Advanced PPC logging	Расширенное журналирование PPC
+Always on	Всегда включён
+An unfinished scan is saved; it resumes automatically on the next launch.	Незавершённый поиск сохранён и продолжится автоматически при следующем запуске.
+App Store	App Store
+Apply Quick Menu combo	Применить сочетание быстрого меню
+Artwork	Изображения
+Audio latency	Задержка звука
+Backend	Бэкенд
+CPU mode	Режим процессора
+CPU usage	Использование CPU
+Can't change the MLC path while a game is running	Нельзя изменить путь MLC, пока запущена игра
+Cancel	Отмена
+Cancel installation	Отменить установку
+Cancel this installation? The previous installed version will remain unchanged.	Отменить установку? Уже установленная версия останется без изменений.
+Cancelling installation...	Отмена установки...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Оболочка Cemu UWP
+Choose side-by-side underlay	Выбрать фон для режима рядом
+Choose stacked underlay	Выбрать фон для режима друг над другом
+Clear account credentials	Очистить данные аккаунта
+Clear side-by-side	Сбросить режим рядом
+Clear stacked	Сбросить режим друг над другом
+Close	Закрыть
+Community	Сообщество
+Community graphic packs installed	Пакеты графики сообщества установлены
+Console language	Язык консоли
+Controller Mapping	Назначение кнопок
+Controller battery notifications	Уведомления о заряде контроллера
+Controller mapping saved	Назначение кнопок сохранено
+Controller profile notifications	Уведомления о профилях контроллера
+Controllers	Контроллеры
+Could not open the MLC folder picker	Не удалось открыть выбор папки MLC
+Could not open the ScreenScraper media folder picker	Не удалось открыть выбор папки ScreenScraper
+Could not open the game folder picker	Не удалось открыть выбор папки с играми
+Could not open the title picker	Не удалось открыть выбор игры
+Could not prepare that MLC folder - is the drive connected and writable?	Не удалось подготовить эту папку MLC - диск подключён и доступен для записи?
+Could not save the nickname	Не удалось сохранить прозвище
+Could not save title metadata	Не удалось сохранить метаданные игры
+Crash dump	Дамп сбоя
+Current game override	Настройка текущей игры
+DLC directory was not found	Папка DLC не найдена
+Debug overlay	Отладочный оверлей
+Debugger	Отладчик
+Default	По умолчанию
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	По умолчанию: Gamepad:Menu+View. Свои примеры: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Назначение: %s
+Developer API credentials are missing from this build.	В этой сборке отсутствуют данные API разработчика.
+Discord	Discord
+Display gamma	Гамма экрана
+Display uses sRGB curve	Экран использует кривую sRGB
+Download box art	Загружать обложки
+Download community packs	Загрузить пакеты сообщества
+Download fanart backgrounds	Загружать фанатские фоны
+Download logos	Загружать логотипы
+Download metadata	Загружать метаданные
+Download screenshots	Загружать снимки экрана
+Download videos	Загружать видео
+Downloaded media location	Расположение загруженных файлов
+Downloads	Загрузки
+Downscale filter	Фильтр масштабирования (сжатие)
+Draw calls	Вызовы отрисовки
+Dump libcurl requests	Выгружать запросы libcurl
+Dump recompiler functions	Выгружать функции рекомпилятора
+Dump shaders	Выгружать шейдеры
+Dump textures	Выгружать текстуры
+Emulate Disney Infinity Base	Эмулировать базу Disney Infinity
+Emulate LEGO Dimensions Toy Pad	Эмулировать Toy Pad LEGO Dimensions
+Emulated USB devices	Эмулируемые USB-устройства
+Enable Screenscraper	Включить Screenscraper
+Enable Screenscraper first	Сначала включите Screenscraper
+Enable intro sound	Включить звук запуска
+Enabled	Включено
+Every refresh	Каждое обновление
+Every second refresh	Каждое второе обновление
+Every third refresh	Каждое третье обновление
+Exit Cemu	Выйти из Cemu
+FPS	FPS
+Failed to copy title image	Не удалось скопировать изображение игры
+Failed to save Screenscraper account	Не удалось сохранить аккаунт Screenscraper
+Failed to save settings	Не удалось сохранить настройки
+Fan art	Фан-арт
+Files: %llu / %llu	Файлы: %llu / %llu
+Flush log	Сбросить журнал на диск
+Follow interface language	Как язык интерфейса
+Free space: %s	Свободно: %s
+Friend service notifications	Уведомления сервиса друзей
+Fullscreen scaling	Полноэкранное масштабирование
+GDB port	GDB port
+Game directory was not found	Папка игры не найдена
+Game folder added	Папка с играми добавлена
+Game folder added, but it is not accessible - is the drive connected?	Папка с играми добавлена, но недоступна - диск подключён?
+Game layout	Раскладка игры
+Game logo	Логотип игры
+Game profile saved	Профиль игры сохранён
+Game-list artwork	Изображения списка игр
+GamePad	GamePad
+GamePad channels	Каналы GamePad
+GamePad device	Устройство GamePad
+GamePad only	Только GamePad
+GamePad picture in picture	GamePad «картинка в картинке»
+GamePad screen	Экран GamePad
+GamePad volume	Громкость GamePad
+Games directory	Папка игр
+Games directory updated	Папка с играми обновлена
+Games directory updated, but it is not accessible - is the drive connected?	Папка с играми обновлена, но недоступна - диск подключён?
+Gamma	Gamma
+General	Общие
+Global controller profiles saved	Общие профили контроллеров сохранены
+Global default layout	Общая раскладка по умолчанию
+Graphic packs reloaded	Пакеты графики перезагружены
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Гироскоп
+Gyroscope dead zone	Мёртвая зона гироскопа
+Gyroscope sensitivity	Чувствительность гироскопа
+Hold stick button	Удерживать кнопку стика
+Home	home
+Horizontal pointer sensitivity	Чувствительность указателя по горизонтали
+Input	Управление
+Input channels	Входные каналы
+Input volume	Громкость входа
+Install	Установить
+Install size: %s (%llu files)	Размер установки: %s (файлов: %llu)
+Install title, update or DLC	Установить игру, обновление или DLC
+Installation cancelled	Установка отменена
+Installation complete	Установка завершена
+Installation failed	Установка не удалась
+Installed version %u will be replaced.	Установленная версия %u будет заменена.
+Installing...	Установка...
+Interface	Интерфейс
+Interface language	Язык интерфейса
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Недопустимое сочетание. Одиночные и повторяющиеся кнопки, а также сочетания клавиатуры и указателя не допускаются. Сохранённое сочетание не изменилось.
+Invert pointer X	Инвертировать ось X указателя
+Invert pointer Y	Инвертировать ось Y указателя
+Keep installing	Продолжить установку
+Large information artwork	Большое информационное изображение
+Layout Mode	Режим расположения
+Layout mode	Режим расположения
+Left Stick	Левый стик
+Left stick	Левый стик
+Left stick deadzone	Мёртвая зона левого стика
+Left stick range	Диапазон левого стика
+Logs	Журналы
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	Путь MLC сохранён - перезапустите Cemu, чтобы его использовать (аккаунты и сохранения не переносятся)
+MLC storage	Хранилище MLC
+Metadata language	Язык метаданных
+Metadata saved; another ScreenScraper download is running	Метаданные сохранены; уже выполняется другая загрузка ScreenScraper
+Metadata saved; sign in to ScreenScraper to download media	Метаданные сохранены; войдите в ScreenScraper, чтобы загрузить файлы
+Microphone and portal	Микрофон и портал
+Missing	Отсутствует
+Native UWP app-container frontend for Cemu.	Нативная оболочка Cemu в контейнере приложений UWP.
+Nearest neighbor	Ближайший сосед
+Network service	Сетевой сервис
+Nickname	Никнейм
+Nickname saved	Прозвище сохранено
+No Cemu Wiki ID is available	Идентификатор Cemu Wiki недоступен
+No DLC installed	DLC не установлены
+No bootstrap log available.	Журнал запуска недоступен.
+No graphic packs are installed in the UWP user data graphicPacks folder.	В папке graphicPacks пользовательских данных UWP нет установленных пакетов графики.
+No graphic packs target this title	Для этой игры нет пакетов графики
+No log text available.	Текст журнала недоступен.
+No save data found	Сохранения не найдены
+No shader caches found	Кэши шейдеров не найдены
+No title image is available to copy	Нет изображения игры для копирования
+No titles to scrape	Нет игр для загрузки данных
+No update installed	Обновление не установлено
+None	Нет
+Nothing left to resume	Продолжать нечего
+Notification scale	Размер уведомлений
+Notifications	Уведомления
+Online files: %s	Сетевые файлы: %s
+Open title	Открыть игру
+Open title file	Открыть файл игры
+Overlay	Оверлей
+Overlay scale	Размер оверлея
+Override application gamma	Переопределить гамму приложения
+Overwrite existing media	Перезаписывать существующие файлы
+Password	Пароль
+Per-game profile	Профиль для игры
+Permanent storage	Постоянное хранилище
+Persistent ID: %08x	Постоянный идентификатор: %08x
+Picture in picture	Картинка в картинке
+Platform media: %s	Файлы платформы: %s
+Platform: Windows UWP	Платформа: Windows UWP
+Pointer	Указатель
+Pointer activation	Включение указателя
+Pointer speed	Скорость указателя
+Pointer stick	Стик указателя
+Pointer stick dead zone	Мёртвая зона стика указателя
+Portal device	Устройство портала
+Portal volume	Громкость портала
+Portuguese	Португальский
+Power	Питание
+Preferred region	Предпочитаемый регион
+Quick Menu	Быстрое меню
+Quick Menu combo reset to Menu + View	Сочетание быстрого меню сброшено на Menu + View
+Quick Menu combo saved	Сочетание быстрого меню сохранено
+Quick menu combo	Сочетание быстрого меню
+Quit Game	Закрыть игру
+RAM usage	Использование RAM
+Ready	Готово
+Refresh list	Обновить список
+Refresh logs	Обновить журналы
+Refresh titles	Обновить игры
+Refreshing game list	Обновление списка игр
+Reload packs	Перезагрузить пакеты
+Remove	Удалить
+Removed from favorites	Удалено из избранного
+Render upside down	Отрисовывать вверх ногами
+Renderer	Рендерер
+Renderer: Direct3D 12 CoreWindow	Отрисовка: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Нужно одновременно удерживать минимум две разные кнопки контроллера.
+Reset Quick Menu to Menu + View	Сбросить быстрое меню на Menu + View
+Restart Game	Перезапустить игру
+Restart on enable/preset: %s / %s	Перезапуск при включении/смене пресета: %s / %s
+Restart the title if this pack needs a full reload	Перезапустите игру, если этому пакету нужна полная перезагрузка
+Restart unavailable	Перезапуск недоступен
+Resume scan	Продолжить сканирование
+Resuming unfinished Screenscraper scan	Продолжение незавершённого поиска Screenscraper
+Return to Game	Вернуться в игру
+Right Stick	Правый стик
+Right stick	Правый стик
+Right stick deadzone	Мёртвая зона правого стика
+Right stick range	Диапазон правого стика
+Rumble strength	Сила вибрации
+Runtime dumps	Дампы во время работы
+Save account credentials	Сохранить данные аккаунта
+Save nickname	Сохранить никнейм
+Scaling	Масштабирование
+Screens restored	Экраны восстановлены
+Screens swapped	Экраны поменяны местами
+Screenscraper	Screenscraper
+Screenscraper account cleared	Аккаунт Screenscraper очищен
+Screenscraper account saved	Аккаунт Screenscraper сохранён
+Screenscraper download is already running	Загрузка Screenscraper уже выполняется
+Screenshot	Снимок экрана
+Selected account is not a complete online account	Выбранный аккаунт не является полноценным сетевым аккаунтом
+Set	Задан
+Shader compiling notifications	Уведомления о компиляции шейдеров
+Shaders: %s	Шейдеры: %s
+Shared title media: %s	Общие файлы игр: %s
+Shell theme	Тема интерфейса
+Show controls hint	Показывать подсказку управления
+Side by side	Рядом
+Side-by-side underlay: %s	Фон «рядом»: %s
+Sign in to Screenscraper first	Сначала войдите в Screenscraper
+Stable-input calibration period	Время калибровки в покое
+Stacked	Друг над другом
+Stacked underlay: %s	Фон «друг над другом»: %s
+Start Stream	Начать трансляцию
+Status: %s	Состояние: %s
+Stop Stream	Остановить трансляцию
+Stop the running game before installing content.	Остановите запущенную игру перед установкой содержимого.
+Storage	Хранилище
+Storage: %s	Хранилище: %s
+Stream: working...	Трансляция: выполняется...
+Swap TV and GamePad screens	Поменять местами экраны ТВ и GamePad
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Примеры для смены: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	система
+TV	ТВ
+TV channels	Каналы ТВ
+TV device	Устройство ТВ
+TV only	Только ТВ
+TV volume	Громкость ТВ
+Target gamma	Целевая гамма
+That folder is already in the list	Эта папка уже есть в списке
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	Оформление повторяет главное меню Cemu UWP: плитки игр, боковые панели, мягкие системные панели и навигация под контроллер.
+This entry cannot be launched	Эту запись нельзя запустить
+This graphic pack has no description.	У этого пакета графики нет описания.
+Title ID: %016llX	Идентификатор игры: %016llX
+Title image copied	Изображение игры скопировано
+Title information is no longer available	Сведения об игре больше недоступны
+Title installed	Игра установлена
+Title screen	Титульный экран
+Titles	Игры
+Toggle GamePad display	Переключить экран GamePad
+Treat the mapped Screen control as a toggle instead of a hold action	Использовать назначенную кнопку «Экран» как переключатель, а не как удержание
+Trigger deadzone	Мёртвая зона триггеров
+Trigger range	Диапазон триггеров
+Triggers	Триггеры
+UWP shell	Оболочка UWP
+UWP storage	Хранилище UWP
+Underlays use titleImages/%s/*.png	Фоны берутся из titleImages/%s/*.png
+Up to %d characters, used as the console profile name	До %d символов, используется как имя профиля консоли
+Update directory was not found	Папка обновления не найдена
+Upscale filter	Фильтр масштабирования (растяжение)
+Use motion	Использовать движение
+Username	Имя пользователя
+VRAM usage	Использование VRAM
+VSync	Вертикальная синхронизация
+Version %u is already installed. Continuing will reinstall it.	Версия %u уже установлена. Продолжение переустановит её.
+Version: %d	Версия: %d
+Vertical pointer sensitivity	Чувствительность указателя по вертикали
+Video	Видео
+Video backgrounds use more storage and bandwidth.	Видеофоны занимают больше места и трафика.
+Virtual touch / IR pointer	Виртуальное касание / ИК-указатель
+Who's playing?	Кто играет?
+Wii Remote extension	Насадка Wii Remote
+World	Мир
+missing or incomplete	отсутствуют или неполные
+no	нет
+otp.bin is missing or invalid	otp.bin отсутствует или повреждён
+seeprom.bin is missing or invalid	seeprom.bin отсутствует или повреждён
+valid	в порядке
+yes	да

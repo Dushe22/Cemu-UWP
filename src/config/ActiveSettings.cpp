@@ -4,6 +4,9 @@
 #ifdef ENABLE_VULKAN
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #endif
+#ifdef ENABLE_D3D12
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#endif
 #include "Cafe/CafeSystem.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "config/ActiveSettings.h"
@@ -123,6 +126,14 @@ GraphicAPI ActiveSettings::GetGraphicsAPI()
 		return api;
 	fallbackAPI = fallbackAPI.value_or(kMetal);
 #endif
+#ifdef ENABLE_D3D12
+	if (g_d3d12_available)
+	{
+		if (api == kDirect3D12)
+			return api;
+		fallbackAPI = fallbackAPI.value_or(kDirect3D12);
+	}
+#endif
 #ifdef ENABLE_OPENGL
 	if (api == kOpenGL)
 		return api;
@@ -165,7 +176,7 @@ bool ActiveSettings::IsOnlineEnabled()
 		return false;
 	if(!HasRequiredOnlineFiles())
 		return false;
-	NetworkService networkService = static_cast<NetworkService>(GetConfig().GetAccountNetworkService(GetPersistentId()));
+	const NetworkService networkService = GetNetworkService();
 	return networkService == NetworkService::Nintendo || networkService == NetworkService::Pretendo || networkService == NetworkService::Custom;
 }
 
@@ -176,6 +187,8 @@ bool ActiveSettings::HasRequiredOnlineFiles()
 
 NetworkService ActiveSettings::GetNetworkService()
 {
+	if (const auto launchService = LaunchSettings::GetNetworkService())
+		return *launchService;
 	return GetConfig().GetAccountNetworkService(GetPersistentId());
 }
 
@@ -283,6 +296,13 @@ fs::path ActiveSettings::GetMlcPath()
 		return _utf8ToPath(config_mlc);
 
 	return GetDefaultMLCPath();
+}
+
+fs::path ActiveSettings::GetGraphicPacksPath()
+{
+	if (const auto configPath = GetConfig().graphic_packs_path.GetValue(); !configPath.empty())
+		return _utf8ToPath(configPath);
+	return GetUserDataPath("graphicPacks");
 }
 
 bool ActiveSettings::IsCustomMlcPath()

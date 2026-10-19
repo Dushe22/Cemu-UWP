@@ -4,10 +4,14 @@
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
+#include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitHLSL.hpp"
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #ifdef ENABLE_VULKAN
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
+#endif
+#if defined(CEMU_UWP) && !defined(ENABLE_VULKAN)
+#include "util/containers/robin_hood.h"
 #endif
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "HW/Latte/Core/Latte.h"
@@ -349,7 +353,7 @@ void LatteShader_CreateRendererShader(LatteDecompilerShader* shader, bool compil
 	// check if a custom shader is present
 	std::string shaderSrc;
 
-	const std::string* customShaderSrc = GraphicPack2::FindCustomShaderSource(shader->baseHash, shader->auxHash, gpShaderType, g_renderer->GetType() == RendererAPI::Vulkan, g_renderer->GetType() == RendererAPI::Metal);
+	const std::string* customShaderSrc = GraphicPack2::FindCustomShaderSource(shader->baseHash, shader->auxHash, gpShaderType, g_renderer->GetType());
 	if (customShaderSrc)
 	{
 		shaderSrc.assign(*customShaderSrc);
@@ -357,6 +361,32 @@ void LatteShader_CreateRendererShader(LatteDecompilerShader* shader, bool compil
 	}
 	else
 		shaderSrc.assign(shader->strBuf_shaderSource->c_str());
+
+#ifdef ENABLE_D3D12
+	if (!customShaderSrc && gpShaderType == GraphicPack2::GP_SHADER_TYPE::PIXEL && g_renderer->GetType() == RendererAPI::Direct3D12)
+	{
+		if (const std::string* glslSrc = GraphicPack2::FindConvertibleCustomShaderSource(shader->baseHash, shader->auxHash, gpShaderType))
+		{
+			std::string convertedSrc;
+			if (LatteDecompiler_ConvertGLSLPixelShaderToHLSL(shaderSrc, *glslSrc, convertedSrc))
+			{
+				RendererShader* convertedShader = g_renderer->shader_create(shaderType, shader->baseHash, shader->auxHash, convertedSrc, true, true);
+				if (convertedShader && convertedShader->WaitForCompiled())
+				{
+					cemuLog_log(LogType::Force, "graphicPack: using converted GLSL replacement for pixel shader {:016x}_{:016x}", shader->baseHash, shader->auxHash);
+					shader->isCustomShader = true;
+					shader->shader = convertedShader;
+					LatteShader_CleanupAfterCompile(shader);
+					return;
+				}
+				delete convertedShader;
+				cemuLog_log(LogType::Force, "graphicPack: converted GLSL replacement for pixel shader {:016x}_{:016x} failed to compile; using the original shader", shader->baseHash, shader->auxHash);
+			}
+			else
+				cemuLog_log(LogType::Force, "graphicPack: GLSL replacement for pixel shader {:016x}_{:016x} cannot be converted; using the original shader", shader->baseHash, shader->auxHash);
+		}
+	}
+#endif
 
 	if (shaderType == RendererShader::ShaderType::kVertex &&
 		(shader->baseHash == 0x15bc7edf9de2ed30 || shader->baseHash == 0x83a697d61a3b9202 ||
@@ -394,6 +424,9 @@ void LatteShader_FinishCompilation(LatteDecompilerShader* shader)
 void LatteSHRC_RegisterShader(LatteDecompilerShader* shader, uint64 baseHash, uint64 auxHash)
 {
 	auto& cache = LatteSHRC_GetCacheByType(shader->shaderType);
+	// D3D12 pixel shaders keep the aux hash of the registers they were decompiled with, cached entries included
+	if (shader->shaderType == LatteConst::ShaderType::Pixel && g_renderer->GetType() == RendererAPI::Direct3D12)
+		auxHash = shader->auxHash;
 	shader->baseHash = baseHash;
 	shader->auxHash = auxHash;
 
@@ -471,8 +504,12 @@ void LatteShader_DumpShader(uint64 baseHash, uint64 auxHash, LatteDecompilerShad
 		suffix = "gs";
 	else if (shader->shaderType == LatteConst::ShaderType::Pixel)
 		suffix = "ps";
+	const char* languageSuffix = (g_renderer && g_renderer->GetType() == RendererAPI::Direct3D12) ? "_hlsl" : "";
+	// match the aux hash that LatteSHRC_RegisterShader and custom shader lookup use
+	if (shader->shaderType == LatteConst::ShaderType::Pixel && g_renderer && g_renderer->GetType() == RendererAPI::Direct3D12)
+		auxHash = shader->auxHash;
 
-	FileStream* fs = FileStream::createFile2(ActiveSettings::GetUserDataPath("dump/shaders/{:016x}_{:016x}_{}.txt", baseHash, auxHash, suffix));
+	FileStream* fs = FileStream::createFile2(ActiveSettings::GetUserDataPath("dump/shaders/{:016x}_{:016x}_{}{}.txt", baseHash, auxHash, suffix, languageSuffix));
 	if (fs)
 	{
 		if (shader->strBuf_shaderSource)
@@ -660,6 +697,39 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 		auxHash += (uint64)dim;
 	}
 
+	if (g_renderer->GetType() == RendererAPI::Direct3D12)
+	{
+		// integer color buffers need matching integer pixel shader outputs
+		const LatteContextRegister& lcr = *(const LatteContextRegister*)contextRegisters;
+		const uint32 cbShaderMask = contextRegisters[mmCB_SHADER_MASK];
+#if defined(CEMU_UWP)
+		uint32 typedTargetMask = 0;
+#else
+		uint32 typedTargetMask = 1; // target 0 is declared even without color exports
+#endif
+		for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
+		{
+			if (((cbShaderMask >> (i * 4)) & 0xF) != 0)
+				typedTargetMask |= (1u << i);
+		}
+		// float outputs without point expansion keep the hash shared with the other backends
+		uint64 interfaceSalt = 0;
+		for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
+		{
+			if ((typedTargetMask & (1u << i)) == 0)
+				continue;
+			const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(i, lcr);
+			if ((format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_INT) == 0)
+				continue;
+			const uint64 numberType = (format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_SIGNED) != 0 ? 2 : 1;
+			interfaceSalt |= numberType << (i * 2);
+		}
+		// point expansion adds a point coordinate input
+		if (lcr.VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE() == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::POINTS)
+			interfaceSalt |= 1ULL << (LATTE_NUM_COLOR_TARGET * 2);
+		if (interfaceSalt != 0)
+			auxHash += interfaceSalt * 0x9E3779B97F4A7C15ULL;
+	}
 #ifdef ENABLE_METAL
 	if (g_renderer->GetType() == RendererAPI::Metal)
 	{
@@ -704,7 +774,7 @@ static void InitUniformLayoutFromDecompiler(
 		shader->uniform.count_uniformRegister = decompilerOutput.uniformOffsetsGL.count_uniformRegister;
 		return;
 	}
-    const auto& offsets = decompilerOutput.uniformOffsetsVK;
+	const auto& offsets = g_renderer->GetType() == RendererAPI::Direct3D12 ? decompilerOutput.uniformOffsetsD3D12 : decompilerOutput.uniformOffsetsVK;
 
     shader->uniform.loc_remapped = offsets.offset_remapped;
     shader->uniform.loc_uniformRegister = offsets.offset_uniformRegister;
@@ -751,6 +821,9 @@ LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompi
 	case RendererAPI::Vulkan:
 		shader->resourceMapping = decompilerOutput.resourceMappingVK;
 		break;
+	case RendererAPI::Direct3D12:
+		shader->resourceMapping = decompilerOutput.resourceMappingD3D12;
+		break;
 	case RendererAPI::Metal:
 		shader->resourceMapping = decompilerOutput.resourceMappingMTL;
 		break;
@@ -786,6 +859,9 @@ LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompi
 	else
 	{
 		shader->auxHash = optionalAuxHash;
+		// cached entries can come from backends that key pixel shaders without the D3D12 interface salt
+		if (decompilerOutput.shaderType == LatteConst::ShaderType::Pixel && g_renderer->GetType() == RendererAPI::Direct3D12)
+			shader->auxHash = LatteSHRC_CalcPSAuxHash(shader, contextRegister);
 	}
 	return shader;
 }
@@ -1110,6 +1186,9 @@ void LatteSHRC_RemoveShaderStateCacheEntryByKey(uint64 key)
 
 void LatteSHRC_CleanupShaderStateCache()
 {
+#if defined(CEMU_UWP)
+	LatteUwpHitchScope shaderCleanupScope(LatteUwpHitchOp::ShaderCleanup);
+#endif
 	constexpr uint32 NUM_FRAMES_UNTIL_EXPIRE = 5 * 60; // entries expire after not being used for 5 seconds at 60 FPS
 	constexpr sint32 MAX_CHECKS_PER_FRAME = 30;
 	constexpr sint32 MAX_DELETES_PER_FRAME = 8;

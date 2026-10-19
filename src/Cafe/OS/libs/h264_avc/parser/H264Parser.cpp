@@ -872,6 +872,7 @@ void h264Parse(h264ParserState_t* h264ParserState, h264ParserOutput_t* output, u
 
 sint32 h264GetUnitLength(h264ParserState_t* h264ParserState, uint8* data, uint32 length)
 {
+#if !defined(CEMU_UWP)
 	NALInputBitstream nalStream(data, length);
 
 	if (nalStream.hasError())
@@ -879,10 +880,22 @@ sint32 h264GetUnitLength(h264ParserState_t* h264ParserState, uint8* data, uint32
 		cemu_assert_debug(false);
 		return -1;
 	}
+#endif
 
 	// search for start code
 	sint32 startCodeOffset = 0;
 	bool hasStartcode = false;
+#if defined(CEMU_UWP)
+	while (startCodeOffset + 3 <= (sint32)length)
+	{
+		if (NALInputBitstream::GetStartCodeLength(data + startCodeOffset, length - startCodeOffset) != 0)
+		{
+			hasStartcode = true;
+			break;
+		}
+		startCodeOffset++;
+	}
+#else
 	while (startCodeOffset < (sint32)(length - 3))
 	{
 		if (data[startCodeOffset + 0] == 0x00 && data[startCodeOffset + 1] == 0x00 && data[startCodeOffset + 2] == 0x01)
@@ -892,10 +905,16 @@ sint32 h264GetUnitLength(h264ParserState_t* h264ParserState, uint8* data, uint32
 		}
 		startCodeOffset++;
 	}
+#endif
 	if (hasStartcode == false)
 		return -1;
 	data += startCodeOffset;
 	length -= startCodeOffset;
+#if defined(CEMU_UWP)
+	NALInputBitstream nalStream(data, length);
+	if (nalStream.hasError())
+		return -1;
+#endif
 
 	// parse NAL data
 	while (true)
@@ -953,8 +972,9 @@ sint32 h264GetUnitLength(h264ParserState_t* h264ParserState, uint8* data, uint32
 			break;
 		default:
 			cemuLog_logDebug(LogType::Force, "Unsupported NAL unit type {}", nal_unit_type);
+#if !defined(CEMU_UWP)
 			assert_dbg(); // todo - NAL 10 is used in DKC TF
-			// todo
+#endif
 			break;
 		}
 	}

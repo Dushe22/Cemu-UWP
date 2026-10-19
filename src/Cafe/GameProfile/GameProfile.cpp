@@ -221,7 +221,12 @@ bool GameProfile::Load(uint64_t title_id)
 		else if (boost::iequals(iniParser.GetCurrentSectionName(), "Graphics"))
 		{
 			gameProfileIntegerOption_t graphicsApi;
-			gameProfile_loadIntegerOption(&iniParser, "graphics_api", &graphicsApi, -1, 0, 1);
+#if defined(CEMU_UWP)
+			constexpr sint32 kMaxGraphicsApi = static_cast<sint32>(GraphicAPI::COUNT) - 1;
+#else
+			constexpr sint32 kMaxGraphicsApi = 1;
+#endif
+			gameProfile_loadIntegerOption(&iniParser, "graphics_api", &graphicsApi, -1, 0, kMaxGraphicsApi);
 			if (graphicsApi.value != -1)
 				m_graphics_api = (GraphicAPI)graphicsApi.value;
 
@@ -386,3 +391,41 @@ void GameProfile::Reset()
 	for (auto& profile : m_controllerProfile)
 		profile.reset();
 }
+
+#if defined(CEMU_UWP)
+void GameProfile::SetLoadSharedLibraries(std::optional<bool> value)
+{
+	m_loadSharedLibraries = value;
+}
+
+void GameProfile::SetStartWithPadView(bool value)
+{
+	m_startWithPadView = value;
+}
+
+void GameProfile::SetGraphicsAPI(std::optional<GraphicAPI> value)
+{
+	m_graphics_api = value;
+}
+
+void GameProfile::SetAccurateShaderMul(AccurateShaderMulOption value)
+{
+	m_accurateShaderMul = value;
+}
+
+void GameProfile::SetThreadQuantum(uint32 value)
+{
+	m_threadQuantum = std::min<uint32>(std::max<uint32>(value, 5000), 536870912);
+}
+
+void GameProfile::SetCPUMode(std::optional<CPUMode> value)
+{
+	m_cpuMode = value;
+}
+
+void GameProfile::SetControllerProfile(size_t index, std::optional<std::string> value)
+{
+	if (index < m_controllerProfile.size())
+		m_controllerProfile[index] = std::move(value);
+}
+#endif

@@ -150,7 +150,7 @@ namespace coreinit
 GDBServer::AccessBreakpoint::AccessBreakpoint(MPTR address, AccessPointType type)
 	: m_address(address), m_type(type)
 {
-#if defined(ARCH_X86_64) && BOOST_OS_WINDOWS
+#if defined(ARCH_X86_64) && BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 	for (auto& hThreadNH : coreinit::OSGetSchedulerThreads())
 	{
 		HANDLE hThread = (HANDLE)hThreadNH;
@@ -229,7 +229,7 @@ GDBServer::AccessBreakpoint::AccessBreakpoint(MPTR address, AccessPointType type
 
 GDBServer::AccessBreakpoint::~AccessBreakpoint()
 {
-#if defined(ARCH_X86_64) && BOOST_OS_WINDOWS
+#if defined(ARCH_X86_64) && BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 	for (auto& hThreadNH : coreinit::OSGetSchedulerThreads())
 	{
 		HANDLE hThread = (HANDLE)hThreadNH;

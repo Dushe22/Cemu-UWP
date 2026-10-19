@@ -66,7 +66,7 @@ bool DownloadGraphicPacksWindow::curlDownloadFile(const char *url, curlDownloadF
 bool checkGraphicPackDownloadedVersion(const char* nameVersion, bool& hasVersionFile)
 {
 	hasVersionFile = false;
-	const auto path = ActiveSettings::GetUserDataPath("graphicPacks/downloadedGraphicPacks/version.txt");
+	const auto path = ActiveSettings::GetGraphicPacksPath("downloadedGraphicPacks/version.txt");
 	std::unique_ptr<FileStream> file(FileStream::openFile2(path));
 
 	std::string versionInFile;
@@ -79,7 +79,7 @@ bool checkGraphicPackDownloadedVersion(const char* nameVersion, bool& hasVersion
 
 void createGraphicPackDownloadedVersionFile(const char* nameVersion)
 {
-	const auto path = ActiveSettings::GetUserDataPath("graphicPacks/downloadedGraphicPacks/version.txt");
+	const auto path = ActiveSettings::GetGraphicPacksPath("downloadedGraphicPacks/version.txt");
 	std::unique_ptr<FileStream> file(FileStream::createFile2(path));
 	if (file)
 		file->writeString(nameVersion);
@@ -91,7 +91,7 @@ void createGraphicPackDownloadedVersionFile(const char* nameVersion)
 
 void deleteDownloadedGraphicPacks()
 {
-	const auto path = ActiveSettings::GetUserDataPath("graphicPacks/downloadedGraphicPacks");
+	const auto path = ActiveSettings::GetGraphicPacksPath("downloadedGraphicPacks");
 	std::error_code er;
 	if (!fs::exists(path, er))
 		return;
@@ -231,7 +231,7 @@ void DownloadGraphicPacksWindow::UpdateThread()
 		return;
 	}
 
-	auto path = ActiveSettings::GetUserDataPath("graphicPacks/downloadedGraphicPacks");
+	auto path = ActiveSettings::GetGraphicPacksPath("downloadedGraphicPacks");
 	std::error_code er;
 	//fs::remove_all(path, er); -> Don't delete the whole folder and recreate it immediately afterwards because sometimes it just fails
 	deleteDownloadedGraphicPacks();
@@ -251,7 +251,7 @@ void DownloadGraphicPacksWindow::UpdateThread()
 			std::strstr(sb.name, "..\\") != nullptr)
 			continue; // bad path
 
-		path = ActiveSettings::GetUserDataPath("graphicPacks/downloadedGraphicPacks/{}", sb.name);
+		path = ActiveSettings::GetGraphicPacksPath("downloadedGraphicPacks/{}", sb.name);
 
 		size_t sbNameLen = strlen(sb.name);
 		if(sbNameLen == 0)

@@ -13,6 +13,11 @@ public:
 	
 	DXGIWrapper(uint8* deviceLUID)
 	{
+#if defined(CEMU_UWP)
+		Microsoft::WRL::ComPtr<IDXGIFactory1> dxgiFactory;
+		if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory))))
+			throw std::runtime_error("can't create dxgi factory");
+#else
 		m_moduleHandle = LoadLibraryA("dxgi.dll");
 		if (!m_moduleHandle)
 			throw std::runtime_error("can't load dxgi module");
@@ -26,6 +31,7 @@ public:
 
 		Microsoft::WRL::ComPtr<IDXGIFactory1> dxgiFactory;
 		pCreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
+#endif
 
 		Microsoft::WRL::ComPtr<IDXGIAdapter1> dxgiAdapter;
 		UINT adapterIndex = 0;
@@ -68,7 +74,9 @@ private:
 
 		if (m_moduleHandle)
 		{
+#if !defined(CEMU_UWP)
 			FreeLibrary(m_moduleHandle);
+#endif
 			m_moduleHandle = nullptr;
 		}
 	}

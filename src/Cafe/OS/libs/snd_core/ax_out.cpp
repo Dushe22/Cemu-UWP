@@ -4,6 +4,9 @@
 #include "audio/IAudioAPI.h"
 //#include "ax.h"
 #include "config/CemuConfig.h"
+#if defined(CEMU_UWP)
+#include "uwp/UwpMediaStreamer.h"
+#endif
 
 namespace snd_core
 {
@@ -183,6 +186,10 @@ namespace snd_core
 		tempAudioBlockCounter++;
 		if (tempAudioBlockCounter == AX_FRAMES_PER_GROUP)
 		{
+#if defined(CEMU_UWP)
+			CemuUwp::MediaStreamer::SubmitAudioSamples(tempTVChannelData,
+				AX_SAMPLES_PER_3MS_48KHZ * AX_FRAMES_PER_GROUP, channels, 48000);
+#endif
 			if(g_tvAudio)
 				g_tvAudio->FeedBlock(tempTVChannelData);
 

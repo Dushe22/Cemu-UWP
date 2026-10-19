@@ -8,6 +8,8 @@
 
 namespace H264
 {
+	using H264ByteBuffer = std::vector<uint8>;
+
 	class H264DecoderBackend
 	{
 	  protected:
@@ -15,7 +17,7 @@ namespace H264
 		{
 			uint8* m_data;
 			uint32 m_length;
-			std::vector<uint8> m_buffer;
+			H264ByteBuffer m_buffer;
 		};
 
 		static constexpr uint32 CMD_FLUSH = 0xFFFFFFFF;

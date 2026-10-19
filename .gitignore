@@ -17,11 +17,25 @@
 .idea/
 
 build/
+build-*/
 cmake-build-*/
 out/
 .cache/
+artifacts/
 bin/Cemu_*
 bin/Cemu_*.exe
+bin/uwp/
+
+# Native AppContainer FFmpeg runtime required by UWP media streaming.
+!dependencies/uwp/ffmpeg/6.0/bin/*.dll
+
+# UWP/MSIX packaging outputs
+*.appx
+*.appxbundle
+*.appxupload
+*.appxsym
+*.msix
+*.msixbundle
 
 # Cemu bin files
 bin/otp.bin
@@ -54,3 +68,8 @@ bin/graphicPacks/*
 
 # Ignore Finder view option files created by OS X
 .DS_Store
+
+# Local deploy/diagnostic artifacts
+/xbox-*
+/*.bin
+imgui.ini

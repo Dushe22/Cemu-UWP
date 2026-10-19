@@ -559,10 +559,10 @@ namespace snd_core
 		if (r)
 			return r;
 		AXVPBInternal_t* internal = __AXVPBInternalVoiceArray + (sint32)vpb->index;
-		sint32 channelCount;
+		sint32 channelCount = 0;
 
-		uint16* deviceMixMask;
-		AXCHMIX_DEPR* voiceMix;
+		uint16* deviceMixMask = nullptr;
+		AXCHMIX_DEPR* voiceMix = nullptr;
 		if (device == AX_DEV_TV)
 		{
 			channelCount = AX_TV_CHANNEL_COUNT;
@@ -580,6 +580,8 @@ namespace snd_core
 			assert_dbg();
 			channelCount = AX_RMT_CHANNEL_COUNT;
 		}
+		if (voiceMix == nullptr || deviceMixMask == nullptr)
+			return -1;
 		sint16 updatedMixMask[AX_BUS_COUNT];
 		for (sint32 i = 0; i < AX_BUS_COUNT; i++)
 		{

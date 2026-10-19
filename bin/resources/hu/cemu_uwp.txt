@@ -1,0 +1,328 @@
+# Interface strings for this build; untranslated lines fall back to English.
+# Format: source<TAB>translation
+%s, version %u	%s, %u verzió
+%zu of %zu titles have no game-list artwork of this type yet.	%zu / %zu címhez még nincs ilyen típusú kép a játéklistához.
+%zu packs across %zu games (LB/RB change game)	%zu csomag %zu játékhoz (LB/RB vált játékot)
+(none)	(nincs)
+2D box	2D doboz
+2D box back	2D doboz hátlapja
+2D cartridge	2D kazetta
+3D box	3D doboz
+A Apply    B Cancel	A Alkalmaz    B Mégse
+A Select    B Back    Menu Close	A Kiválaszt    B Vissza    Menu Bezár
+A file or folder picker is already open	Már meg van nyitva egy fájl- vagy mappaválasztó
+A title scan is already running	Már fut egy címkeresés
+A: activate  B: back/home  D-pad/left stick: move focus	A: aktiválás  B: vissza/kezdőlap  Iránygomb/bal kar: fókusz mozgatása
+APP Store	APP Store
+Accelerometer	Gyorsulásmérő
+Accelerometer sensitivity	Gyorsulásmérő érzékenysége
+Account	Felhasználói fiók
+Account ID: %s	Fiókazonosító: %s
+Action	Művelet
+Activated: %s	Aktiválva: %s
+Add another game folder	További játékmappa hozzáadása
+Added to favorites	Hozzáadva a kedvencekhez
+Advanced PPC logging	Részletes PPC-naplózás
+Always on	Mindig be
+An unfinished scan is saved; it resumes automatically on the next launch.	Egy befejezetlen keresés mentve lett; a következő indításkor automatikusan folytatódik.
+App Store	App Store
+Apply Quick Menu combo	Gyorsmenü-kombináció alkalmazása
+Artwork	Képek
+Audio latency	Hangkésleltetés
+Backend	Háttérrendszer
+CPU mode	CPU-mód
+CPU usage	CPU használat
+Can't change the MLC path while a game is running	Az MLC útvonal nem módosítható, amíg játék fut
+Cancel	Mégse
+Cancel installation	Telepítés megszakítása
+Cancel this installation? The previous installed version will remain unchanged.	Megszakítja a telepítést? A már telepített verzió változatlan marad.
+Cancelling installation...	Telepítés megszakítása...
+Cemu UWP	Cemu UWP
+Cemu UWP shell	Cemu UWP felület
+Choose side-by-side underlay	Egymás melletti háttér kiválasztása
+Choose stacked underlay	Egymás feletti háttér kiválasztása
+Clear account credentials	Fiókadatok törlése
+Clear side-by-side	Egymás melletti elrendezés törlése
+Clear stacked	Egymás feletti elrendezés törlése
+Close	Bezárás
+Community	Közösség
+Community graphic packs installed	A közösségi grafikai csomagok telepítve
+Console language	Konzol nyelve
+Controller Mapping	Kontroller-kiosztás
+Controller battery notifications	Kontroller akkumulátor értesítések
+Controller mapping saved	Kontroller-kiosztás mentve
+Controller profile notifications	Kontrollerprofil értesítések
+Controllers	Kontrollerek
+Could not open the MLC folder picker	Nem sikerült megnyitni az MLC mappaválasztót
+Could not open the ScreenScraper media folder picker	Nem sikerült megnyitni a ScreenScraper mappaválasztót
+Could not open the game folder picker	Nem sikerült megnyitni a játékmappa-választót
+Could not open the title picker	Nem sikerült megnyitni a címválasztót
+Could not prepare that MLC folder - is the drive connected and writable?	Nem sikerült előkészíteni az MLC mappát - csatlakoztatva van a meghajtó, és írható?
+Could not save the nickname	Nem sikerült menteni a becenevet
+Could not save title metadata	Nem sikerült menteni a cím metaadatait
+Crash dump	Összeomlások naplózása
+Current game override	Aktuális játék beállítása
+DLC directory was not found	A DLC mappa nem található
+Debug overlay	Hibakeresési réteg
+Debugger	Hibakereső
+Default	Alapértelmezett
+Default: Gamepad:Menu+View. Custom examples: Gamepad:LB+RB, Gamepad:View+Y	Alapértelmezett: Gamepad:Menu+View. Egyéni példák: Gamepad:LB+RB, Gamepad:View+Y
+Destination: %s	Cél: %s
+Developer API credentials are missing from this build.	Ebből a buildből hiányoznak a fejlesztői API-adatok.
+Discord	Discord
+Display gamma	Kijelző gammája
+Display uses sRGB curve	A kijelző sRGB-görbét használ
+Download box art	Borítók letöltése
+Download community packs	Közösségi csomagok letöltése
+Download fanart backgrounds	Rajongói hátterek letöltése
+Download logos	Logók letöltése
+Download metadata	Metaadatok letöltése
+Download screenshots	Képernyőképek letöltése
+Download videos	Videók letöltése
+Downloaded media location	A letöltött fájlok helye
+Downloads	Letöltések
+Downscale filter	Felbontáscsökkentő filter
+Draw calls	Rajzolási hívások
+Dump libcurl requests	libcurl kérések kiírása
+Dump recompiler functions	Újrafordító függvények kiírása
+Dump shaders	Árnyalók kiírása
+Dump textures	Textúrák kiírása
+Emulate Disney Infinity Base	Disney Infinity talp emulálása
+Emulate LEGO Dimensions Toy Pad	LEGO Dimensions Toy Pad emulálása
+Emulated USB devices	Emulált USB-eszközök
+Enable Screenscraper	Screenscraper engedélyezése
+Enable Screenscraper first	Előbb engedélyezze a Screenscrapert
+Enable intro sound	Indítóhang engedélyezése
+Enabled	Engedélyezve
+Every refresh	Minden frissítés
+Every second refresh	Minden második frissítés
+Every third refresh	Minden harmadik frissítés
+Exit Cemu	Kilépés a Cemuból
+FPS	FPS
+Failed to copy title image	Nem sikerült másolni a cím képét
+Failed to save Screenscraper account	Nem sikerült menteni a Screenscraper-fiókot
+Failed to save settings	Nem sikerült menteni a beállításokat
+Fan art	Rajongói kép
+Files: %llu / %llu	Fájlok: %llu / %llu
+Flush log	Napló kiírása
+Follow interface language	A felület nyelvét követi
+Free space: %s	Szabad hely: %s
+Friend service notifications	Barátszolgáltatás értesítései
+Fullscreen scaling	Teljes képernyős méretezés
+GDB port	GDB port
+Game directory was not found	A játék mappája nem található
+Game folder added	Játékmappa hozzáadva
+Game folder added, but it is not accessible - is the drive connected?	Játékmappa hozzáadva, de nem érhető el - csatlakoztatva van a meghajtó?
+Game layout	Játékelrendezés
+Game logo	Játék logója
+Game profile saved	Játékprofil mentve
+Game-list artwork	Játéklista képei
+GamePad	GamePad
+GamePad channels	GamePad-csatornák
+GamePad device	GamePad eszköz
+GamePad only	Csak a GamePad
+GamePad picture in picture	GamePad kép a képben
+GamePad screen	GamePad-képernyő
+GamePad volume	GamePad hangereje
+Games directory	Játékok mappája
+Games directory updated	A játékmappa frissítve
+Games directory updated, but it is not accessible - is the drive connected?	A játékmappa frissítve, de nem érhető el - csatlakoztatva van a meghajtó?
+Gamma	Gamma
+General	Általános
+Global controller profiles saved	A globális kontrollerprofilok mentve
+Global default layout	Globális alapelrendezés
+Graphic packs reloaded	A grafikai csomagok újratöltve
+Graphics API: Direct3D 12	Graphics API: Direct3D 12
+Gyroscope	Giroszkóp
+Gyroscope dead zone	Giroszkóp holtsávja
+Gyroscope sensitivity	Giroszkóp érzékenysége
+Hold stick button	Tartsa nyomva a kar gombját
+Home	home
+Horizontal pointer sensitivity	Vízszintes mutatóérzékenység
+Input	Bevitel
+Input channels	Bemeneti csatornák
+Input volume	Bemeneti hangerő
+Install	Telepítés
+Install size: %s (%llu files)	Telepítési méret: %s (%llu fájl)
+Install title, update or DLC	Játék, frissítés vagy DLC telepítése
+Installation cancelled	A telepítés megszakítva
+Installation complete	A telepítés befejeződött
+Installation failed	A telepítés sikertelen
+Installed version %u will be replaced.	A telepített %u verzió le lesz cserélve.
+Installing...	Telepítés...
+Interface	Kezelőfelület
+Interface language	A felület nyelve
+Invalid combo. Single buttons, duplicate buttons, keyboard and pointer shortcuts are not allowed. Your saved combo is unchanged.	Érvénytelen kombináció. Egyetlen gomb, ismétlődő gomb, valamint billentyűzet- és mutatóparancsok nem engedélyezettek. A mentett kombináció változatlan.
+Invert pointer X	Mutató X tengelyének megfordítása
+Invert pointer Y	Mutató Y tengelyének megfordítása
+Keep installing	Telepítés folytatása
+Large information artwork	Nagy információs kép
+Layout Mode	Elrendezés módja
+Layout mode	Elrendezés módja
+Left Stick	Bal kar
+Left stick	Bal kar
+Left stick deadzone	Bal kar holtsávja
+Left stick range	Bal kar kitérése
+Logs	Naplók
+MLC path saved - restart Cemu to use it (accounts and saves are not moved)	Az MLC útvonal mentve - indítsa újra a Cemut a használatához (a fiókok és a mentések nem kerülnek át)
+MLC storage	MLC tárhely
+Metadata language	A metaadatok nyelve
+Metadata saved; another ScreenScraper download is running	A metaadatok mentve; egy másik ScreenScraper-letöltés fut
+Metadata saved; sign in to ScreenScraper to download media	A metaadatok mentve; jelentkezzen be a ScreenScraperbe a fájlok letöltéséhez
+Microphone and portal	Mikrofon és portál
+Missing	Hiányzik
+Native UWP app-container frontend for Cemu.	Natív UWP alkalmazástárolós felület a Cemuhoz.
+Nearest neighbor	Legközelebbi szomszéd
+Network service	Hálózati szolgáltatás
+Nickname	Becenév
+Nickname saved	Becenév mentve
+No Cemu Wiki ID is available	Nem érhető el Cemu Wiki-azonosító
+No DLC installed	Nincs telepített DLC
+No bootstrap log available.	Nem érhető el indítási napló.
+No graphic packs are installed in the UWP user data graphicPacks folder.	Nincs telepített grafikai csomag az UWP felhasználói adatok graphicPacks mappájában.
+No graphic packs target this title	Egyetlen grafikai csomag sem vonatkozik erre a címre
+No log text available.	Nem érhető el naplószöveg.
+No save data found	Nem található mentés
+No shader caches found	Nem található árnyalógyorsítótár
+No title image is available to copy	Nincs másolható kép a címhez
+No titles to scrape	Nincs lekérdezhető cím
+No update installed	Nincs telepített frissítés
+None	Nincs
+Nothing left to resume	Nincs mit folytatni
+Notification scale	Értesítések mérete
+Notifications	Értesítések
+Online files: %s	Online fájlok: %s
+Open title	Játék megnyitása
+Open title file	Játékfájl megnyitása
+Overlay	Átfedés
+Overlay scale	Overlay mérete
+Override application gamma	Az alkalmazás gammájának felülbírálása
+Overwrite existing media	Meglévő fájlok felülírása
+Password	Jelszó
+Per-game profile	Játékonkénti profil
+Permanent storage	Állandó tárhely
+Persistent ID: %08x	Állandó azonosító: %08x
+Picture in picture	Kép a képben
+Platform media: %s	Platformfájlok: %s
+Platform: Windows UWP	Platform: Windows UWP
+Pointer	Mutató
+Pointer activation	Mutató bekapcsolása
+Pointer speed	Mutató sebessége
+Pointer stick	Mutató karja
+Pointer stick dead zone	Mutató karjának holtsávja
+Portal device	Portál eszköz
+Portal volume	Portál hangereje
+Portuguese	Portugál
+Power	Energia
+Preferred region	Előnyben részesített régió
+Quick Menu	Gyorsmenü
+Quick Menu combo reset to Menu + View	A gyorsmenü kombinációja visszaállítva: Menu + View
+Quick Menu combo saved	A gyorsmenü kombinációja mentve
+Quick menu combo	Gyorsmenü kombinációja
+Quit Game	Játék bezárása
+RAM usage	RAM használat
+Ready	Kész
+Refresh list	Lista frissítése
+Refresh logs	Naplók frissítése
+Refresh titles	Játékok frissítése
+Refreshing game list	A játéklista frissítése
+Reload packs	Csomagok újratöltése
+Remove	Eltávolítás
+Removed from favorites	Eltávolítva a kedvencekből
+Render upside down	Fejjel lefelé jelenítse meg
+Renderer	Megjelenítő
+Renderer: Direct3D 12 CoreWindow	Megjelenítő: Direct3D 12 CoreWindow
+Requires at least two different gamepad buttons held together.	Legalább két különböző kontrollergomb egyidejű nyomva tartása szükséges.
+Reset Quick Menu to Menu + View	Gyorsmenü visszaállítása Menu + View értékre
+Restart Game	Játék újraindítása
+Restart on enable/preset: %s / %s	Újraindítás engedélyezéskor/előbeállításkor: %s / %s
+Restart the title if this pack needs a full reload	Indítsa újra a címet, ha a csomag teljes újratöltést igényel
+Restart unavailable	Az újraindítás nem érhető el
+Resume scan	Keresés folytatása
+Resuming unfinished Screenscraper scan	A befejezetlen Screenscraper-keresés folytatása
+Return to Game	Vissza a játékhoz
+Right Stick	Jobb kar
+Right stick	Jobb kar
+Right stick deadzone	Jobb kar holtsávja
+Right stick range	Jobb kar kitérése
+Rumble strength	Rezgés erőssége
+Runtime dumps	Futásidejű kiírások
+Save account credentials	Fiókadatok mentése
+Save nickname	Becenév mentése
+Scaling	Méretezés
+Screens restored	A képernyők visszaállítva
+Screens swapped	A képernyők felcserélve
+Screenscraper	Screenscraper
+Screenscraper account cleared	A Screenscraper-fiók törölve
+Screenscraper account saved	A Screenscraper-fiók mentve
+Screenscraper download is already running	Már fut egy Screenscraper-letöltés
+Screenshot	Képernyőkép
+Selected account is not a complete online account	A kiválasztott fiók nem teljes online fiók
+Set	Beállítva
+Shader compiling notifications	Árnyalófordítási értesítések
+Shaders: %s	Árnyalók: %s
+Shared title media: %s	Megosztott címfájlok: %s
+Shell theme	Felület témája
+Show controls hint	Kezelőszervek súgója
+Side by side	Egymás mellett
+Side-by-side underlay: %s	Egymás melletti háttér: %s
+Sign in to Screenscraper first	Előbb jelentkezzen be a Screenscraperbe
+Stable-input calibration period	Nyugalmi kalibrálás ideje
+Stacked	Egymás alatt
+Stacked underlay: %s	Egymás alatti háttér: %s
+Start Stream	Közvetítés indítása
+Status: %s	Állapot: %s
+Stop Stream	Közvetítés leállítása
+Stop the running game before installing content.	Állítsa le a futó játékot a tartalom telepítése előtt.
+Storage	Tárhely
+Storage: %s	Tárhely: %s
+Stream: working...	Közvetítés: folyamatban...
+Swap TV and GamePad screens	A TV és a GamePad képernyőjének cseréje
+Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Cserepéldák: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
+System	rendszer
+TV	TV
+TV channels	TV-csatornák
+TV device	TV eszköz
+TV only	Csak a TV
+TV volume	TV hangereje
+Target gamma	Cél gamma
+That folder is already in the list	Ez a mappa már szerepel a listában
+The layout mirrors the Cemu UWP home menu: game tiles, side rails, soft system panels, and controller-first navigation.	Az elrendezés a Cemu UWP kezdőmenüjét követi: játékcsempék, oldalsávok, lágy rendszerpanelek és kontrollerre szabott navigáció.
+This entry cannot be launched	Ez a bejegyzés nem indítható el
+This graphic pack has no description.	Ennek a grafikai csomagnak nincs leírása.
+Title ID: %016llX	Cím azonosítója: %016llX
+Title image copied	A cím képe másolva
+Title information is no longer available	A cím adatai már nem érhetők el
+Title installed	A cím telepítve
+Title screen	Címképernyő
+Titles	Játékok
+Toggle GamePad display	GamePad kijelzőjének váltása
+Treat the mapped Screen control as a toggle instead of a hold action	A hozzárendelt Képernyő gomb kapcsolóként működjön, ne nyomva tartásként
+Trigger deadzone	Ravaszok holtsávja
+Trigger range	Ravaszok kitérése
+Triggers	Ravaszok
+UWP shell	UWP felület
+UWP storage	UWP tárhely
+Underlays use titleImages/%s/*.png	A hátterek a titleImages/%s/*.png fájlokat használják
+Up to %d characters, used as the console profile name	Legfeljebb %d karakter, a konzol profilneveként használatos
+Update directory was not found	A frissítés mappája nem található
+Upscale filter	Felbontásnövelő filter
+Use motion	Mozgásérzékelés használata
+Username	Felhasználónév
+VRAM usage	VRAM használat
+VSync	VSync
+Version %u is already installed. Continuing will reinstall it.	A(z) %u verzió már telepítve van. A folytatás újratelepíti.
+Version: %d	Verzió: %d
+Vertical pointer sensitivity	Függőleges mutatóérzékenység
+Video	Videó
+Video backgrounds use more storage and bandwidth.	A videohátterek több tárhelyet és sávszélességet igényelnek.
+Virtual touch / IR pointer	Virtuális érintés / IR mutató
+Who's playing?	Ki játszik?
+Wii Remote extension	Wii Remote kiegészítő
+World	Világ
+missing or incomplete	hiányoznak vagy hiányosak
+no	nem
+otp.bin is missing or invalid	Az otp.bin hiányzik vagy érvénytelen
+seeprom.bin is missing or invalid	A seeprom.bin hiányzik vagy érvénytelen
+valid	érvényesek
+yes	igen

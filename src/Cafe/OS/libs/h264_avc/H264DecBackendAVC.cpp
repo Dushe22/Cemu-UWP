@@ -134,9 +134,141 @@ namespace H264
 			coreinit::OSSignalEvent(m_displayQueueEvt);
 		}
 
+#if defined(CEMU_UWP)
+		void PushNoFrameResult(DecodedSlice& decodedSlice)
+		{
+			std::unique_lock lock(m_decodeQueueMtx);
+			if (decodedSlice.result.isDecoded)
+				return;
+			decodedSlice.result.isDecoded = true;
+			decodedSlice.result.hasFrame = false;
+			m_displayQueue.push_back((uint32)std::distance(m_decodedSliceArray.data(), &decodedSlice));
+			lock.unlock();
+			coreinit::OSSignalEvent(m_displayQueueEvt);
+		}
+
+		void DecodeUwp(DecodedSlice& decodedSlice)
+		{
+			constexpr uint32 maximumResolutionChanges = 2;
+			uint32 resolutionChanges = 0;
+
+			while (decodedSlice.dataToDecode.m_length != 0)
+			{
+				if (!m_hasBufferSizeInfo)
+				{
+					uint32 numBytesConsumed = 0;
+					if (!DetermineBufferSizes(decodedSlice.dataToDecode.m_data,
+						decodedSlice.dataToDecode.m_length, numBytesConsumed) ||
+						numBytesConsumed > decodedSlice.dataToDecode.m_length)
+					{
+						cemuLog_log(LogType::Force, "H264AVC: Unable to determine picture size. Ignoring decode input");
+						PushNoFrameResult(decodedSlice);
+						return;
+					}
+					decodedSlice.dataToDecode.m_data =
+						static_cast<uint8*>(decodedSlice.dataToDecode.m_data) + numBytesConsumed;
+					decodedSlice.dataToDecode.m_length -= numBytesConsumed;
+					m_hasBufferSizeInfo = true;
+					if (decodedSlice.dataToDecode.m_length == 0)
+						break;
+				}
+
+				ivd_video_decode_ip_t decodeInput{};
+				ivd_video_decode_op_t decodeOutput{};
+				decodeInput.u4_size = sizeof(decodeInput);
+				decodeOutput.u4_size = sizeof(decodeOutput);
+				decodeInput.e_cmd = IVD_CMD_VIDEO_DECODE;
+				decodeInput.u4_ts = (uint32)std::distance(m_decodedSliceArray.data(), &decodedSlice);
+				decodeInput.pv_stream_buffer = static_cast<uint8*>(decodedSlice.dataToDecode.m_data);
+				decodeInput.u4_num_Bytes = decodedSlice.dataToDecode.m_length;
+				decodeInput.s_out_buffer.u4_num_bufs = 0;
+				const uint32 inputLength = decodedSlice.dataToDecode.m_length;
+
+				BenchmarkTimer timer;
+				timer.Start();
+				WORD32 status = ih264d_api_function(m_codecCtx, &decodeInput, &decodeOutput);
+				if (status != 0 && (decodeOutput.u4_error_code & 0xFF) == IVD_RES_CHANGED)
+				{
+					if (++resolutionChanges > maximumResolutionChanges)
+					{
+						cemuLog_log(LogType::Force, "H264: Repeated resolution changes prevented decode progress");
+						PushNoFrameResult(decodedSlice);
+						return;
+					}
+					ResetDecoder();
+					m_hasBufferSizeInfo = false;
+					cemuLog_log(LogType::H264, "H264: Resolution change detected");
+					continue;
+				}
+				if (status != 0)
+				{
+					cemuLog_log(LogType::Force, "H264: Failed to decode frame (error 0x{:08x})", status);
+					PushNoFrameResult(decodedSlice);
+					return;
+				}
+				timer.Stop();
+
+				if (decodeOutput.u4_num_bytes_consumed == 0 ||
+					decodeOutput.u4_num_bytes_consumed > inputLength)
+				{
+					cemuLog_log(LogType::Force,
+						"H264: Decoder consumed {} bytes from a {}-byte input",
+						decodeOutput.u4_num_bytes_consumed, inputLength);
+					PushNoFrameResult(decodedSlice);
+					return;
+				}
+
+				if (decodeOutput.u4_frame_decoded_flag)
+					m_numDecodedFrames++;
+				if (decodeOutput.u4_output_present)
+				{
+					cemu_assert(decodeOutput.e_output_format == IV_YUV_420SP_UV);
+					if (H264_IsBotW() && decodeOutput.s_disp_frm_buf.u4_y_wd == 1920 &&
+						decodeOutput.s_disp_frm_buf.u4_y_ht == 1088)
+					{
+						decodeOutput.s_disp_frm_buf.u4_y_ht = 1080;
+					}
+					PushDecodedFrame(decodeOutput);
+
+					sint32 bufferId = -1;
+					for (size_t i = 0; i < m_displayBuf.size(); ++i)
+					{
+						if (decodeOutput.s_disp_frm_buf.pv_y_buf >= m_displayBuf[i].data() &&
+							decodeOutput.s_disp_frm_buf.pv_y_buf < m_displayBuf[i].data() + m_displayBuf[i].size())
+						{
+							bufferId = (sint32)i;
+							break;
+						}
+					}
+					if (bufferId >= 0)
+					{
+						ivd_rel_display_frame_ip_t releaseInput{};
+						ivd_rel_display_frame_op_t releaseOutput{};
+						releaseInput.e_cmd = IVD_CMD_REL_DISPLAY_FRAME;
+						releaseInput.u4_size = sizeof(releaseInput);
+						releaseOutput.u4_size = sizeof(releaseOutput);
+						releaseInput.u4_disp_buf_id = bufferId;
+						ih264d_api_function(m_codecCtx, &releaseInput, &releaseOutput);
+					}
+					cemuLog_log(LogType::H264, "H264Bench | DecodeTime {}ms", timer.GetElapsedMilliseconds());
+					return;
+				}
+
+				decodedSlice.dataToDecode.m_data =
+					static_cast<uint8*>(decodedSlice.dataToDecode.m_data) + decodeOutput.u4_num_bytes_consumed;
+				decodedSlice.dataToDecode.m_length -= decodeOutput.u4_num_bytes_consumed;
+			}
+
+			PushNoFrameResult(decodedSlice);
+		}
+#endif
+
 		// called from async worker thread
 		void Decode(DecodedSlice& decodedSlice)
 		{
+#if defined(CEMU_UWP)
+			DecodeUwp(decodedSlice);
+#else
 			if (!m_hasBufferSizeInfo)
 			{
 				uint32 numByteConsumed = 0;
@@ -252,6 +384,7 @@ namespace H264
 
 			//status = ih264d_api_function(mCodecCtx, &s_ctl_get_vui_params_ip, &s_ctl_get_vui_params_op);
 			//cemu_assert(status == 0);
+#endif
 		}
 
 		void Flush()
@@ -464,7 +597,11 @@ namespace H264
 
 			ps_ctl_ip->u4_disp_wd = 0;
 			ps_ctl_ip->e_frm_skip_mode = IVD_SKIP_NONE;
+#if defined(CEMU_UWP)
+			ps_ctl_ip->e_frm_out_mode = IVD_DECODE_FRAME_OUT;
+#else
 			ps_ctl_ip->e_frm_out_mode = m_isBufferedMode ? IVD_DISPLAY_FRAME_OUT : IVD_DECODE_FRAME_OUT;
+#endif
 			ps_ctl_ip->e_vid_dec_mode = headerDecodeOnly ? IVD_DECODE_HEADER : IVD_DECODE_FRAME;
 			ps_ctl_ip->e_cmd = IVD_CMD_VIDEO_CTL;
 			ps_ctl_ip->e_sub_cmd = IVD_CMD_CTL_SETPARAMS;
@@ -507,7 +644,7 @@ namespace H264
 		bool m_hasBufferSizeInfo{ false };
 		bool m_isBufferedMode{ false };
 		uint32 m_numDecodedFrames{0};
-		std::vector<std::vector<uint8>> m_displayBuf;
+		std::vector<H264ByteBuffer> m_displayBuf;
 
 		std::thread m_decoderThread;
 		std::atomic_bool m_threadShouldExit{false};

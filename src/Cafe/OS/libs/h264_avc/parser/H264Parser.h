@@ -194,6 +194,15 @@ private:
 class NALInputBitstream
 {
 public:
+	static uint32 GetStartCodeLength(const uint8* stream, uint32 length)
+	{
+		if (length >= 4 && stream[0] == 0 && stream[1] == 0 && stream[2] == 0 && stream[3] == 1)
+			return 4;
+		if (length >= 3 && stream[0] == 0 && stream[1] == 0 && stream[2] == 1)
+			return 3;
+		return 0;
+	}
+
 	NALInputBitstream(uint8* stream, uint32 length)
 	{
 		this->nalStreamPtr = stream;
@@ -219,6 +228,9 @@ public:
 		if (indexNextStartSignature <= readIndex)
 			return false;
 		// skip current start signature
+#if defined(CEMU_UWP)
+		readIndex += GetStartCodeLength(nalStreamPtr + readIndex, nalStreamLength - readIndex);
+#else
 		if ((nalStreamLength - readIndex) >= 3 && nalStreamPtr[readIndex + 0] == 0 && nalStreamPtr[readIndex + 1] == 0 && nalStreamPtr[readIndex + 2] == 1)
 		{
 			readIndex += 3;
@@ -231,6 +243,7 @@ public:
 		{
 			// no start signature
 		}
+#endif
 		cemu_assert(readIndex <= indexNextStartSignature);
 		cemu_assert_debug(readIndex != indexNextStartSignature);
 		// create rbsp substream
@@ -251,6 +264,15 @@ private:
 			return -1;
 		sint32 offset = readIndex;
 		// if there is a start signature at the current address, skip it
+#if defined(CEMU_UWP)
+		offset += GetStartCodeLength(nalStreamPtr + offset, nalStreamLength - offset);
+		while (offset + 3 <= nalStreamLength)
+		{
+			if (GetStartCodeLength(nalStreamPtr + offset, nalStreamLength - offset) != 0)
+				return offset;
+			offset++;
+		}
+#else
 		if ((offset + 3) <= nalStreamLength && nalStreamPtr[offset + 0] == 0x00 && nalStreamPtr[offset + 1] == 0x00 && nalStreamPtr[offset + 2] == 0x01)
 		{
 			offset += 3;
@@ -274,6 +296,7 @@ private:
 			}
 			offset++;
 		}
+#endif
 		return -1;
 	}
 

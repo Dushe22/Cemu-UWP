@@ -1,8 +1,11 @@
 #include "util/SystemInfo/SystemInfo.h"
 
 #include <Psapi.h>
+
+#if !defined(CEMU_UWP)
 #include <winternl.h>
 #pragma comment(lib, "ntdll.lib")
+#endif
 
 uint64 QueryRamUsage()
 {
@@ -46,6 +49,7 @@ void QueryProcTime(uint64 &out_now, uint64 &out_user, uint64 &out_kernel)
 	}
 }
 
+#if !defined(CEMU_UWP)
 void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 {
 	std::vector<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> sppi(count);
@@ -67,3 +71,4 @@ void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 		}
 	}
 }
+#endif

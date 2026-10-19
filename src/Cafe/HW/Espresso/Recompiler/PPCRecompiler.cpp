@@ -20,6 +20,12 @@
 #endif
 #include "util/highresolutiontimer/HighResolutionTimer.h"
 
+#if defined(CEMU_UWP)
+#include "WindowSystem.h"
+#include <Windows.h>
+#include <exception>
+#endif
+
 #define PPCREC_FORCE_SYNCHRONOUS_COMPILATION	0 // if 1, then function recompilation will block and execute on the thread that called PPCRecompiler_visitAddressNoBlock
 #define PPCREC_LOG_RECOMPILATION_RESULTS		0
 
@@ -122,7 +128,7 @@ void PPCRecompiler_enter(PPCInterpreter_t* hCPU, PPCREC_JUMP_ENTRY funcPtr)
 	PPCRecompiler_enterRecompilerCode((uint64)funcPtr, (uint64)hCPU);
 	_controlfp(prevState, _MCW_RC);
 	// debug recompiler exit - useful to find frequently executed functions which couldn't be recompiled
-	#ifdef CEMU_DEBUG_ASSERT
+	#if defined(CEMU_DEBUG_ASSERT) && !defined(CEMU_UWP)
 	if (hCPU->remainingCycles > 0 && GetAsyncKeyState(VK_F4))
 	{
 		auto t = std::chrono::high_resolution_clock::now();
@@ -173,6 +179,24 @@ void PPCRecompiler_attemptEnter(PPCInterpreter_t* hCPU, uint32 enterAddress)
 	}
 }
 bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext);
+
+#if defined(CEMU_UWP)
+void PPCRecompiler_logCurrentWorkerException(uint32 address, const char* stage)
+{
+	try
+	{
+		throw;
+	}
+	catch (const std::exception& ex)
+	{
+		cemuLog_log(LogType::Force, "UWP recompiler {} failed at PPC 0x{:08x}: {}", stage, address, ex.what());
+	}
+	catch (...)
+	{
+		cemuLog_log(LogType::Force, "UWP recompiler {} failed at PPC 0x{:08x}: unknown exception", stage, address);
+	}
+}
+#endif
 
 PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PPCRange_t range, std::set<uint32>& entryAddresses, std::vector<std::pair<MPTR, uint32>>& entryPointsOut, PPCFunctionBoundaryTracker& boundaryTracker)
 {
@@ -444,10 +468,34 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 	s_ppcRecompilerState.recompilerSpinlock.unlock();
 
 	std::vector<std::pair<MPTR, uint32>> functionEntryPoints;
+#if defined(CEMU_UWP)
+	PPCRecFunction_t* func = nullptr;
+	try
+	{
+		func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+	}
+	catch (...)
+	{
+		PPCRecompiler_logCurrentWorkerException(address, "compile");
+		return;
+	}
+#else
 	PPCRecFunction_t* func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+#endif
 	if (!func)
 		return; // recompilation failed
+#if defined(CEMU_UWP)
+	try
+	{
+		PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	}
+	catch (...)
+	{
+		PPCRecompiler_logCurrentWorkerException(address, "activation");
+	}
+#else
 	PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+#endif
 }
 
 void PPCRecompiler_thread()
@@ -486,7 +534,18 @@ void PPCRecompiler_thread()
 			}
 			s_ppcRecompilerState.recompilerSpinlock.unlock();
 
+#if defined(CEMU_UWP)
+			try
+			{
+				PPCRecompiler_recompileAtAddress(enterAddress);
+			}
+			catch (...)
+			{
+				PPCRecompiler_logCurrentWorkerException(enterAddress, "worker");
+			}
+#else
 			PPCRecompiler_recompileAtAddress(enterAddress);
+#endif
 			if(s_ppcRecompilerState.workerThreadStopSignal)
 				return;
 		}
@@ -680,15 +739,48 @@ void PPCRecompiler_init()
 	}
 	cemuLog_logDebug(LogType::Force, "Reserving {}MB for recompiler instance data", (sint32)(sizeof(PPCRecompilerInstanceData_t) / 1024 / 1024));
 	ppcRecompilerInstanceData = (PPCRecompilerInstanceData_t*)MemMapper::ReserveMemory(nullptr, sizeof(PPCRecompilerInstanceData_t), MemMapper::PAGE_PERMISSION::P_RW);
-	MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->_x64XMM_xorNegateMaskBottom), sizeof(PPCRecompilerInstanceData_t) - offsetof(PPCRecompilerInstanceData_t, _x64XMM_xorNegateMaskBottom), MemMapper::PAGE_PERMISSION::P_RW, true);
+#if defined(CEMU_UWP)
+	if (!ppcRecompilerInstanceData)
+	{
+		const DWORD error = GetLastError();
+		const auto message = fmt::format("UWP recompiler instance reservation failed. VirtualAlloc error: {}", error);
+		cemuLog_log(LogType::Force, message);
+		WindowSystem::ShowErrorDialog(message);
+		throw std::runtime_error(message);
+	}
+#endif
+	void* recompilerConstants = MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->_x64XMM_xorNegateMaskBottom), sizeof(PPCRecompilerInstanceData_t) - offsetof(PPCRecompilerInstanceData_t, _x64XMM_xorNegateMaskBottom), MemMapper::PAGE_PERMISSION::P_RW, true);
+#if defined(CEMU_UWP)
+	if (!recompilerConstants)
+	{
+		const DWORD error = GetLastError();
+		const auto message = fmt::format("UWP recompiler instance commit failed. VirtualAlloc error: {}", error);
+		cemuLog_log(LogType::Force, message);
+		WindowSystem::ShowErrorDialog(message);
+		throw std::runtime_error(message);
+	}
+	cemuLog_logDebug(LogType::Force, "UWP recompiler instance reservation committed");
+#endif
 #ifdef ARCH_X86_64
+	#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler interface generation begin");
+	#endif
 	PPCRecompilerX64Gen_generateRecompilerInterfaceFunctions();
+	#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler interface generation done");
+	#endif
 #elif defined(__aarch64__)
 	PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
 #endif
+	#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler range allocation begin");
+	#endif
     PPCRecompiler_allocateRange(0, 0x1000); // the first entry is used for fallback to interpreter
     PPCRecompiler_allocateRange(mmuRange_TRAMPOLINE_AREA.getBase(), mmuRange_TRAMPOLINE_AREA.getSize());
     PPCRecompiler_allocateRange(mmuRange_CODECAVE.getBase(), mmuRange_CODECAVE.getSize());
+	#if defined(CEMU_UWP)
+	cemuLog_logDebug(LogType::Force, "UWP recompiler range allocation done");
+	#endif
 
     PPCRecompiler_initPlatform();
 

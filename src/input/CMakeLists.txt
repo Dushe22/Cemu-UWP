@@ -33,7 +33,7 @@ add_library(CemuInput
 	emulated/ClassicController.h
 )
 
-set_property(TARGET CemuInput PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET CemuInput PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>$<$<BOOL:${ENABLE_UWP}>:DLL>")
 
 cemu_use_precompiled_header(CemuInput)
 
@@ -46,7 +46,7 @@ if (ENABLE_LIBUSB)
 	)
 endif()
 
-if(WIN32)
+if(WIN32 AND ENABLE_XINPUT)
 	# XInput
 	target_sources(CemuInput PRIVATE
 		api/XInput/XInputControllerProvider.cpp
@@ -54,7 +54,9 @@ if(WIN32)
 		api/XInput/XInputController.cpp
 		api/XInput/XInputController.h
 	)
+endif()
 
+if(WIN32 AND ENABLE_DIRECTINPUT)
 	# DirectInput
 	target_sources(CemuInput PRIVATE
 		api/DirectInput/DirectInputControllerProvider.cpp
@@ -62,6 +64,16 @@ if(WIN32)
 		api/DirectInput/DirectInputControllerProvider.h
 		api/DirectInput/DirectInputController.cpp
 	)
+endif()
+
+if(ENABLE_UWP)
+	target_sources(CemuInput PRIVATE
+		api/WGI/WGIGamepadController.cpp
+		api/WGI/WGIGamepadController.h
+		api/WGI/WGIGamepadControllerProvider.cpp
+		api/WGI/WGIGamepadControllerProvider.h
+	)
+	target_link_libraries(CemuInput PRIVATE UwpImGuiFrontend)
 endif()
 
 if (SUPPORTS_WIIMOTE)

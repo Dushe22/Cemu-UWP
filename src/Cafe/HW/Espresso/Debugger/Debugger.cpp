@@ -9,7 +9,7 @@
 #include "OS/RPL/rpl.h"
 #include "util/helpers/helpers.h"
 
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 #include <Windows.h>
 #endif
 
@@ -199,7 +199,7 @@ void debugger_updateMemoryBreakpoint(DebuggerBreakpoint* bp)
 {
 	std::vector<std::thread::native_handle_type> schedulerThreadHandles = coreinit::OSGetSchedulerThreads();
 
-#if BOOST_OS_WINDOWS
+#if BOOST_OS_WINDOWS && !defined(CEMU_UWP)
 	s_debuggerState.activeMemoryBreakpoint = bp;
 	for (auto& hThreadNH : schedulerThreadHandles)
 	{

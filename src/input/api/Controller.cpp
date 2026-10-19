@@ -158,6 +158,18 @@ float ControllerBase::get_axis_value(uint64 button) const
 const ControllerState& ControllerBase::calibrate()
 {
 	m_default_state = raw_state();
+#if defined(CEMU_UWP)
+	// Calibration runs on the first read after a profile loads, often while the A that closed the quick menu is still held.
+	// No button rests pressed on these devices, and no stick or trigger rests this far out, so neither becomes the resting state.
+	m_default_state.buttons = ControllerButtonState{};
+	for (glm::vec2* value : { &m_default_state.axis, &m_default_state.rotation, &m_default_state.trigger })
+	{
+		if (std::abs(value->x) > 0.25f)
+			value->x = 0.0f;
+		if (std::abs(value->y) > 0.25f)
+			value->y = 0.0f;
+	}
+#endif
 	m_is_calibrated = is_connected();
 	return m_default_state;
 }

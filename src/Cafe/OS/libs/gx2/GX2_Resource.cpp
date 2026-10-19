@@ -109,6 +109,17 @@ namespace GX2
 		LatteBufferCache_notifyDCFlush(buffer->GetVirtualAddr(), buffer->GetSize());
 	}
 
+	void GX2RInvalidateMemory(void* ptr, uint32 size)
+	{
+		if (!ptr || size == 0)
+			return;
+		const MPTR address = memory_getVirtualOffsetFromPointer(ptr);
+		// whole-heap invalidations are already covered by the write notifications
+		if (size >= 0x10000000 || address + size < address)
+			return;
+		LatteBufferCache_notifyDCFlush(address, size);
+	}
+
 	void GX2RSetAttributeBuffer(GX2RBuffer* buffer, uint32 bufferIndex, uint32 stride, uint32 offset)
 	{
 		uint32 bufferSize = buffer->GetSize();
@@ -235,6 +246,7 @@ namespace GX2
 		cafeExportRegister("gx2", GX2RLockBufferEx, LogType::GX2);
 		cafeExportRegister("gx2", GX2RUnlockBufferEx, LogType::GX2);
 		cafeExportRegister("gx2", GX2RInvalidateBuffer, LogType::GX2);
+		cafeExportRegister("gx2", GX2RInvalidateMemory, LogType::GX2);
 
 		cafeExportRegister("gx2", GX2RSetAttributeBuffer, LogType::GX2);
 		cafeExportRegister("gx2", GX2RSetStreamOutBuffer, LogType::GX2);

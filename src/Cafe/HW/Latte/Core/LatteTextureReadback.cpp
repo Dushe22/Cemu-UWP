@@ -15,6 +15,32 @@ struct LatteTextureReadbackQueueEntry
 std::vector<LatteTextureReadbackQueueEntry> sTextureScheduledReadbacks; // readbacks that have been queued but the actual transfer has not yet been started
 std::queue<LatteTextureReadbackInfo*> sTextureActiveReadbackQueue; // readbacks in flight
 
+#if defined(CEMU_UWP)
+bool LatteTextureReadback_HasPendingCompletions()
+{
+	return !sTextureActiveReadbackQueue.empty();
+}
+
+void LatteTextureReadback_CancelAllForTitle()
+{
+	const size_t scheduledCount = sTextureScheduledReadbacks.size();
+	const size_t activeCount = sTextureActiveReadbackQueue.size();
+	sTextureScheduledReadbacks.clear();
+	while (!sTextureActiveReadbackQueue.empty())
+	{
+		delete sTextureActiveReadbackQueue.front();
+		sTextureActiveReadbackQueue.pop();
+	}
+	if (scheduledCount != 0 || activeCount != 0)
+	{
+		cemuLog_log(LogType::Force,
+			"D3D12 UWP: cancelled {} scheduled and {} active texture readbacks during title shutdown.",
+			scheduledCount,
+			activeCount);
+	}
+}
+#endif
+
 void LatteTextureReadback_StartTransfer(LatteTextureView* textureView)
 {
 	cemuLog_log(LogType::TextureReadback, "[TextureReadback-Start] PhysAddr {:08x} Res {}x{} Fmt {} Slice {} Mip {}", textureView->baseTexture->physAddress, textureView->baseTexture->width, textureView->baseTexture->height, textureView->baseTexture->format, textureView->firstSlice, textureView->firstMip);

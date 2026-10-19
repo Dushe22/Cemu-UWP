@@ -18,6 +18,7 @@ public:
 
 	virtual uint8* GetData() = 0;
 	virtual void ReleaseData() {};
+	uint32 GetImageSize() const { return m_image_size; }
 
 	HRTick transferStartTime;
 	HRTick waitStartTime;

@@ -60,8 +60,15 @@ void gx2Export_GX2InitColorBufferRegs(PPCInterpreter_t* hCPU);
 void gx2Export_GX2InitDepthBufferRegs(PPCInterpreter_t* hCPU);
 void gx2Export_GX2SetColorBuffer(PPCInterpreter_t* hCPU);
 void gx2Export_GX2SetDepthBuffer(PPCInterpreter_t* hCPU);
+void gx2Export_GX2ExpandDepthBuffer(PPCInterpreter_t* hCPU);
+void gx2Export_GX2InitDepthBufferHiZEnable(PPCInterpreter_t* hCPU);
 void gx2Export_GX2SetDRCBuffer(PPCInterpreter_t* hCPU);
+struct GX2Surface;
+void gx2SubmitScanBufferCopy(GX2Surface* srcSurface, uint32 srcMip, uint32 srcSlice, GX2Surface* dstSurface, uint32 dstMip, uint32 dstSlice);
 void gx2Export_GX2MarkScanBufferCopied(PPCInterpreter_t* hCPU);
+void gx2Export_GX2SetTVEnable(PPCInterpreter_t* hCPU);
+void gx2Export_GX2SetTVScale(PPCInterpreter_t* hCPU);
+void gx2Export_GX2SetDRCEnable(PPCInterpreter_t* hCPU);
 
 // special state
 
