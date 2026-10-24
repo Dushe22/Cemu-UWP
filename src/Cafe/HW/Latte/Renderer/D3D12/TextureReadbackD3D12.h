@@ -3,6 +3,8 @@
 #include "Cafe/HW/Latte/Core/LatteTextureReadbackInfo.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12MemoryManager.h"
 
+#include <atomic>
+
 class D3D12Renderer;
 
 class LatteTextureReadbackInfoD3D12 : public LatteTextureReadbackInfo
@@ -29,7 +31,11 @@ public:
 #endif
 
 private:
+	void RecordTransfer();
+
 	D3D12Renderer* m_renderer{};
+	// threaded recording: the copy is recorded on the recorder thread; until then the transfer is not finished
+	std::atomic<bool> m_transferRecorded{ true };
 	D3D12MemoryManager::RingReservation m_readback;
 	std::vector<uint8> m_linearData;
 	uint64 m_fenceValue{};

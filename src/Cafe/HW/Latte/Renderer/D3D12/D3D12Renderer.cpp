@@ -17266,7 +17266,7 @@ LatteTextureReadbackInfoD3D12* D3D12Renderer::CreateHostTextureReadback(LatteTex
 
 LatteTextureReadbackInfo* D3D12Renderer::texture_createReadback(LatteTextureView* textureView)
 {
-	D3D12_EXCLUSIVE_RECORDING();
+	// only computes the copy footprint (immutable texture description); the copy is recorded by StartTransfer
 	auto* texture = textureView ? static_cast<LatteTextureD3D12*>(textureView->baseTexture) : nullptr;
 	if (!texture)
 		return nullptr;

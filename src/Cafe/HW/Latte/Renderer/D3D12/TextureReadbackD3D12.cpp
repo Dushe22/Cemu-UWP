@@ -49,7 +49,24 @@ LatteTextureReadbackInfoD3D12::LatteTextureReadbackInfoD3D12(D3D12Renderer* rend
 
 void LatteTextureReadbackInfoD3D12::StartTransfer()
 {
+	if (m_renderer && m_renderer->ShouldQueueRecording())
+	{
+		m_transferRecorded.store(false, std::memory_order_relaxed);
+		m_renderer->QueueRecording([this]() { RecordTransfer(); });
+		return;
+	}
 	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
+	RecordTransfer();
+}
+
+void LatteTextureReadbackInfoD3D12::RecordTransfer()
+{
+	// published last, after m_fenceValue and the reservation are set (or the transfer was dropped)
+	struct PublishRecorded
+	{
+		std::atomic<bool>& flag;
+		~PublishRecorded() { flag.store(true, std::memory_order_release); }
+	} publishRecorded{ m_transferRecorded };
 	if (!m_renderer || !m_textureView || m_image_size == 0)
 		return;
 
@@ -91,13 +108,19 @@ void LatteTextureReadbackInfoD3D12::StartTransfer()
 
 bool LatteTextureReadbackInfoD3D12::IsFinished()
 {
-	return !m_renderer || m_renderer->IsFenceComplete(m_fenceValue);
+	if (!m_renderer)
+		return true;
+	if (!m_transferRecorded.load(std::memory_order_acquire))
+		return false;
+	return m_renderer->IsFenceComplete(m_fenceValue);
 }
 
 void LatteTextureReadbackInfoD3D12::ForceFinish()
 {
-	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
 	if (!m_renderer || IsFinished())
+		return;
+	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
+	if (IsFinished())
 		return;
 	if (m_renderer->m_commandListOpen && m_fenceValue >= m_renderer->m_nextFenceValue)
 		m_renderer->ExecuteCurrentCommandList();
@@ -106,6 +129,8 @@ void LatteTextureReadbackInfoD3D12::ForceFinish()
 
 uint8* LatteTextureReadbackInfoD3D12::GetData()
 {
+	// the readback ring is reused once the fence passes: read it while the recorder allocates nothing new
+	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
 	ForceFinish();
 	if (!m_readback.IsValid())
 	{
