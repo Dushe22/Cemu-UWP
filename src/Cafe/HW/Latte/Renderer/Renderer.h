@@ -108,6 +108,13 @@ public:
 
 	virtual LatteCachedFBO* rendertarget_createCachedFBO(uint64 key) = 0;
 	virtual void rendertarget_deleteCachedFBO(LatteCachedFBO* fbo) = 0;
+	// Phase 4: the core has already detached these objects (Detach, list removal); a renderer that records on
+	// another thread frees them once no queued work references them. The default frees them now.
+	virtual void rendertarget_destroyCachedFBO(LatteCachedFBO* fbo);
+	virtual void texture_destroyView(LatteTextureView* view);
+	virtual void texture_destroy(LatteTexture* texture);
+	// Phase 4: waits until a renderer that records on another thread has recorded everything queued so far
+	virtual void DrainRecording() {}
 	virtual void rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo) = 0;
 
 	// texture functions
@@ -118,6 +125,8 @@ public:
 
 	virtual void texture_clearSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex) = 0;
 	virtual void texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize) = 0;
+	// waits for slice uploads a backend finishes off the calling thread; called once a texture reload has queued all slices
+	virtual void texture_finishSliceUploads() {}
 	virtual void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) = 0;
 	virtual void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) = 0;
 
@@ -137,7 +146,15 @@ public:
 	virtual void bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size) = 0;
 	virtual void bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size) = 0;
 
-	virtual void buffer_bindVertexBuffer(uint32 bufferIndex, uint32 offset, uint32 size) = 0;
+	struct BindBufferParam
+	{
+		uint8 index;
+		uint16 stride;
+		uint32 bindOffset;
+		uint32 bindSize;
+	};
+
+	virtual void buffer_bindVertexBuffers(std::span<BindBufferParam> bindings) = 0;
 	virtual void buffer_bindUniformBuffer(LatteConst::ShaderType shaderType, uint32 bufferIndex, uint32 offset, uint32 size) = 0;
 
 	// shader

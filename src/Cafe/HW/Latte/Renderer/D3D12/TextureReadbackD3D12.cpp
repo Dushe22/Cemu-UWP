@@ -49,6 +49,7 @@ LatteTextureReadbackInfoD3D12::LatteTextureReadbackInfoD3D12(D3D12Renderer* rend
 
 void LatteTextureReadbackInfoD3D12::StartTransfer()
 {
+	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
 	if (!m_renderer || !m_textureView || m_image_size == 0)
 		return;
 
@@ -95,6 +96,7 @@ bool LatteTextureReadbackInfoD3D12::IsFinished()
 
 void LatteTextureReadbackInfoD3D12::ForceFinish()
 {
+	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
 	if (!m_renderer || IsFinished())
 		return;
 	if (m_renderer->m_commandListOpen && m_fenceValue >= m_renderer->m_nextFenceValue)

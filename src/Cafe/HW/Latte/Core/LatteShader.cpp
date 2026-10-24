@@ -380,6 +380,15 @@ void LatteShader_CreateRendererShader(LatteDecompilerShader* shader, bool compil
 					return;
 				}
 				delete convertedShader;
+				// keep the converted source so the DXC error lines in the log can be read against it
+				const fs::path failedPath = ActiveSettings::GetUserDataPath("dump/gp_hlsl_failed/{:016x}_{:016x}_ps.hlsl", shader->baseHash, shader->auxHash);
+				std::error_code ec;
+				fs::create_directories(failedPath.parent_path(), ec);
+				if (FileStream* failedFile = FileStream::createFile2(failedPath))
+				{
+					failedFile->writeData(convertedSrc.data(), convertedSrc.size());
+					delete failedFile;
+				}
 				cemuLog_log(LogType::Force, "graphicPack: converted GLSL replacement for pixel shader {:016x}_{:016x} failed to compile; using the original shader", shader->baseHash, shader->auxHash);
 			}
 			else
@@ -581,7 +590,7 @@ void LatteSHRC_UpdateVSBaseHash(uint8* vertexShaderPtr, uint32 vertexShaderSize,
 		{
       		for (sint32 g = 0; g < fetchShader->bufferGroups.size(); g++)
             {
-           	    LatteParsedFetchShaderBufferGroup_t& group = fetchShader->bufferGroups[g];
+           	    LatteParsedFetchShaderBufferGroup& group = fetchShader->bufferGroups[g];
           		uint32 bufferIndex = group.attributeBufferIndex;
           		uint32 bufferBaseRegisterIndex = mmSQ_VTX_ATTRIBUTE_BLOCK_START + bufferIndex * 7;
           		uint32 bufferStride = (LatteGPUState.contextRegister[bufferBaseRegisterIndex + 2] >> 11) & 0xFFFF;
@@ -783,6 +792,8 @@ static void InitUniformLayoutFromDecompiler(
     shader->uniform.loc_alphaTestRef = offsets.offset_alphaTestRef;
     shader->uniform.loc_pointSize = offsets.offset_pointSize;
     shader->uniform.loc_fragCoordScale = offsets.offset_fragCoordScale;
+    for (sint32 t = 0; t < LATTE_NUM_MAX_TEX_UNITS; t++)
+        shader->uniform.loc_framebufferFetchSize[t] = offsets.offset_framebufferFetchSize[t];
 
     // Texture scale uniforms
     shader->uniform.list_ufTexRescale.clear();

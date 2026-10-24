@@ -18,12 +18,17 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <deque>
+#include <exception>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <source_location>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -87,6 +92,7 @@ public:
 	}
 	D3D12MemoryManager* GetMemoryManager() const { return m_memoryManager.get(); }
 	bool IsUma() const { return m_isUma; }
+	bool IsCacheCoherentUma() const { return m_isCacheCoherentUma; }
 	void ReleaseResourceDeferred(D3D12MemoryManager::Resource& resource);
 	void NotifyTextureViewDescriptorsReleased(const class LatteTextureViewD3D12* view);
 	bool CreateTextureWithRecovery(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, const D3D12_CLEAR_VALUE* clearValue, D3D12MemoryManager::Resource& outResource, const char* context);
@@ -164,12 +170,16 @@ public:
 	void renderTarget_setScissor(sint32 scissorX, sint32 scissorY, sint32 scissorWidth, sint32 scissorHeight) override;
 	LatteCachedFBO* rendertarget_createCachedFBO(uint64 key) override;
 	void rendertarget_deleteCachedFBO(LatteCachedFBO* cfbo) override;
+	void rendertarget_destroyCachedFBO(LatteCachedFBO* cfbo) override;
+	void texture_destroyView(LatteTextureView* view) override;
+	void texture_destroy(LatteTexture* texture) override;
 	void rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo) override;
 
 	void* texture_acquireTextureUploadBuffer(uint32 size) override;
 	void texture_releaseTextureUploadBuffer(uint8* mem) override;
 	TextureDecoder* texture_chooseDecodedFormat(Latte::E_GX2SURFFMT format, bool isDepth, Latte::E_DIM dim, uint32 width, uint32 height) override;
 	void texture_clearSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex) override;
+	void texture_finishSliceUploads() override;
 	void texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize) override;
 	void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) override;
 	void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) override;
@@ -184,7 +194,8 @@ public:
 	void bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset) override;
 	void bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
 	void bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
-	void buffer_bindVertexBuffer(uint32 bufferIndex, uint32 offset, uint32 size) override;
+	void buffer_bindVertexBuffers(std::span<BindBufferParam> bindings) override;
+	void buffer_bindVertexBuffer(uint32 bufferIndex, uint32 offset, uint32 size);
 	void buffer_bindUniformBuffer(LatteConst::ShaderType shaderType, uint32 bufferIndex, uint32 offset, uint32 size) override;
 
 	RendererShader* shader_create(RendererShader::ShaderType type, uint64 baseHash, uint64 auxHash, const std::string& source, bool isGameShader, bool isGfxPackSource) override;
@@ -208,12 +219,84 @@ public:
 
 	bool UseTFViaSSBO() const override { return true; }
 
+	// Phase 4 S3: with "Threaded draw recording" the draw tail and the ordered renderer operations run on a recording
+	// thread. Calls from the Latte side either queue (ShouldQueueRecording) or take exclusive access (RecordingExclusiveScope)
+	void DrainRecording() override;
+	bool ShouldQueueRecording() const { return !t_recordContext && m_recordThreadRunning.load(std::memory_order_relaxed); }
+	void QueueRecording(std::function<void()> op);
+	// logs (capped) when the command list is opened or submitted outside the recorder or an exclusive scope
+	void CheckRecordingContext(const char* operation);
+	// waits for queued recording work, then lets the caller's scope use the recording state directly
+	class RecordingExclusiveScope
+	{
+	public:
+		explicit RecordingExclusiveScope(D3D12Renderer* renderer, std::source_location caller = std::source_location::current());
+		~RecordingExclusiveScope();
+		RecordingExclusiveScope(const RecordingExclusiveScope&) = delete;
+		RecordingExclusiveScope& operator=(const RecordingExclusiveScope&) = delete;
+	private:
+		D3D12Renderer* m_renderer{};
+	};
+	// true on the recording thread and inside an exclusive scope: renderer calls run directly
+	static thread_local bool t_recordContext;
+	static thread_local bool t_isRecorderThread;
+
 private:
+	// recorder load for the 5 s log: time spent running ops, ops run, and Latte-side waits on a full queue (queue mutex)
+	std::atomic<uint64> m_recordBusyNs{};
+	std::atomic<uint64> m_recordOps{};
+	bool m_recordWaiting{}; // recorder sleeps on m_recordWorkCv (queue mutex)
+	uint64 m_recordFullWaits{};
+	uint64 m_recordFullWaitNs{};
+	// Latte-side cost of the split for the 5 s log (queue mutex): exclusive scopes that drained the queue, by caller,
+	// and sampled QueueRecording calls (1 of 64)
+	struct RecordExclusiveStat { uint64 count{}; uint64 waitNs{}; };
+	std::unordered_map<const char*, RecordExclusiveStat> m_recordExclusiveStats;
+	uint64 m_recordQueueCalls{};
+	uint64 m_recordQueueSampledNs{};
+	uint64 m_recordQueueSamples{};
+	uint64 m_uwpCollectRecordNs{}; // sampled CollectRecordState time on the Latte side
+	uint64 m_uwpCollectRecordSamples{};
+	double m_uwpLastHeadPipelineUs{}; // pipeline stage measured on the Latte side only (before the tail is merged in)
+	bool m_threadedRecordingWanted{}; // setting read at init; the recorder runs only while a title draws
+	void StartRecordingThread();
+	void StopRecordingThread();
+	void RecordingThreadMain();
+	std::thread m_recordThread;
+	std::atomic_bool m_recordThreadRunning{};
+	std::mutex m_recordQueueMutex;
+	std::condition_variable m_recordWorkCv;
+	std::condition_variable m_recordStateCv;
+	std::vector<std::function<void()>> m_recordQueue;
+	bool m_recordBusy{};
+	bool m_recordStop{};
+	std::exception_ptr m_recordError;
+	// held by whoever runs recording work: the recording thread or an exclusive scope
+	std::mutex m_recordExecMutex;
+	// Latte-side copies of state the draw head reads while the recording thread owns the real one
+	CachedFBOD3D12* m_latteActiveFBO{};
+	std::array<sint32, LATTE_NUM_STREAMOUT_BUFFER> m_latteStreamoutRingOffsets{};
+	// uniform sources the Latte side last sent per stage (the recorder keeps the bytes; both reset at title shutdown)
+	struct LatteUniformSource
+	{
+		LatteDecompilerShader* shader{};
+		uint64 sourceKey{};
+		bool sent{};
+	};
+	std::array<LatteUniformSource, (size_t)LatteConst::ShaderType::TotalCount> m_latteUniformSources{};
+	// per-draw uniform bytes for the recorder; send=false keeps the bytes it has
+	struct UniformUpdate
+	{
+		LatteDecompilerShader* shader{};
+		bool send{};
+		std::vector<uint8> data;
+	};
+
 	friend class LatteQueryObjectD3D12;
 	friend class LatteTextureReadbackInfoD3D12;
 
 	static constexpr uint32 kBackBufferCount = 3;
-	static constexpr uint32 kCommandBufferPoolSize = 8;
+	static constexpr uint32 kCommandBufferPoolSize = 16; // forest records ~15 lists per frame; 8 left the render thread waiting on the GPU
 	static constexpr uint32 kUwpCpuDrawStageCount = 7;
 	static constexpr uint32 kSubmitThresholdDefault = 300;
 	static constexpr uint32 kSubmitThresholdUwpDefault = 480;
@@ -258,7 +341,7 @@ private:
 #endif
 		uint64 fenceValue{};
 		size_t uniformRingWatermark{};
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE) || defined(CEMU_UWP)
 		bool timingPending{};
 #endif
 		uint32 readbackNotificationCount{};
@@ -389,6 +472,8 @@ private:
 		uint32 logicOpRenderTarget{};
 		uint64 drawId{};
 		bool retainAcrossDraws{}; // color feedback copy that later draws of the same render pass may sample
+		bool requireUnchangedSource{}; // depth copy: reused only while FeedbackSourceGeneration matches
+		uint64 sourceGeneration{};
 	};
 
 	// a color feedback copy kept after its draw; like the Vulkan backend's barrier skip, later draws of the
@@ -476,7 +561,7 @@ private:
 	void CreateRtvHeap();
 	void CreateDescriptorManager();
 	void CreateMemoryManager();
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE) || defined(CEMU_UWP)
 	void CreateTimingResources();
 	void ReleaseTimingResources();
 #endif
@@ -522,9 +607,25 @@ private:
 	ID3D12PipelineState* GetSurfaceCopyPipeline(SurfaceCopyMode mode, DXGI_FORMAT rtvFormat, DXGI_FORMAT dsvFormat);
 	void SurfaceCopyWithFormatConversion(LatteTexture* sourceTexture, sint32 srcMip, sint32 srcSlice, LatteTexture* destinationTexture, sint32 dstMip, sint32 dstSlice,
 										 sint32 srcX, sint32 srcY, sint32 dstX, sint32 dstY, sint32 width, sint32 height, bool coordinatesAreEffective,
-										 bool allowNativeCopy = true);
+										 bool allowNativeCopy = true, LatteTextureViewD3D12* preparedSourceView = nullptr,
+										 LatteTextureViewD3D12* preparedDestinationView = nullptr);
+	// threaded recording: views a queued texture copy may draw with, created on the Latte thread (recording state)
+	struct PreparedSurfaceCopy
+	{
+		LatteTexture* source{};
+		sint32 sourceMip{};
+		sint32 sourceSlice{};
+		LatteTexture* destination{};
+		sint32 destinationMip{};
+		sint32 destinationSlice{};
+		LatteTextureViewD3D12* sourceView{};
+		LatteTextureViewD3D12* destinationView{};
+	};
+	PreparedSurfaceCopy m_preparedSurfaceCopy;
 	void BindGameDescriptorTables(LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader, uint32 baseVertex, uint32 baseInstance, uint32 vertexIdRemapMode, uint64 pipelineHash);
-	D3D12_GPU_VIRTUAL_ADDRESS UploadGameUniformVars(LatteDecompilerShader* shader, uint64 drawId, uint64 pipelineHash);
+	void PrepareGameUniformVars(LatteDecompilerShader* shader, uint64 drawId, uint64 pipelineHash, UniformUpdate& update);
+	void ApplyGameUniformUpdate(UniformUpdate& update);
+	D3D12_GPU_VIRTUAL_ADDRESS CommitGameUniformVars(LatteDecompilerShader* shader, uint64 drawId, uint64 pipelineHash);
 	D3D12DescriptorManager::Allocation BuildGameResourceTable(LatteDecompilerShader* shader, D3D12_GPU_VIRTUAL_ADDRESS& uniformCbvAddress, uint64 drawId, uint64 pipelineHash);
 	D3D12DescriptorManager::Allocation BuildGameUavTable(LatteDecompilerShader* shader);
 	D3D12DescriptorManager::Allocation BuildGameSamplerTable(LatteDecompilerShader* shader);
@@ -585,7 +686,8 @@ private:
 	};
 	void ExecuteCurrentCommandList(uint32 workloadReasons = SubmitUnspecified);
 	void ResetCommandList();
-	void WaitForIdle();
+	// the caller's line attributes idle waits in the GPU wait log
+	void WaitForIdle(std::source_location caller = std::source_location::current());
 	void WaitForFence(uint64 fenceValue);
 	void WaitForCommandSlot(uint32 slotIndex);
 	void ProcessFinishedCommandLists();
@@ -673,7 +775,9 @@ private:
 #endif
 	}
 	void LogUwpCommandSubmitPerformanceSummary();
-	bool CreateFeedbackScratchCopy(uint32 textureUnit, LatteTextureViewD3D12* sampledView, bool retainAcrossDraws = false);
+	// reuseWhileSourceUnchanged: keep the copy for later draws, valid while the copied subresources were not written
+	bool CreateFeedbackScratchCopy(uint32 textureUnit, LatteTextureViewD3D12* sampledView, bool retainAcrossDraws = false, bool reuseWhileSourceUnchanged = false);
+	uint64 FeedbackSourceGeneration(LatteTextureViewD3D12* view) const;
 	bool TryReuseRetainedFeedbackCopy(uint32 textureUnit, LatteTextureViewD3D12* sampledView);
 	void DropRetainedFeedbackCopies(LatteTexture* modifiedTexture = nullptr); // nullptr drops all
 	bool PrepareLogicOpEmulationForDraw();
@@ -737,6 +841,8 @@ private:
 	uint64 m_numCompletedCommandLists{};
 	uint64 m_feedbackLoopDetections{};
 	uint64 m_feedbackLoopCopies{};
+	uint64 m_feedbackCopyReuses{};
+	uint64 m_uwpProfileLastFeedbackReuses{};
 	static constexpr uint32 kInvalidScratchCopyIndex = 0xFFFFFFFFu;
 	uint64 m_scratchTexturePoolHits{};
 	uint64 m_scratchTexturePoolMisses{};
@@ -762,6 +868,7 @@ private:
 	uint64 m_memoryPressureTextureBytes{};
 	uint64 m_memoryPressureScratchBytes{};
 	uint64 m_memoryPressureHeavyPasses{};
+	std::chrono::steady_clock::time_point m_memoryPressureLastNotice{};
 	uint64 m_memoryPressureDeferredPipelines{};
 	uint64 m_memoryPressureForcedPipelines{};
 	uint64 m_memoryPressureLastHeavyUsageBytes{};
@@ -801,9 +908,33 @@ private:
 	uint64 m_performanceExperimentLastFenceWaitUs{}, m_performanceExperimentLastResourceHits{}, m_performanceExperimentLastResourceMisses{};
 #endif
 	uint64 m_uwpCpuProfileDraws{};
+	// sampled draws: descriptor stage split into feedback copies / uniform upload / table building
+	bool m_uwpProfileThisDraw{};
+	uint64 m_uwpProfileLastGpuTicks{};
+	// GPU waits per 5 s by kind (idle, command slot, fence, query) and, for idle waits, by calling line
+	std::array<uint64, 4> m_uwpWaitUs{};
+	std::array<uint32, 4> m_uwpWaitCount{};
+	// fence of the last submit before each present, to tell at a command slot wait how many frames the GPU still has queued
+	std::array<uint64, 4> m_uwpPresentFences{};
+	uint32 m_uwpPresentFenceIndex{};
+	uint64 m_uwpLastSubmittedFence{};
+	std::array<uint32, 4> m_uwpSlotWaitsByQueuedPresents{};
+	uint32 m_uwpIdleWaitLine{};
+	std::unordered_map<uint32, std::pair<uint32, uint64>> m_uwpIdleWaitByLine;
+	// draws skipped while their PSO builds async, per 5 s, by render target size (w << 16 | h)
+	std::unordered_map<uint32, uint32> m_uwpAsyncSkipsByTarget;
+	uint32 m_uwpAsyncSkips{};
+	std::array<uint64, 5> m_uwpDescriptorSplitNs{}; // feedback, uniform prepare (Latte), tables, before tables, after tables
+	uint64 m_uwpViewTransitionsFast{}; // TransitionTextureView calls already satisfied / walking subresources
+	uint64 m_uwpViewTransitionsSlow{};
+	uint64 m_uwpDescriptorSplitSamples{};
+	uint64 m_uwpProfileLastResourceHits{}, m_uwpProfileLastResourceMisses{}, m_uwpProfileLastSamplerHits{}, m_uwpProfileLastSamplerMisses{};
 	uint64 m_uwpCpuProfileSampledDraws{};
 	std::array<uint64, kUwpCpuDrawStageCount> m_uwpCpuProfileStageTimeNs{};
 	std::array<uint64, kUwpCpuDrawStageCount> m_uwpCpuProfileStageSamples{};
+	// stages measured by the draw tail, which may run on the recording thread; summed with the above in the log
+	std::array<uint64, kUwpCpuDrawStageCount> m_uwpCpuProfileTailTimeNs{};
+	std::array<uint64, kUwpCpuDrawStageCount> m_uwpCpuProfileTailSamples{};
 	uint64 m_uwpCpuProfileLastSubmittedCommandLists{};
 	uint64 m_uwpCpuProfileLastFenceWaitCount{};
 	uint64 m_uwpCpuProfileLastFenceWaitTimeUs{};
@@ -871,7 +1002,7 @@ private:
 	} m_uwpWorkloadProfile;
 #endif
 
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE) || defined(CEMU_UWP)
 	uint64 m_gpuCommandListSamples{};
 	uint64 m_gpuCommandListTicks{};
 	uint64 m_gpuCommandListMaxTicks{};
@@ -918,7 +1049,7 @@ private:
 	std::unique_ptr<D3D12DescriptorManager> m_descriptorManager;
 	std::unique_ptr<D3D12MemoryManager> m_memoryManager;
 	std::unique_ptr<D3D12GeometryProbe> m_geometryProbe;
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE) || defined(CEMU_UWP)
 	Microsoft::WRL::ComPtr<ID3D12QueryHeap> m_timestampQueryHeap;
 	D3D12MemoryManager::Resource m_timestampReadback;
 	const uint64* m_timestampReadbackMapped{};
@@ -973,14 +1104,100 @@ private:
 	D3D12DescriptorManager::Allocation m_sparseMrtNullRtv;
 	std::unordered_map<uint64, Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_outputPipelineCache;
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> m_gameRootSignature;
-	std::unordered_map<uint64, Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_gamePipelineCache;
+	struct GamePipelineEntry
+	{
+		Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
+		uint32 lastUsedFrame{};
+	};
+	std::unordered_map<uint64, GamePipelineEntry> m_gamePipelineCache;
+	// memory pressure: drop PSOs unused for minAgeFrames; they come back through async creation
+	size_t EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipelines);
+	uint64 m_gamePipelinesEvicted{};
 	struct PendingGamePipelineRecipe
 	{
 		Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
 		std::array<uint8, 32> fingerprint{};
+		std::array<uint8, 32> contentFingerprint{}; // D3D12PipelineRecipe::Serialized::contentFingerprint
+		uint32 adoptedFrame{};
+		bool fromAsync{}; // built for a skipped draw, not by the launch prewarm
 	};
+	// async results no draw asked for again within this many frames are released
+	void ReleaseStaleAsyncGamePipelines();
+	// memory pressure: drop prewarmed PSOs no draw adopted for minAgeFrames (their recipes rebuild them on demand)
+	size_t ReleaseUnusedPrewarmedPipelines(uint32 minAgeFrames, size_t maxPipelines);
+	uint64 m_asyncPipelinesReleasedUnused{};
+	// key without depth bias values -> a ready pipeline that differs at most in depth bias; drawn with
+	// while the exact variant is built in the background, so the object does not vanish for a few frames
+	struct DepthBiasSibling
+	{
+		uint64 pipelineKey{};
+		float slope{}, offset{}, clamp{};
+	};
+	std::unordered_map<uint64, DepthBiasSibling> m_depthBiasSiblingPipelines;
+	uint64 m_depthBiasSiblingDraws{};
+	uint64 m_depthBiasAliases{}; // keys served by a near-identical bias pipeline instead of building their own
+	uint32 m_asyncSkipBlockReasons{}; // why the current draw may not be skipped (bits, see the draw path)
+	uint32 m_slowSyncPipelineLogs{};
+	// Xbox: buffer copies into slices > 0 of block-compressed arrays land wrong, so with d3d12_gpu_array_upload each
+	// slice goes buffer -> single-slice staging texture -> array slice (texture copy) instead of CPU WriteToSubresource
+	struct ArrayUploadStaging
+	{
+		D3D12MemoryManager::Resource texture;
+		D3D12_RESOURCE_DESC desc{};
+		D3D12_RESOURCE_STATES state{ D3D12_RESOURCE_STATE_COPY_DEST };
+	};
+	std::unordered_map<uint64, ArrayUploadStaging> m_arrayUploadStaging;
+	ArrayUploadStaging* GetArrayUploadStaging(DXGI_FORMAT format, uint32 width, uint32 height);
+	// non-zero while the render thread creates a PSO; async workers hold off so the driver serves it first
+	std::atomic_uint32_t m_renderThreadPipelineCreates{};
+	std::atomic_uint32_t m_slowAsyncPipelineLogs{};
+	std::atomic_uint32_t m_asyncPipelineJobsOutstanding{};
+public:
+	// a draw is waiting for a pipeline (render-thread build or queued async job): background prewarm holds off
+	bool HasUrgentPipelineWork()
+	{
+		if (m_renderThreadPipelineCreates.load(std::memory_order_acquire) != 0 ||
+			m_asyncPipelineJobsOutstanding.load(std::memory_order_acquire) != 0)
+			return true;
+		std::scoped_lock lock(m_asyncPipelineMutex);
+		return !m_asyncPipelineJobs.empty();
+	}
+private:
+	// CPU-writable textures (BC arrays on Xbox): WriteToSubresource swizzles on the CPU at ~30 MB/s, so a texture's
+	// slices are written by several threads; the reload waits for all of them before the texture can be drawn
+	struct CpuSliceUploadJob
+	{
+		Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+		UINT subresource{};
+		UINT rowPitch{};
+		UINT depthPitch{};
+		std::vector<uint8> data;
+	};
+	std::mutex m_cpuUploadMutex;
+	std::condition_variable m_cpuUploadWork;
+	std::condition_variable m_cpuUploadDone;
+	std::deque<CpuSliceUploadJob> m_cpuUploadJobs;
+	size_t m_cpuUploadPendingBytes{};
+	std::atomic_uint32_t m_cpuUploadOutstanding{};
+	bool m_cpuUploadStop{};
+	std::vector<std::thread> m_cpuUploadThreads;
+	std::atomic_uint32_t m_cpuUploadFailures{};
+	void QueueCpuSliceUpload(CpuSliceUploadJob&& job);
+	void CpuSliceUploadThreadFunc();
+	void RunCpuSliceUploadJob(CpuSliceUploadJob& job);
+	void StopCpuSliceUploadThreads();
 	// render thread only
 	std::unordered_map<uint64, PendingGamePipelineRecipe> m_pendingGamePipelineRecipes;
+	// pipeline keys differ in registers that do not reach the PSO desc (BOTW: one stream-out pass had 16 keys for 4
+	// distinct PSOs, each built on the render thread in ~1.2 s), so a live or prewarmed PSO with the same desc and
+	// shaders serves the new key instead of a new build
+	struct ContentFingerprintHash
+	{
+		size_t operator()(const std::array<uint8, 32>& value) const { size_t h; memcpy(&h, value.data(), sizeof(h)); return h; }
+	};
+	std::unordered_map<std::array<uint8, 32>, uint64, ContentFingerprintHash> m_gamePipelineKeyByContent;
+	uint64 m_gamePipelineContentReuses{};
+	ID3D12PipelineState* FindGamePipelineByContent(const std::array<uint8, 32>& contentFingerprint, uint64& canonicalKey);
 	struct PrewarmedGamePipeline
 	{
 		uint64 generation{};
@@ -1051,6 +1268,36 @@ private:
 	uint64 m_droppedDrawsLogTimeMs{};
 	uint32 m_droppedDrawsLogLines{};
 	bool m_gamePipelineShaderCodeMissing{};
+	bool m_allowAsyncShaderSkip{}; // async_compile: skip this draw instead of waiting on shader compilation
+	bool m_gamePipelineAsyncPending{};
+
+	// async_compile: a missing game PSO is created on a worker from its recipe while its draws are skipped.
+	// Results come back through m_prewarmedGamePipelines and go live via the recipe promotion path.
+	struct AsyncPipelineJob
+	{
+		uint64 generation{};
+		uint64 pipelineKey{};
+		std::vector<uint8> recipe;
+		Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature;
+	};
+	bool QueueAsyncGamePipeline(uint64 pipelineKey, std::vector<uint8>&& recipe);
+	// render thread: true while pipelineKey is still being created in the background
+	bool IsAsyncGamePipelinePending(uint64 pipelineKey);
+	void DrainAsyncGamePipelineFailures();
+	void StopAsyncPipelineThreads();
+	void AsyncPipelineThreadFunc();
+	std::mutex m_asyncPipelineMutex;
+	std::condition_variable m_asyncPipelineCondition;
+	std::deque<AsyncPipelineJob> m_asyncPipelineJobs;
+	std::vector<uint64> m_asyncPipelineFailedKeys; // worker -> render thread, under m_asyncPipelineMutex
+	std::vector<std::thread> m_asyncPipelineThreads;
+	bool m_asyncPipelineStop{};
+	// render thread only: key -> generation it was queued in
+	std::unordered_map<uint64, uint64> m_asyncPipelinesInFlight;
+	// render thread only: background creation failed, so these are created synchronously to surface the error
+	std::unordered_set<uint64> m_asyncPipelineFailed;
+	std::atomic_uint64_t m_asyncPipelinesCreated{};
+	uint64 m_asyncPipelinesQueued{};
 	std::unordered_set<uint64> m_loggedDrawFailureSignatures;
 	bool ShouldLogDrawFailure(uint64 signature);
 	void LogDroppedDrawSummary();
@@ -1095,6 +1342,9 @@ private:
 #endif
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> m_surfaceCopyRootSignature;
 	std::unordered_map<uint64, Microsoft::WRL::ComPtr<ID3D12PipelineState>> m_surfaceCopyPipelineCache;
+	// compiled once per source; every mode/format pair used to compile both shaders again
+	std::unordered_map<const char*, std::unique_ptr<class RendererShaderD3D12>> m_surfaceCopyShaders;
+	class RendererShaderD3D12* GetSurfaceCopyShader(RendererShader::ShaderType type, const char* source);
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_imguiSrvHeap;
 	uint32 m_imguiDescriptorSize{};
 	uint32 m_imguiDescriptorCapacity{ 512 };
@@ -1106,12 +1356,53 @@ private:
 	std::unordered_map<uint64, ImGuiTextureResource> m_imguiTextures;
 
 	std::array<LatteTextureViewD3D12*, kMaxTextureBindings> m_boundTextures{};
+
+	// Latte-side copy of the last bind queued per unit, so threaded recording skips binds that change nothing
+
+	std::array<LatteTextureView*, kMaxTextureBindings> m_latteBoundTextures{};
 	std::vector<FeedbackScratchCopy> m_feedbackScratchCopies;
 	std::vector<RetainedFeedbackCopy> m_retainedFeedbackCopies;
 	std::vector<D3D12_RESOURCE_BARRIER> m_transitionBarrierScratch;
-	std::vector<uint8> m_uniformVarsScratch;
 	std::vector<const LatteTexture*> m_tableBuildTextureRefs;
 	std::array<TableKeyMemo, (size_t)LatteConst::ShaderType::TotalCount> m_resourceTableKeyMemo{};
+	// table keys kept across draws (recording state); see GetMemoizedTableCacheKey
+	struct StageTableKey
+	{
+		bool valid{};
+		LatteDecompilerShader* shader{};
+		LatteFetchShader* fetchShader{};
+		uint32 descriptorGeneration{};
+		uint64 bindingGeneration{};
+		uint64 registerGeneration{};
+		ID3D12Resource* bufferResource{};
+		uint64 key{};
+		bool cacheable{};
+	};
+	std::array<StageTableKey, (size_t)LatteConst::ShaderType::TotalCount> m_resourceStageKeyCache{};
+	std::array<StageTableKey, (size_t)LatteConst::ShaderType::TotalCount> m_samplerStageKeyCache{};
+	// bumped by changes to bound textures (per stage), uniform buffers (per stage) and vertex buffers
+	std::array<uint64, 3> m_textureBindingGeneration{ 1, 1, 1 };
+	std::array<uint64, (size_t)LatteConst::ShaderType::TotalCount> m_uniformBindingGeneration{};
+	uint64 m_vertexBindingGeneration{ 1 };
+	void BumpTextureBindingGeneration(uint32 hostTextureUnit)
+	{
+		if (hostTextureUnit >= LATTE_CEMU_GS_TEX_UNIT_BASE)
+			++m_textureBindingGeneration[(size_t)LatteConst::ShaderType::Geometry];
+		else if (hostTextureUnit >= LATTE_CEMU_VS_TEX_UNIT_BASE)
+			++m_textureBindingGeneration[(size_t)LatteConst::ShaderType::Vertex];
+		else
+			++m_textureBindingGeneration[(size_t)LatteConst::ShaderType::Pixel];
+	}
+	void BumpAllTableBindingGenerations()
+	{
+		for (auto& generation : m_textureBindingGeneration)
+			++generation;
+		for (auto& generation : m_uniformBindingGeneration)
+			++generation;
+		++m_vertexBindingGeneration;
+	}
+	std::array<uint64, 2> m_tableKeyReuses{}; // resource, sampler
+	std::array<uint64, 2> m_tableKeyBuilds{};
 	std::array<TableKeyMemo, (size_t)LatteConst::ShaderType::TotalCount> m_samplerTableKeyMemo{};
 	uint64 m_tableKeyMemoEpoch{};
 	static constexpr uint32 kGameDrawConstantCount = 25;
@@ -1119,7 +1410,8 @@ private:
 	{
 		LatteDecompilerShader* shader{};
 		uint64 sourceKey{};
-		D3D12_GPU_VIRTUAL_ADDRESS gpuAddress{};
+		std::vector<uint8> data; // built before the Phase 4 split point; empty when the stage has no uniform buffer
+		D3D12_GPU_VIRTUAL_ADDRESS gpuAddress{}; // ring copy of data, valid only within the current command list
 	};
 	std::array<GameUniformUploadCache, (size_t)LatteConst::ShaderType::TotalCount> m_gameUniformUploadCache{};
 	D3D12DescriptorManager::Allocation m_gameStreamoutUavTable;
@@ -1187,6 +1479,12 @@ private:
 
 	bool m_initialized{};
 	bool m_shutdownComplete{};
+	// Phase 4 S2: objects the core detached, freed once no recorded work can reference them (FlushPendingDestroys)
+	std::vector<LatteCachedFBO*> m_pendingFboDestroys;
+	std::vector<LatteTextureView*> m_pendingViewDestroys;
+	std::vector<LatteTexture*> m_pendingTextureDestroys;
+	void FlushPendingDestroys();
+	void ForgetCachedFBO(LatteCachedFBO* cfbo);
 	D3D_FEATURE_LEVEL m_featureLevel{D3D_FEATURE_LEVEL_12_0};
 	D3D_SHADER_MODEL m_shaderModel{D3D_SHADER_MODEL_NONE};
 	D3D12_RESOURCE_BINDING_TIER m_resourceBindingTier{D3D12_RESOURCE_BINDING_TIER_1};

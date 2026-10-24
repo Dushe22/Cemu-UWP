@@ -113,7 +113,7 @@ public:
 	bool CreateBuffer(uint64_t size, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES initialState, Resource& outResource);
 	bool CreateTexture(const D3D12_RESOURCE_DESC& desc, D3D12_RESOURCE_STATES initialState, const D3D12_CLEAR_VALUE* clearValue, Resource& outResource);
 	// committed texture in a CPU-writable heap, filled with WriteToSubresource
-	bool CreateCpuWritableTexture(const D3D12_RESOURCE_DESC& desc, Resource& outResource);
+	bool CreateCpuWritableTexture(const D3D12_RESOURCE_DESC& desc, Resource& outResource, bool cacheCoherentUma);
 	RingReservation AllocateUpload(uint32_t size, uint32_t alignment, uint64_t fenceValue);
 	RingReservation AllocateReadback(uint32_t size, uint32_t alignment, uint64_t fenceValue);
 	void Cleanup(uint64_t completedFence);
@@ -131,7 +131,8 @@ private:
 	Microsoft::WRL::ComPtr<D3D12MA::Allocator> m_allocator;
 	std::unique_ptr<SynchronizedRingAllocator> m_uploadRing;
 	std::unique_ptr<SynchronizedRingAllocator> m_readbackRing;
-	std::vector<uint8_t> m_textureUploadBuffer;
+	std::vector<uint8_t> m_textureUploadBuffer; // keeps its size between uses so growing it never zero-fills again
+	bool m_textureUploadBufferInUse{};
 	uint64_t m_createdDefaultResources{};
 	uint64_t m_createdUploadResources{};
 	uint64_t m_createdReadbackResources{};

@@ -11,6 +11,8 @@ public:
 
 	LatteTextureView(class LatteTexture* texture, sint32 firstMip, sint32 mipCount, sint32 firstSlice, sint32 sliceCount, Latte::E_DIM dim, Latte::E_GX2SURFFMT format, bool registerView = true);
 	virtual ~LatteTextureView();
+	// removes the view from every core list and lookup; the object itself is freed by Renderer::texture_destroyView
+	void Detach();
 
 	void CreateLookupForSubTexture(uint32 mipStart, uint32 sliceStart);
 
@@ -32,6 +34,8 @@ public:
 	// view lookup cache
 	std::vector<uint32> viewLookUpCacheKeys;
 	std::vector<uint32> viewLookUpCacheKeysNoRes;
+private:
+	bool m_detached{};
 };
 
 class LatteTextureViewLookupCache

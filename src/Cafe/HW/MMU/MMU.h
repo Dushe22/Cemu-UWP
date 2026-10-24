@@ -47,6 +47,7 @@ struct MMURange
 	{
 		FLAG_OPTIONAL = (1 << 0), // allocate only on explicit request
 		FLAG_MAP_EARLY = (1 << 1), // map at Cemu launch, normally memory is mapped when a game is loaded
+		FLAG_LAZY_COMMIT = (1 << 2), // UWP: commit pages on first access instead of at map time (host-only access)
 	};
 
 	MMURange(const uint32 baseAddress, const uint32 size, MMU_MEM_AREA_ID areaId, const std::string_view name, MFLAG flags = (MFLAG)0);
@@ -116,6 +117,7 @@ struct MMURange
 	// runtime parameters
 	uint32 size;
 	bool m_isMapped{};
+	bool m_lazyCommit{};
 };
 
 

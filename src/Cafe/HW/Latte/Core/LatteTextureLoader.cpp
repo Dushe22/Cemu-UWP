@@ -2,6 +2,34 @@
 #include "Cafe/HW/Latte/LatteAddrLib/LatteAddrLib.h"
 #include "config/ActiveSettings.h"
 #include "Cafe/CafeSystem.h"
+#if defined(CEMU_UWP)
+#include <bit>
+#include <chrono>
+
+// per-thread totals for the slow texture reload log
+thread_local LatteUwpTextureUploadStats g_uwpTextureUploadStats;
+
+static uint64 UwpHashUploadData(const uint8* data, size_t size)
+{
+	uint64 lanes[4] = { 0x9E3779B97F4A7C15ull, 0xC2B2AE3D27D4EB4Full, 0x165667B19E3779F9ull, 0x27D4EB2F165667C5ull };
+	size_t i = 0;
+	for (; i + 32 <= size; i += 32)
+	{
+		for (int l = 0; l < 4; ++l)
+		{
+			uint64 word;
+			memcpy(&word, data + i + l * 8, 8);
+			lanes[l] = std::rotl(lanes[l] ^ (word * 0x9E3779B97F4A7C15ull), 31) * 0xC2B2AE3D27D4EB4Full;
+		}
+	}
+	uint64 result = size;
+	for (; i < size; ++i)
+		result = (result ^ data[i]) * 0x100000001B3ull;
+	for (uint64 lane : lanes)
+		result = std::rotl(result ^ lane, 27) * 0x9E3779B97F4A7C15ull;
+	return result | 1; // 0 means not uploaded yet
+}
+#endif
 
 //#define BENCHMARK_TEXTURE_DECODING		// if defined, time it takes to decode textures will be measured and logged to log.txt
 
@@ -641,10 +669,16 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	LARGE_INTEGER benchmark_freq;
 	QueryPerformanceCounter(&benchmark_begin);
 #endif
+#if defined(CEMU_UWP)
+	const auto decodeStarted = std::chrono::steady_clock::now();
+#endif
 	if (tex->overwriteInfo.hasFormatOverwrite == false && tex->overwriteInfo.hasResolutionOverwrite == false)
 	{
 		texDecoder->decode(&textureLoader, pixelData);
 	}
+#if defined(CEMU_UWP)
+	g_uwpTextureUploadStats.decodeUs += (uint64)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - decodeStarted).count();
+#endif
 #ifdef BENCHMARK_TEXTURE_DECODING
 	QueryPerformanceCounter(&benchmark_end);
 	QueryPerformanceFrequency(&benchmark_freq);
@@ -680,7 +714,35 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	}
 	// load slice
 	//debug_printf("[Load Slice] Addr: %08x MIP: %02d Slice: %02d Res %04x/%04x Texel Res %04x/%04x Fmt %04x Tm %d\n", textureLoader.physAddress, mipIndex, sliceIndex, textureLoader.width, textureLoader.height, textureLoader.texelCountX, textureLoader.texelCountY, (int)format, tileMode);
+#if defined(CEMU_UWP)
+	// BOTW reloads its 110 MB terrain arrays back and forth while only a few slices change; uploading them
+	// (CPU swizzle on Xbox) took 3.6 s per reload. GPU-modified textures keep the old always-upload behaviour.
+	bool skipUpload = false;
+	if (tex->depth > 1 && !tex->isUpdatedOnGPU && pixelData && imageSize != 0)
+	{
+		const size_t hashCount = (size_t)std::max<uint32>(tex->depth, 1) * std::max<uint32>(tex->mipLevels, 1);
+		const size_t hashIndex = (size_t)sliceIndex * std::max<uint32>(tex->mipLevels, 1) + mipIndex;
+		if (tex->uwpUploadHashes.size() != hashCount)
+			tex->uwpUploadHashes.assign(hashCount, 0);
+		if (hashIndex < hashCount)
+		{
+			const uint64 uploadHash = UwpHashUploadData((const uint8*)pixelData, imageSize);
+			skipUpload = tex->uwpUploadHashes[hashIndex] == uploadHash;
+			tex->uwpUploadHashes[hashIndex] = uploadHash;
+		}
+	}
+	if (skipUpload)
+		++g_uwpTextureUploadStats.skipped;
+	else
+	{
+		const auto uploadStarted = std::chrono::steady_clock::now();
+		LatteTextureLoader_loadTextureDataIntoSlice(tex, textureLoader.width, textureLoader.height, depth, mipLevels, pixelData, sliceIndex, mipIndex, imageSize);
+		g_uwpTextureUploadStats.uploadUs += (uint64)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - uploadStarted).count();
+		++g_uwpTextureUploadStats.uploaded;
+	}
+#else
 	LatteTextureLoader_loadTextureDataIntoSlice(tex, textureLoader.width, textureLoader.height, depth, mipLevels, pixelData, sliceIndex, mipIndex, imageSize);
+#endif
 	// write texture dump
 	if (textureLoader.dump)
 	{
@@ -808,8 +870,8 @@ void LatteTextureLoader_writeReadbackTextureToMemory(LatteTextureDefinition* tex
 		return;
 	}
 	// generic and slow decode loops
-	Latte::E_HWSURFFMT hwFormat = Latte::GetHWFormat(textureData->format);
-	if (hwFormat == Latte::E_HWSURFFMT::HWFMT_8_8_8_8)
+	Latte::E_HWFMT hwFormat = Latte::GetHWFormat(textureData->format);
+	if (hwFormat == Latte::E_HWFMT::HWFMT_8_8_8_8)
 	{
 		// used in Bayonetta 2
 		for (sint32 y = 0; y < textureLoader.height; y++)
@@ -823,7 +885,7 @@ void LatteTextureLoader_writeReadbackTextureToMemory(LatteTextureDefinition* tex
 			}
 		}
 	}
-	else if (hwFormat == Latte::E_HWSURFFMT::HWFMT_32_FLOAT)
+	else if (hwFormat == Latte::E_HWFMT::HWFMT_32_FLOAT)
 	{
 		// required by Wind Waker for direct access to depth buffer
 		// Bayonetta 2 also uses this but it converts the depth buffer to a color texture first

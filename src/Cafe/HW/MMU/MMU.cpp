@@ -7,6 +7,83 @@
 
 #include <stdexcept>
 
+#if defined(CEMU_UWP)
+#include <Windows.h>
+#include <array>
+#include <atomic>
+#include <mutex>
+
+namespace
+{
+// Pages of a lazy range are committed by a vectored exception handler on first access, 64 KiB at a
+// time. Only valid for areas that host code alone touches: an OS call (ReadFile, recv) into an
+// uncommitted page fails instead of raising an exception.
+constexpr uintptr_t kLazyCommitChunk = 64 * 1024;
+struct LazyCommitRange
+{
+	std::atomic<uintptr_t> begin{ 0 };
+	std::atomic<uintptr_t> end{ 0 };
+};
+std::array<LazyCommitRange, 4> s_lazyCommitRanges;
+std::mutex s_lazyCommitMutex;
+PVOID s_lazyCommitHandler{};
+std::atomic_uint64_t s_lazyCommitChunks{ 0 };
+
+LONG CALLBACK LazyCommitExceptionHandler(EXCEPTION_POINTERS* info)
+{
+	const EXCEPTION_RECORD* record = info->ExceptionRecord;
+	if (record->ExceptionCode != EXCEPTION_ACCESS_VIOLATION || record->NumberParameters < 2)
+		return EXCEPTION_CONTINUE_SEARCH;
+	const uintptr_t address = record->ExceptionInformation[1];
+	for (const auto& range : s_lazyCommitRanges)
+	{
+		const uintptr_t begin = range.begin.load(std::memory_order_acquire);
+		const uintptr_t end = range.end.load(std::memory_order_acquire);
+		if (address < begin || address >= end)
+			continue;
+		const uintptr_t chunk = begin + ((address - begin) & ~(kLazyCommitChunk - 1));
+		const size_t chunkSize = (size_t)std::min<uintptr_t>(kLazyCommitChunk, end - chunk);
+		// a second thread faulting on the same chunk just commits it again, which is harmless
+		if (!VirtualAlloc(reinterpret_cast<void*>(chunk), chunkSize, MEM_COMMIT, PAGE_READWRITE))
+			return EXCEPTION_CONTINUE_SEARCH;
+		s_lazyCommitChunks.fetch_add(1, std::memory_order_relaxed);
+		return EXCEPTION_CONTINUE_EXECUTION;
+	}
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+bool RegisterLazyCommitRange(uint8* base, size_t size)
+{
+	std::scoped_lock lock(s_lazyCommitMutex);
+	if (!s_lazyCommitHandler)
+		s_lazyCommitHandler = AddVectoredExceptionHandler(1, LazyCommitExceptionHandler);
+	if (!s_lazyCommitHandler)
+		return false;
+	for (auto& range : s_lazyCommitRanges)
+	{
+		if (range.end.load(std::memory_order_relaxed) != 0)
+			continue;
+		range.begin.store(reinterpret_cast<uintptr_t>(base), std::memory_order_release);
+		range.end.store(reinterpret_cast<uintptr_t>(base) + size, std::memory_order_release);
+		return true;
+	}
+	return false;
+}
+
+void UnregisterLazyCommitRange(uint8* base)
+{
+	std::scoped_lock lock(s_lazyCommitMutex);
+	for (auto& range : s_lazyCommitRanges)
+	{
+		if (range.begin.load(std::memory_order_relaxed) != reinterpret_cast<uintptr_t>(base))
+			continue;
+		range.end.store(0, std::memory_order_release);
+		range.begin.store(0, std::memory_order_release);
+	}
+}
+}
+#endif
+
 uint8* memory_base = NULL; // base address of the reserved 4GB space
 uint8* memory_elfCodeArena = NULL;
 
@@ -91,6 +168,16 @@ MMURange::MMURange(const uint32 baseAddress, const uint32 size, MMU_MEM_AREA_ID 
 void MMURange::mapMem()
 {
 	cemu_assert_debug(!m_isMapped);
+#if defined(CEMU_UWP)
+	m_lazyCommit = false;
+	if ((flags & MFLAG::FLAG_LAZY_COMMIT) != 0 && RegisterLazyCommitRange(memory_base + baseAddress, size))
+	{
+		cemuLog_log(LogType::Force, "UWP: {} ({} MB) is committed on first access", name, size / (1024 * 1024));
+		m_lazyCommit = true;
+		m_isMapped = true;
+		return;
+	}
+#endif
 	if (MemMapper::AllocateMemory(memory_base + baseAddress, size, MemMapper::PAGE_PERMISSION::P_RW, true) == nullptr)
 	{
 		std::string errorMsg = _tr("Unable to allocate {} memory", name);
@@ -108,6 +195,13 @@ void MMURange::mapMem()
 
 void MMURange::unmapMem()
 {
+#if defined(CEMU_UWP)
+	if (m_lazyCommit)
+	{
+		UnregisterLazyCommitRange(memory_base + baseAddress);
+		m_lazyCommit = false;
+	}
+#endif
     MemMapper::FreeMemory(memory_base + baseAddress, size, true);
 	m_isMapped = false;
 }
@@ -115,14 +209,14 @@ void MMURange::unmapMem()
 MMURange mmuRange_LOW0					{ 0x00010000, 0x000F0000, MMU_MEM_AREA_ID::CODE_LOW0, "CODE_LOW0" }; // code cave (Cemuhook)
 MMURange mmuRange_TRAMPOLINE_AREA		{ 0x00E00000, 0x00200000, MMU_MEM_AREA_ID::CODE_TRAMPOLINE, "TRAMPOLINE_AREA" }; // code area for trampolines and imports
 MMURange mmuRange_CODECAVE				{ 0x01800000, 0x00400000, MMU_MEM_AREA_ID::CODE_CAVE, "CODECAVE" }; // code cave area (4MiB)
-MMURange mmuRange_TEXT_AREA				{ 0x02000000, 0x0C000000, MMU_MEM_AREA_ID::CODE_MAIN, "TEXT_AREA" }; // module text sections go here (0x02000000 to 0x10000000, 224MiB)
+MMURange mmuRange_TEXT_AREA				{ 0x02000000, 0x0C000000, MMU_MEM_AREA_ID::CODE_MAIN, "TEXT_AREA", MMURange::MFLAG::FLAG_LAZY_COMMIT }; // module text sections go here (0x02000000 to 0x10000000, 224MiB)
 MMURange mmuRange_CEMU_AREA				{ 0x0E000000, 0x02000000, MMU_MEM_AREA_ID::CEMU_PRIVATE, "CEMU_AREA", MMURange::MFLAG::FLAG_MAP_EARLY }; // Cemu-only, 32MiB. Should be allocated early for SysAllocator
 MMURange mmuRange_MEM2					{ 0x10000000, 0x40000000, MMU_MEM_AREA_ID::MEM2_DATA, "MEM2" }; // main memory area (1GB)
 MMURange mmuRange_OVERLAY_AREA			{ 0xA0000000, 0x1C000000, MMU_MEM_AREA_ID::OVERLAY, "OVERLAY_AREA", MMURange::MFLAG::FLAG_OPTIONAL }; // has to be requested, 448MiB
 MMURange mmuRange_FGBUCKET				{ 0xE0000000, 0x04000000, MMU_MEM_AREA_ID::FGBUCKET, "FGBUCKET" }; // foreground bucket (64MiB)
-MMURange mmuRange_TILINGAPERTURE		{ 0xE8000000, 0x02000000, MMU_MEM_AREA_ID::TILING_APERATURE, "TILINGAPERTURE" }; // tiling aperture
+MMURange mmuRange_TILINGAPERTURE		{ 0xE8000000, 0x02000000, MMU_MEM_AREA_ID::TILING_APERATURE, "TILINGAPERTURE", MMURange::MFLAG::FLAG_LAZY_COMMIT }; // tiling aperture
 MMURange mmuRange_MEM1					{ 0xF4000000, 0x02000000, MMU_MEM_AREA_ID::MEM1, "MEM1" }; // 32MiB
-MMURange mmuRange_RPLLOADER				{ 0xF6000000, 0x02000000, MMU_MEM_AREA_ID::RPLLOADER, "RPLLOADER_AREA" }; // shared with RPLLoader
+MMURange mmuRange_RPLLOADER				{ 0xF6000000, 0x02000000, MMU_MEM_AREA_ID::RPLLOADER, "RPLLOADER_AREA", MMURange::MFLAG::FLAG_LAZY_COMMIT }; // shared with RPLLoader
 MMURange mmuRange_SHARED_AREA			{ 0xF8000000, 0x02000000, MMU_MEM_AREA_ID::SHAREDDATA, "SHARED_AREA", MMURange::MFLAG::FLAG_MAP_EARLY }; // 32MiB, Cemuhook accesses this memory region at boot
 MMURange mmuRange_CORE0_LC				{ 0xFFC00000, 0x00005000, MMU_MEM_AREA_ID::CPU_LC0, "CORE0_LC" }; // locked L2 cache of core 0
 MMURange mmuRange_CORE1_LC				{ 0xFFC40000, 0x00005000, MMU_MEM_AREA_ID::CPU_LC1, "CORE1_LC" }; // locked L2 cache of core 1

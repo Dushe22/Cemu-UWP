@@ -6,6 +6,9 @@
 #endif
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/cpu_features.h"
+#if defined(CEMU_UWP)
+#include "uwp/UwpMemoryBudgetService.h"
+#endif
 
 std::unordered_set<LatteTexture*> g_allTextures;
 
@@ -25,7 +28,7 @@ void LatteTC_UnregisterTexture(LatteTexture* tex)
 }
 
 // sample few uint64s uniformly over memory range
-uint32 _quickStochasticHash(void* texData, uint32 memRange)
+uint32 _quickStochasticHash(void* texData, uint32 memRange, bool is16ByteFormat)
 {
 	uint64* texDataU64 = (uint64*)texData;
 
@@ -33,11 +36,25 @@ uint32 _quickStochasticHash(void* texData, uint32 memRange)
 	memRange /= sizeof(uint64);
 
 	uint32 memStep = memRange / 37; // use prime here to avoid memStep aligning nicely with pitch of texture, leading to sampling only along the border of a texture
-	for (sint32 i = 0; i < 37; i++)
+
+	if (!is16ByteFormat)
 	{
-		hashVal += *texDataU64;
-		hashVal = (hashVal << 3) | (hashVal >> 61);
-		texDataU64 += memStep;
+		for (sint32 i = 0; i < 37; i++)
+		{
+			hashVal += *texDataU64;
+			hashVal = (hashVal << 3) | (hashVal >> 61);
+			texDataU64 += memStep;
+		}
+	}
+	else
+	{
+		for (sint32 i = 0; i < 37; i++)
+		{
+			hashVal += *texDataU64 ^ *(texDataU64 + 1); 
+			hashVal = (hashVal << 3) | (hashVal >> 61);
+			texDataU64 += memStep; 
+		}
+
 	}
 	return (uint32)hashVal ^ (uint32)(hashVal >> 32);
 }
@@ -87,7 +104,12 @@ uint32 LatteTexture_CalculateTextureDataHash(LatteTexture* hostTexture)
 		}
 		else
 		{
-			hashVal = _quickStochasticHash(texDataU32, memRange);
+			bool is16ByteFormat = (hostTexture->format == Latte::E_GX2SURFFMT::BC2_UNORM || 
+			                       hostTexture->format == Latte::E_GX2SURFFMT::BC2_SRGB || 
+			                       hostTexture->format == Latte::E_GX2SURFFMT::BC3_UNORM || 
+			                       hostTexture->format == Latte::E_GX2SURFFMT::BC3_SRGB);
+
+			hashVal = _quickStochasticHash(texDataU32, memRange, is16ByteFormat);
 		}
 		return hashVal;
 	}
@@ -215,7 +237,7 @@ bool LatteTC_HasTextureChanged(LatteTexture* hostTexture, bool force)
 		return false;
 	hostTexture->lastDataUpdateFrameCounter = LatteGPUState.frameCounter;
 	// we assume that certain texture properties indicate that the texture will never be written by the CPU
-	if (hostTexture->width == 1280 && hostTexture->format != Latte::E_GX2SURFFMT::R8_UNORM && force == false)
+	if (hostTexture->width == 1280 && hostTexture->format != Latte::E_GX2SURFFMT::R8_UNORM && hostTexture->format != Latte::E_GX2SURFFMT::BC3_UNORM && force == false)
 	{
 		// todo - remove this or find a better way to handle excluded texture invalidation checks (maybe via game profile?)
 		return false;
@@ -307,6 +329,16 @@ bool LatteTC_IsTextureDataOverwritten(LatteTexture* texture)
 	return true;
 }
 
+// Phase 4: the core forgets the view now; the renderer frees it once no queued draw still references it
+static void LatteTexture_DestroyView(LatteTextureView* view)
+{
+	view->Detach();
+	if (g_renderer)
+		g_renderer->texture_destroyView(view);
+	else
+		delete view;
+}
+
 void LatteTexture_Delete(LatteTexture* texture)
 {
 	LatteTC_UnregisterTexture(texture);
@@ -317,7 +349,7 @@ void LatteTexture_Delete(LatteTexture* texture)
 	LatteTexture_DeleteTextureRelations(texture);
 	// delete views
 	while (!texture->views.empty())
-		delete texture->views[0];
+		LatteTexture_DestroyView(texture->views[0]);
 	cemu_assert_debug(texture->views.empty());
 	cemu_assert_debug(texture->baseView == nullptr);
 	// free data overlap tracking
@@ -330,13 +362,22 @@ void LatteTexture_Delete(LatteTexture* texture)
 		delete[] texture->sliceMipInfo;
 		texture->sliceMipInfo = nullptr;
 	}
-	delete texture;
+	texture->Detach();
+	if (g_renderer)
+		g_renderer->texture_destroy(texture);
+	else
+		delete texture;
 }
 
 /*
  * Checks if the texture can be dropped from the cache and if yes, delete it
  * Returns true if the texture was deleted
  */
+// RAM-only textures idle this long are freed; UWP keeps them longer while memory is plentiful,
+// since the memory pressure trim evicts them anyway once usage climbs
+static uint32 s_ramTextureIdleMs = 120 * 1000;
+static uint32 s_ramTextureIdleFrames = 2000;
+
 bool LatteTC_CleanupCheckTexture(LatteTexture* texture, uint32 currentTick)
 {
 	uint32 currentFrameCount = LatteGPUState.frameCounter;
@@ -345,7 +386,7 @@ bool LatteTC_CleanupCheckTexture(LatteTexture* texture, uint32 currentTick)
 	if( !texture->isUpdatedOnGPU )
 	{
 		// RAM-only textures are safe to be deleted since we can always restore them from RAM
-		if( ticksSinceLastAccess >= (120*1000) && framesSinceLastAccess >= 2000 )
+		if( ticksSinceLastAccess >= s_ramTextureIdleMs && framesSinceLastAccess >= s_ramTextureIdleFrames )
 		{
 			LatteTexture_Delete(texture);
 			return true;
@@ -368,7 +409,7 @@ bool LatteTC_CleanupCheckTexture(LatteTexture* texture, uint32 currentTick)
 			LatteTextureView* view = texture->views[0];
 			if (view == texture->baseView)
 				view = texture->views[1];
-			delete view;
+			LatteTexture_DestroyView(view);
 		}
 	}
 	return false;
@@ -384,6 +425,13 @@ void LatteTC_CleanupUnusedTextures()
 {
 #if defined(CEMU_UWP)
 	LatteUwpHitchScope textureCleanupScope(LatteUwpHitchOp::TextureCleanup);
+	{
+		const auto memory = CemuUwp::MemoryBudgetService::GetLatestSnapshot();
+		const bool plentiful = memory.enabled && memory.limitBytes != 0 &&
+			memory.pressure == CemuUwp::MemoryBudgetService::Pressure::Normal && memory.usageBytes < memory.limitBytes / 10 * 7;
+		s_ramTextureIdleMs = plentiful ? 600 * 1000 : 120 * 1000;
+		s_ramTextureIdleFrames = plentiful ? 18000 : 2000;
+	}
 #endif
 	static size_t currentScanIndex = 0;
 	uint32 currentTick = GetTickCount();

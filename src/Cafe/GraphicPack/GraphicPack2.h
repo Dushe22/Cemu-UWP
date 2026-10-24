@@ -166,6 +166,8 @@ public:
 
 	// shaders
 	void LoadShaders();
+	// shader replacements or output/upscaling shaders next to rules.txt
+	bool HasShaderFiles() const;
 	bool HasShaders() const;
 	const std::vector<CustomShader>& GetCustomShaders() const { return m_custom_shaders; }
 	ShaderAvailability GetShaderAvailability(RendererAPI rendererApi) const;

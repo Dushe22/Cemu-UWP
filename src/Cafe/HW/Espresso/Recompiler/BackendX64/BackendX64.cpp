@@ -847,14 +847,46 @@ bool PPCRecompilerX64Gen_imlInstruction_r_r_r(PPCRecFunction_t* PPCRecFunction, 
 			x64Gen_cdq(x64GenContext);
 		else
 			x64Gen_xor_reg64Low32_reg64Low32(x64GenContext, X86_REG_EDX, X86_REG_EDX);
-		// make sure we avoid division by zero
+		// handle PPC division edge cases without raising x86 #DE
+		bool isSignedDivide = imlInstruction->operation == PPCREC_IML_OP_DIVIDE_SIGNED;
 		x64Gen_test_reg64Low32_reg64Low32(x64GenContext, REG_RESV_TEMP, REG_RESV_TEMP);
-		x64Gen_jmpc_near(x64GenContext, X86_CONDITION_EQUAL, 3);
+		sint32 jumpDivisorZero = x64GenContext->emitter->GetWriteIndex();
+		x64Gen_jmpc_near(x64GenContext, X86_CONDITION_EQUAL, 0);
+		sint32 jumpOverflow = 0;
+		if( isSignedDivide )
+		{
+			x64Gen_cmp_reg64Low32_imm32(x64GenContext, REG_RESV_TEMP, -1);
+			sint32 jumpNoOverflow = x64GenContext->emitter->GetWriteIndex();
+			x64Gen_jmpc_near(x64GenContext, X86_CONDITION_NOT_EQUAL, 0);
+			x64Gen_cmp_reg64Low32_imm32(x64GenContext, X86_REG_EAX, (sint32)0x80000000);
+			jumpOverflow = x64GenContext->emitter->GetWriteIndex();
+			x64Gen_jmpc_near(x64GenContext, X86_CONDITION_EQUAL, 0);
+			PPCRecompilerX64Gen_redirectRelativeJump(x64GenContext, jumpNoOverflow, x64GenContext->emitter->GetWriteIndex());
+		}
 		// divide
-		if( imlInstruction->operation == PPCREC_IML_OP_DIVIDE_SIGNED )
+		if( isSignedDivide )
 			x64Gen_idiv_reg64Low32(x64GenContext, REG_RESV_TEMP);
 		else
 			x64Gen_div_reg64Low32(x64GenContext, REG_RESV_TEMP);
+		sint32 jumpEnd = x64GenContext->emitter->GetWriteIndex();
+		x64Gen_jmpc_near(x64GenContext, X86_CONDITION_NONE, 0);
+		// divisor is zero: divw yields the dividend sign, divwu yields zero
+		PPCRecompilerX64Gen_redirectRelativeJump(x64GenContext, jumpDivisorZero, x64GenContext->emitter->GetWriteIndex());
+		if( isSignedDivide )
+		{
+			x64Gen_sar_reg64Low32_imm8(x64GenContext, X86_REG_EAX, 31);
+			sint32 jumpEndFromZero = x64GenContext->emitter->GetWriteIndex();
+			x64Gen_jmpc_near(x64GenContext, X86_CONDITION_NONE, 0);
+			// signed overflow yields -1 for divw
+			PPCRecompilerX64Gen_redirectRelativeJump(x64GenContext, jumpOverflow, x64GenContext->emitter->GetWriteIndex());
+			x64Gen_mov_reg64Low32_imm32(x64GenContext, X86_REG_EAX, 0xFFFFFFFF);
+			PPCRecompilerX64Gen_redirectRelativeJump(x64GenContext, jumpEndFromZero, x64GenContext->emitter->GetWriteIndex());
+		}
+		else
+		{
+			x64Gen_xor_reg64Low32_reg64Low32(x64GenContext, X86_REG_EAX, X86_REG_EAX);
+		}
+		PPCRecompilerX64Gen_redirectRelativeJump(x64GenContext, jumpEnd, x64GenContext->emitter->GetWriteIndex());
 		// result of division is now stored in EAX, move it to result register
 		if( rRegResult != X86_REG_EAX )
 			x64Gen_mov_reg64_reg64(x64GenContext, rRegResult, X86_REG_EAX);
@@ -1316,6 +1348,49 @@ constexpr size_t kUwpCodePageSize = 4 * 1024;
 uint8* s_uwpWritableCodeBlock{};
 size_t s_uwpWritableCodeBlockSize{};
 size_t s_uwpWritableCodeBlockUsed{};
+// Dual-mapped slabs: one section mapped RW for the emitter and RX for execution, so functions can be
+// packed back to back. Without it each function needs its own pages (RW -> RX), and most of every
+// 4 KiB page is wasted on small functions. Falls back to the page-per-function scheme if refused.
+constexpr size_t kUwpPackedCodeAlignment = 16;
+// off: on the console memcpy into the writable view faulted (read of 0xFFFFFFFFFFFFFFFF in
+// PPCRecompilerX86_commitExecutableMemory, 4 crashes on 22/10/2026) for reasons not yet understood
+bool s_uwpDualMappingDisabled{ true };
+uint8* s_uwpPackedWritable{};
+uint8* s_uwpPackedExecutable{};
+size_t s_uwpPackedSize{};
+size_t s_uwpPackedUsed{};
+std::atomic_uint64_t s_uwpPackedFunctions{ 0 };
+std::atomic_uint64_t s_uwpPackedBytes{ 0 };
+
+bool UwpAllocatePackedCodeSlab(size_t minimumSize)
+{
+	const size_t slabSize = std::max(kUwpCodeMemoryBlockDefaultSize, (minimumSize + kUwpCodePageSize - 1) & ~(kUwpCodePageSize - 1));
+	HANDLE section = CreateFileMappingFromApp(INVALID_HANDLE_VALUE, nullptr, PAGE_EXECUTE_READWRITE, slabSize, nullptr);
+	if (!section)
+	{
+		cemuLog_log(LogType::Force, "UWP recompiler: dual-mapped code section unavailable (error {}), using one page set per function", GetLastError());
+		return false;
+	}
+	void* writable = MapViewOfFileFromApp(section, FILE_MAP_READ | FILE_MAP_WRITE, 0, slabSize);
+	void* executable = writable ? MapViewOfFileFromApp(section, FILE_MAP_READ | FILE_MAP_EXECUTE, 0, slabSize) : nullptr;
+	const DWORD error = GetLastError();
+	// the views keep the section alive
+	CloseHandle(section);
+	if (!writable || !executable)
+	{
+		if (writable)
+			UnmapViewOfFile(writable);
+		cemuLog_log(LogType::Force, "UWP recompiler: executable code view refused (error {}), using one page set per function", error);
+		return false;
+	}
+	if (!s_uwpPackedWritable)
+		cemuLog_log(LogType::Force, "UWP recompiler: packing functions into dual-mapped {} KiB code slabs", slabSize / 1024);
+	s_uwpPackedWritable = static_cast<uint8*>(writable);
+	s_uwpPackedExecutable = static_cast<uint8*>(executable);
+	s_uwpPackedSize = slabSize;
+	s_uwpPackedUsed = 0;
+	return true;
+}
 #if defined(CEMU_DEBUG_ASSERT)
 std::atomic_uint64_t s_uwpRecompilerSlabsAllocated{ 0 };
 std::atomic_uint64_t s_uwpRecompilerReservedBytes{ 0 };
@@ -1333,6 +1408,7 @@ struct ExecutableMemoryAllocation
 	uint8* executable{};
 	uint8* writable{};
 	size_t reservedSize{};
+	bool dualMapped{}; // writable and executable are separate views of the same memory
 };
 
 ExecutableMemoryAllocation PPCRecompilerX86_allocateExecutableMemory(sint32 size)
@@ -1347,6 +1423,25 @@ ExecutableMemoryAllocation PPCRecompilerX86_allocateExecutableMemory(sint32 size
 	{
 		return (value + alignment - 1) & ~(alignment - 1);
 	};
+	if (!s_uwpDualMappingDisabled)
+	{
+		const size_t packedSize = alignUp(requestedSize, kUwpPackedCodeAlignment);
+		if (!s_uwpPackedWritable || packedSize > s_uwpPackedSize - s_uwpPackedUsed)
+		{
+			// the rest of a full slab stays mapped; it already holds published functions
+			if (!UwpAllocatePackedCodeSlab(packedSize))
+				s_uwpDualMappingDisabled = true;
+		}
+		if (!s_uwpDualMappingDisabled)
+		{
+			const size_t offset = s_uwpPackedUsed;
+			s_uwpPackedUsed += packedSize;
+			s_uwpPackedFunctions.fetch_add(1, std::memory_order_relaxed);
+			s_uwpPackedBytes.fetch_add(packedSize, std::memory_order_relaxed);
+			return { s_uwpPackedExecutable + offset, s_uwpPackedWritable + offset, packedSize, true };
+		}
+	}
+
 	const size_t allocationSize = alignUp(requestedSize, kUwpCodePageSize);
 
 	if (!s_uwpWritableCodeBlock ||
@@ -1410,7 +1505,7 @@ void PPCRecompilerX86_commitExecutableMemory(const ExecutableMemoryAllocation& a
 	memcpy(allocation.writable, codeBuffer.data(), codeBuffer.size_bytes());
 #if defined(CEMU_UWP)
 	DWORD oldProtect = 0;
-	if (!VirtualProtectFromApp(allocation.executable, allocation.reservedSize, PAGE_EXECUTE_READ, &oldProtect))
+	if (!allocation.dualMapped && !VirtualProtectFromApp(allocation.executable, allocation.reservedSize, PAGE_EXECUTE_READ, &oldProtect))
 	{
 		const DWORD error = GetLastError();
 		const auto message = fmt::format("failed to mark UWP recompiler memory executable. VirtualProtectFromApp error: {}", error);
@@ -1618,6 +1713,8 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 	{
 		return false;
 	}
+	for (auto& emitColdCode : x64GenContext.m_coldCode)
+		emitColdCode(&x64GenContext);
 	// allocate executable memory
 	const auto executableAllocation = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
 	uint8* executableMemory = executableAllocation.executable;
@@ -1674,40 +1771,24 @@ bool PPCRecompiler_generateX64Code(PPCRecFunction_t* PPCRecFunction, ppcImlGenCo
 	return true;
 }
 
+static void* s_enterRecompilerCodeExit = nullptr;
+
 void PPCRecompilerX64Gen_generateEnterRecompilerCode()
 {
 	x64GenContext_t x64GenContext{};
 
-	// start of recompiler entry function (15 regs)
-	x64Gen_push_reg64(&x64GenContext, X86_REG_RAX);
-	x64Gen_push_reg64(&x64GenContext, X86_REG_RCX);
-	x64Gen_push_reg64(&x64GenContext, X86_REG_RDX);
+	// start of recompiler entry function
 	x64Gen_push_reg64(&x64GenContext, X86_REG_RBX);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_RBP);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_RDI);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_RSI);
-	x64Gen_push_reg64(&x64GenContext, X86_REG_R8);
-	x64Gen_push_reg64(&x64GenContext, X86_REG_R9);
-	x64Gen_push_reg64(&x64GenContext, X86_REG_R10);
-	x64Gen_push_reg64(&x64GenContext, X86_REG_R11);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_R12);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_R13);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_R14);
 	x64Gen_push_reg64(&x64GenContext, X86_REG_R15);
-
-	// 000000007775EF04 | E8 00 00 00 00                      call +0x00
-	x64Gen_writeU8(&x64GenContext, 0xE8);
-	x64Gen_writeU8(&x64GenContext, 0x00);
-	x64Gen_writeU8(&x64GenContext, 0x00);
-	x64Gen_writeU8(&x64GenContext, 0x00);
-	x64Gen_writeU8(&x64GenContext, 0x00);
-	//000000007775EF09 | 48 83 04 24 05                       add qword ptr ss:[rsp],5
-	x64Gen_writeU8(&x64GenContext, 0x48);
-	x64Gen_writeU8(&x64GenContext, 0x83);
-	x64Gen_writeU8(&x64GenContext, 0x04);
-	x64Gen_writeU8(&x64GenContext, 0x24);
-	uint32 jmpPatchOffset = x64GenContext.emitter->GetWriteIndex();
-	x64Gen_writeU8(&x64GenContext, 0); // skip the distance until after the JMP
+	x64Gen_sub_reg64_imm32(&x64GenContext, X86_REG_RSP, 8 + 16 * 10 + 8);
+	for (sint32 i = 0; i < 10; i++)
+		x64Gen_movupd_memReg128_xmmReg(&x64GenContext, 6 + i, X86_REG_ESP, 8 + 16 * i);
 	x64Emit_mov_mem64_reg64(&x64GenContext, X86_REG_RDX, offsetof(PPCInterpreter_t, rspTemp), X86_REG_RSP);
 
 	// MOV RSP, RDX (ppc interpreter instance)
@@ -1720,24 +1801,19 @@ void PPCRecompilerX64Gen_generateEnterRecompilerCode()
 	//JMP recFunc
 	x64Gen_jmp_reg64(&x64GenContext, X86_REG_RCX); // call argument 1
 
-	x64GenContext.emitter->GetBuffer()[jmpPatchOffset] = (x64GenContext.emitter->GetWriteIndex() -(jmpPatchOffset-4));
-
+	uint32 exitOffset = x64GenContext.emitter->GetWriteIndex();
 	//recompilerExit1:
+	for (sint32 i = 0; i < 10; i++)
+		x64Gen_movupd_xmmReg_memReg128(&x64GenContext, 6 + i, X86_REG_ESP, 8 + 16 * i);
+	x64Gen_add_reg64_imm32(&x64GenContext, X86_REG_RSP, 8 + 16 * 10 + 8);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_R15);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_R14);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_R13);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_R12);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_R11);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_R10);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_R9);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_R8);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_RSI);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_RDI);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_RBP);
 	x64Gen_pop_reg64(&x64GenContext, X86_REG_RBX);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_RDX);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_RCX);
-	x64Gen_pop_reg64(&x64GenContext, X86_REG_RAX);
 	// RET
 	x64Gen_ret(&x64GenContext);
 
@@ -1746,6 +1822,7 @@ void PPCRecompilerX64Gen_generateEnterRecompilerCode()
 	// copy code to executable memory
 	PPCRecompilerX86_commitExecutableMemory(executableAllocation, x64GenContext.emitter->GetBuffer());
 	PPCRecompiler_enterRecompilerCode = (void ATTR_MS_ABI (*)(uint64,uint64))executableMemory;
+	s_enterRecompilerCodeExit = executableMemory + exitOffset;
 }
 
 
@@ -1758,8 +1835,9 @@ void* PPCRecompilerX64Gen_generateLeaveRecompilerCode()
 	x64Emit_mov_mem32_reg32(&x64GenContext, REG_RESV_HCPU, offsetof(PPCInterpreter_t, instructionPointer), X86_REG_EDX);
 	// MOV RSP, [hCPU->rspTemp]
 	x64Emit_mov_reg64_mem64(&x64GenContext, X86_REG_RSP, REG_RESV_HCPU, offsetof(PPCInterpreter_t, rspTemp));
-	// RET
-	x64Gen_ret(&x64GenContext);
+	// JMP recompilerExit1
+	x64Gen_mov_reg64_imm64(&x64GenContext, X86_REG_RAX, (uint64)s_enterRecompilerCodeExit);
+	x64Gen_jmp_reg64(&x64GenContext, X86_REG_RAX);
 
 	const auto executableAllocation = PPCRecompilerX86_allocateExecutableMemory(x64GenContext.emitter->GetBuffer().size_bytes());
 	uint8* executableMemory = executableAllocation.executable;

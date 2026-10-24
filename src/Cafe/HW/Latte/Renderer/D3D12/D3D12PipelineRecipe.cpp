@@ -700,6 +700,7 @@ OwnedRecipe& OwnedRecipe::operator=(OwnedRecipe&& other) noexcept
 	geometryShader = std::move(other.geometryShader);
 	pixelShader = std::move(other.pixelShader);
 	fingerprint = other.fingerprint;
+	contentFingerprint = other.contentFingerprint;
 #if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
 	hasIndependentDepthStencil = other.hasIndependentDepthStencil;
 	independentDepthStencil = other.independentDepthStencil;
@@ -708,6 +709,7 @@ OwnedRecipe& OwnedRecipe::operator=(OwnedRecipe&& other) noexcept
 	other.pipelineKey = 0;
 	other.desc = {};
 	other.fingerprint = {};
+	other.contentFingerprint = {};
 #if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
 	other.hasIndependentDepthStencil = false;
 	other.independentDepthStencil = {};
@@ -785,6 +787,9 @@ Status Serialize(std::uint64_t pipelineKey,
 		Fingerprint payloadChecksum{};
 		if (!ComputeSha256(payload, payloadChecksum))
 			return Status::InvalidArgument;
+		Fingerprint contentFingerprint{};
+		if (!ComputeSha256(std::span<const std::uint8_t>(payload).subspan(sizeof(std::uint64_t)), contentFingerprint))
+			return Status::InvalidArgument;
 
 		Serialized built;
 		built.bytes.reserve(kHeaderBytes + payload.size());
@@ -799,6 +804,7 @@ Status Serialize(std::uint64_t pipelineKey,
 		recordWriter.Bytes(payload.data(), payload.size());
 		if (built.bytes.size() > kMaxRecordBytes || !ComputeSha256(built.bytes, built.fingerprint))
 			return Status::SizeLimitExceeded;
+		built.contentFingerprint = contentFingerprint;
 		output = std::move(built);
 		return Status::Success;
 	}
@@ -895,7 +901,8 @@ Status Decode(std::span<const std::uint8_t> bytes, OwnedRecipe& output)
 				return independentStatus;
 		}
 #endif
-		if (!ComputeSha256(bytes, decoded.fingerprint))
+		if (!ComputeSha256(bytes, decoded.fingerprint) ||
+			!ComputeSha256(payload.subspan(sizeof(std::uint64_t)), decoded.contentFingerprint))
 			return Status::InvalidArgument;
 		output = std::move(decoded);
 		return Status::Success;

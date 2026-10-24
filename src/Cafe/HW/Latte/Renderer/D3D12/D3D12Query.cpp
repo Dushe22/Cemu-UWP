@@ -51,6 +51,16 @@ void LatteQueryObjectD3D12::retireFragments()
 
 bool LatteQueryObjectD3D12::getResult(uint64& numSamplesPassed)
 {
+	if (m_renderer && m_renderer->ShouldQueueRecording())
+	{
+		// not published yet: the core polls again after its next occlusionQuery_updateState
+		numSamplesPassed = 0;
+		if (!m_resultPublished.load(std::memory_order_acquire))
+			return false;
+		numSamplesPassed = m_publishedResult;
+		return true;
+	}
+	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
 	numSamplesPassed = 0;
 	if (!m_queryEnded)
 		return false;
@@ -151,9 +161,27 @@ void LatteQueryObjectD3D12::handleFinishedFragments()
 		m_renderer->ReleaseOcclusionQuerySlot({ fragment.pageIndex, fragment.queryIndex });
 		m_fragments.erase(m_fragments.begin());
 	}
+	if (m_queryEnded && m_fragments.empty() && !m_resultPublished.load(std::memory_order_relaxed))
+	{
+		m_publishedResult = m_accumulatedSum;
+		m_resultPublished.store(true, std::memory_order_release);
+	}
 }
 
+// the core-visible queryEnded flag changes on the caller's thread; the command-list work may be queued (Phase 4 S3)
 void LatteQueryObjectD3D12::begin()
+{
+	queryEnded = false;
+	m_resultPublished.store(false, std::memory_order_relaxed);
+	if (m_renderer && m_renderer->ShouldQueueRecording())
+	{
+		m_renderer->QueueRecording([this]() { beginRecorded(); });
+		return;
+	}
+	beginRecorded();
+}
+
+void LatteQueryObjectD3D12::beginRecorded()
 {
 	if (!m_renderer)
 		return;
@@ -171,11 +199,21 @@ void LatteQueryObjectD3D12::begin()
 	m_hasActiveQuery = true;
 	m_hasActiveFragment = false;
 	m_accumulatedSum = 0;
-	queryEnded = false;
 	beginFragment();
 }
 
 void LatteQueryObjectD3D12::end()
+{
+	queryEnded = true;
+	if (m_renderer && m_renderer->ShouldQueueRecording())
+	{
+		m_renderer->QueueRecording([this]() { endRecorded(); });
+		return;
+	}
+	endRecorded();
+}
+
+void LatteQueryObjectD3D12::endRecorded()
 {
 	if (!m_renderer)
 		return;
@@ -184,7 +222,6 @@ void LatteQueryObjectD3D12::end()
 
 	m_queryEnded = true;
 	m_hasActiveQuery = false;
-	queryEnded = true;
 
 	m_renderer->m_submitThreshold = std::min<uint32>(m_renderer->m_submitThreshold, m_renderer->m_recordedDrawcalls + D3D12Renderer::kSubmitSoonDrawDelay);
 	m_renderer->m_submitOnIdle = true;

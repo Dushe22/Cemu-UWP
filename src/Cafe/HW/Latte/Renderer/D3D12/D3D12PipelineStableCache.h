@@ -52,18 +52,24 @@ public:
 	// a stored recipe is kept unless replaceExisting says it turned out stale
 	bool AddPipelineRecipe(uint64 pipelineStateHash, std::span<const uint8> bytes, bool replaceExisting);
 	// render thread: a draw used this pipeline in the current session
-	void MarkPipelineUsed(uint64 pipelineStateHash);
+	// mustBeReady: the draw could not be skipped, so the next launch waits for this pipeline
+	void MarkPipelineUsed(uint64 pipelineStateHash, bool mustBeReady = false);
 	// the app may be closed without Close, so usage is written soon after it changes
 	void SaveUsageIfDue();
 	void SaveUsage();
 	size_t GetCachedPipelineCount();
+	// a draw that could not be skipped used this pipeline, so freeing its prewarmed PSO brings back a render-thread build
+	bool IsMustBeReady(uint64 pipelineStateHash);
+	// "stored=.. sessions=.. last=.. flagged=..", for logs about pipelines built on the render thread
+	std::string DescribePipeline(uint64 pipelineStateHash);
 
 private:
 	struct RecipeUsage
 	{
 		uint32 lastSession{};
-		uint32 sessionsUsed{};
+		uint32 sessionsUsed{}; // top bit: kMustBeReadyFlag
 	};
+	static constexpr uint32 kMustBeReadyFlag = 0x80000000u;
 	struct PrewarmJob
 	{
 		sint32 fileIndex{};

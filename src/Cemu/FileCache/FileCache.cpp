@@ -131,6 +131,7 @@ FileCache* FileCache::Create(const fs::path& path, uint32 extraVersion)
 	// write file table
 	fs->SetPosition(fileCache->dataOffset+fileCache->fileTableOffset);
 	fs->writeData(fileCache->fileTableEntries, fileCache->fileTableSize);
+	fileCache->_rebuildNameIndex();
 	// done
 	return fileCache;
 }
@@ -227,6 +228,7 @@ FileCache* FileCache::_OpenExisting(const fs::path& path, bool compareExtraVersi
 		delete fileCache;
 		return nullptr;
 	}
+	fileCache->_rebuildNameIndex();
 	return fileCache;
 }
 
@@ -254,6 +256,26 @@ FileCache::~FileCache()
 	}
 	free(this->fileTableEntries);
 	delete fileStream;
+}
+
+void FileCache::_rebuildNameIndex()
+{
+	nameIndex.clear();
+	nameIndex.reserve(fileTableEntryCount);
+	for (sint32 i = 0; i < fileTableEntryCount; i++)
+	{
+		const FileTableEntry& entry = fileTableEntries[i];
+		if (entry.name1 == FILECACHE_FILETABLE_FREE_NAME && entry.name2 == FILECACHE_FILETABLE_FREE_NAME)
+			continue;
+		nameIndex.emplace(std::make_pair(entry.name1, entry.name2), i); // first match wins, as with the old linear scan
+	}
+	freeSearchStart = 0;
+}
+
+sint32 FileCache::_findEntryIndex(uint64 name1, uint64 name2) const
+{
+	auto it = nameIndex.find(std::make_pair(name1, name2));
+	return it != nameIndex.end() ? it->second : -1;
 }
 
 void FileCache::fileCache_updateFiletable(sint32 extraEntriesToAllocate)
@@ -291,6 +313,7 @@ void FileCache::fileCache_updateFiletable(sint32 extraEntriesToAllocate)
 	fileStream->writeU64(this->dataOffset);
 	fileStream->writeU64(this->fileTableOffset);
 	fileStream->writeU32(this->fileTableSize);
+	_rebuildNameIndex();
 }
 
 uint8* _fileCache_compressFileData(const uint8* fileData, uint32 fileSize, sint32& compressedSize)
@@ -381,21 +404,16 @@ void FileCache::_addFileInternal(uint64 name1, uint64 name2, const uint8* fileDa
 	// find free entry in file table
 	sint32 entryIndex = -1;
 	// scan for already existing entry
-	for (sint32 i = 0; i < this->fileTableEntryCount; i++)
-	{
-		if (this->fileTableEntries[i].name1 == name1 && this->fileTableEntries[i].name2 == name2)
-		{
-			entryIndex = i;
-			break;
-		}
-	}
+	entryIndex = _findEntryIndex(name1, name2);
 	if (entryIndex == -1)
 	{
 		while (true)
 		{
-			// if no entry exists, search for empty one
-			for (sint32 i = 0; i < this->fileTableEntryCount; i++)
+			// if no entry exists, search for empty one, starting where the last one was taken
+			const sint32 searchStart = std::clamp<sint32>(freeSearchStart, 0, this->fileTableEntryCount);
+			for (sint32 n = 0; n < this->fileTableEntryCount; n++)
 			{
+				const sint32 i = (searchStart + n) % this->fileTableEntryCount;
 				if (this->fileTableEntries[i].name1 == FILECACHE_FILETABLE_FREE_NAME && this->fileTableEntries[i].name2 == FILECACHE_FILETABLE_FREE_NAME)
 				{
 					entryIndex = i;
@@ -409,8 +427,9 @@ void FileCache::_addFileInternal(uint64 name1, uint64 name2, const uint8* fileDa
 					cemuLog_log(LogType::Force, "Error in cache file");
 					cemu_assert_debug(false);
 				}
-				// no free entry, recreate file table with larger size
-				fileCache_updateFiletable(64);
+				// no free entry, recreate file table with larger size; grow geometrically so a big
+				// cache (thousands of shaders) does not rewrite the whole table every 64 additions
+				fileCache_updateFiletable(std::max<sint32>(64, this->fileTableEntryCount / 4));
 				// try again
 				continue;
 			}
@@ -475,6 +494,8 @@ void FileCache::_addFileInternal(uint64 name1, uint64 name2, const uint8* fileDa
 	this->fileTableEntries[entryIndex].extraReserved1 = 0;
 	this->fileTableEntries[entryIndex].extraReserved2 = 0;
 	this->fileTableEntries[entryIndex].extraReserved3 = 0;
+	nameIndex[std::make_pair(name1, name2)] = entryIndex;
+	freeSearchStart = entryIndex + 1;
 	// write file data
 	fileStream->SetPosition(this->dataOffset + currentStartOffset);
 	fileStream->writeData(rawData, rawSize);
@@ -501,25 +522,20 @@ bool FileCache::DeleteFile(const FileName&& name)
 	if( name.name1 == FILECACHE_FILETABLE_NAME1 && name.name2 == FILECACHE_FILETABLE_NAME2 )
 		return false; // prevent filetable from being deleted
 	std::unique_lock lock(this->mutex);
-	FileTableEntry* entry = this->fileTableEntries;
-	FileTableEntry* entryLast = this->fileTableEntries+this->fileTableEntryCount;
-	while( entry < entryLast )
-	{
-		if( entry->name1 == name.name1 && entry->name2 == name.name2 )
-		{
-			entry->name1 = FILECACHE_FILETABLE_FREE_NAME;
-			entry->name2 = FILECACHE_FILETABLE_FREE_NAME;
-			entry->fileOffset = 0;
-			entry->fileSize = 0;
-			// store updated entry to file cache
-			size_t entryIndex = entry - this->fileTableEntries;
-			fileStream->SetPosition(this->dataOffset+this->fileTableOffset+(uint64)(sizeof(FileTableEntry)*entryIndex));
-			fileStream->writeData(this->fileTableEntries+entryIndex, sizeof(FileTableEntry));
-			return true;
-		}
-		entry++;
-	}
-	return false;
+	const sint32 entryIndex = _findEntryIndex(name.name1, name.name2);
+	if (entryIndex < 0)
+		return false;
+	FileTableEntry* entry = this->fileTableEntries + entryIndex;
+	entry->name1 = FILECACHE_FILETABLE_FREE_NAME;
+	entry->name2 = FILECACHE_FILETABLE_FREE_NAME;
+	entry->fileOffset = 0;
+	entry->fileSize = 0;
+	// store updated entry to file cache
+	fileStream->SetPosition(this->dataOffset+this->fileTableOffset+(uint64)(sizeof(FileTableEntry)*entryIndex));
+	fileStream->writeData(this->fileTableEntries+entryIndex, sizeof(FileTableEntry));
+	// rare; a rebuild also picks up a duplicate entry of the same name, as the old scan would
+	_rebuildNameIndex();
+	return true;
 }
 
 void FileCache::AddFileAsync(const FileName& name, const uint8* fileData, sint32 fileSize)
@@ -579,16 +595,9 @@ bool FileCache::_getFileDataInternal(const FileTableEntry* entry, std::vector<ui
 bool FileCache::GetFile(const FileName&& name, std::vector<uint8>& dataOut)
 {
 	std::unique_lock lock(this->mutex);
-	FileTableEntry* entry = this->fileTableEntries;
-	FileTableEntry* entryLast = this->fileTableEntries+this->fileTableEntryCount;
-	while( entry < entryLast )
-	{
-		if( entry->name1 == name.name1 && entry->name2 == name.name2 )
-		{
-			return _getFileDataInternal(entry, dataOut);
-		}
-		entry++;
-	}
+	const sint32 entryIndex = _findEntryIndex(name.name1, name.name2);
+	if (entryIndex >= 0)
+		return _getFileDataInternal(this->fileTableEntries + entryIndex, dataOut);
 	dataOut.clear();
 	return false;
 }
@@ -653,15 +662,24 @@ bool FileCache::GetUncompressedFileByIndexBounded(sint32 index, uint64* name1, u
 bool FileCache::HasFile(const FileName&& name)
 {
 	std::unique_lock lock(this->mutex);
-	FileTableEntry* entry = this->fileTableEntries;
-	FileTableEntry* entryLast = this->fileTableEntries + this->fileTableEntryCount;
-	while (entry < entryLast)
+	return _findEntryIndex(name.name1, name.name2) >= 0;
+}
+
+void FileCache::GetFileNames(std::vector<std::pair<uint64, uint64>>& namesOut)
+{
+	std::unique_lock lock(this->mutex);
+	namesOut.clear();
+	if (!fileTableEntries)
+		return;
+	namesOut.reserve(fileTableEntryCount);
+	for (sint32 i = 0; i < fileTableEntryCount; i++)
 	{
-		if (entry->name1 == name.name1 && entry->name2 == name.name2)
-			return true;
-		entry++;
+		const FileTableEntry& entry = fileTableEntries[i];
+		if ((entry.name1 == FILECACHE_FILETABLE_FREE_NAME && entry.name2 == FILECACHE_FILETABLE_FREE_NAME) ||
+			(entry.name1 == FILECACHE_FILETABLE_NAME1 && entry.name2 == FILECACHE_FILETABLE_NAME2))
+			continue;
+		namesOut.emplace_back(entry.name1, entry.name2);
 	}
-	return false;
 }
 
 sint32 FileCache::GetMaximumFileIndex()

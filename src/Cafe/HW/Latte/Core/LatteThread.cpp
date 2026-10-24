@@ -52,6 +52,7 @@ void Latte_LoadInitialRegisters()
 	LatteGPUState.contextNew.VGT_DMA_NUM_INSTANCES.set_NUM_INSTANCES(1);
 	LatteGPUState.contextRegister[Latte::REGADDR::PA_CL_CLIP_CNTL] = 0;
 	*(float*)&LatteGPUState.contextRegister[mmDB_DEPTH_CLEAR] = 1.0f;
+	LatteGPUState_markRegistersDirty(0, LATTE_MAX_REGISTER);
 }
 
 extern bool gx2WriteGatherInited;
@@ -137,6 +138,10 @@ void LatteThread_HandleOSScreen()
 int Latte_ThreadEntry()
 {
 	SetThreadName("LatteThread");
+#if defined(CEMU_UWP)
+	// with ~5000 draws per frame (BOTW forest) this thread is the bottleneck; keep compile workers from preempting it
+	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+#endif
 	sint32 w,h;
 	WindowSystem::GetWindowPhysSize(w,h);
 
@@ -277,6 +282,9 @@ void LatteThread_CleanupAfterFailure()
 		}
 	}
 	LatteThread_CancelPendingTitleGpuWork();
+	// queued draws still reference buffers, textures and shaders unloaded below
+	if (g_renderer)
+		g_renderer->DrainRecording();
 	LatteBufferCache_UnloadAll();
 	LatteTC_UnloadAllTextures();
 	LatteSHRC_UnloadAll();
@@ -471,6 +479,9 @@ void LatteThread_Exit()
 	if (g_renderer)
 		g_renderer->Shutdown();
 #endif
+    // queued draws still reference buffers, textures and shaders unloaded below
+    if (g_renderer)
+        g_renderer->DrainRecording();
     // clean up vertex/uniform cache
     LatteBufferCache_UnloadAll();
 	// clean up texture cache

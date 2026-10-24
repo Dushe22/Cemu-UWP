@@ -60,6 +60,8 @@ struct LatteGPUState_t
 	bool activeShaderHasError; // if try, at least one currently bound shader stage has an error and cannot be used for drawing
 	bool repeatTextureInitialization; // if set during rendertarget or texture initialization, repeat the process (textures likely have been invalidated)
 	bool requiresTextureBarrier; // set if glTextureBarrier should be called
+	// one bit per 64 registers written since a renderer last copied them (see LatteGPUState_markRegistersDirty)
+	uint64 registerChunkDirty[LATTE_MAX_REGISTER / 64 / 64]{};
 	// OSScreen
 	struct  
 	{
@@ -74,6 +76,17 @@ struct LatteGPUState_t
 };
 
 extern LatteGPUState_t LatteGPUState;
+
+// every write to contextRegister goes through here, so a renderer can keep its own copy of the register file
+// by copying only the chunks written since its last copy
+inline void LatteGPUState_markRegistersDirty(uint32 firstRegister, uint32 count)
+{
+	if (count == 0 || firstRegister >= LATTE_MAX_REGISTER)
+		return;
+	const uint32 lastChunk = (std::min<uint32>(firstRegister + count, LATTE_MAX_REGISTER) - 1) >> 6;
+	for (uint32 chunk = firstRegister >> 6; chunk <= lastChunk; chunk++)
+		LatteGPUState.registerChunkDirty[chunk >> 6] |= 1ull << (chunk & 63);
+}
 
 // drawcall context
 
@@ -200,7 +213,7 @@ LatteCPWaitInfo LatteCP_GetWaitInfo();
 
 // buffer cache
 
-void LatteBufferCache_Sync(uint32 maxIndex, uint32 baseInstance, uint32 instanceCount, uint32 attribBufferDirtyMask, uint32 vsUniformBufferDirtyMask, uint32 psUniformBufferDirtyMask, uint32 gsUniformBufferDirtyMask, uint8& stageUniformModifiedMask, bool isIncremental = false);
+void LatteBufferCache_Sync(uint32 maxVtxIndex, uint32 baseInstance, uint32 instanceCount, uint32 attribBufferDirtyMask, uint32 vsUniformBufferDirtyMask, uint32 psUniformBufferDirtyMask, uint32 gsUniformBufferDirtyMask, uint8& stageUniformModifiedMask, bool isIncremental = false);
 bool LatteBufferCache_LoadRemappedUniforms(struct LatteDecompilerShader* shader, float* uniformData, bool aluConstDirty, uint32 uniformBufferDirtyMask);
 
 void LatteRenderTarget_updateViewport();

@@ -22,6 +22,14 @@ LatteTextureView::LatteTextureView(LatteTexture* texture, sint32 firstMip, sint3
 
 LatteTextureView::~LatteTextureView()
 {
+	Detach();
+}
+
+void LatteTextureView::Detach()
+{
+	if (m_detached)
+		return;
+	m_detached = true;
 	// unregister view
 	LatteTextureViewLookupCache::RemoveAll(this);
 	// remove from texture

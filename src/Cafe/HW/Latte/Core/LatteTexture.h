@@ -21,11 +21,25 @@ struct LatteSamplerState
 
 #include "Cafe/HW/Latte/Core/LatteTextureView.h"
 
+#if defined(CEMU_UWP)
+struct LatteUwpTextureUploadStats
+{
+	uint64 decodeUs{};
+	uint64 uploadUs{};
+	uint32 uploaded{};
+	uint32 skipped{};
+};
+extern thread_local LatteUwpTextureUploadStats g_uwpTextureUploadStats;
+#endif
+
 class LatteTexture
 {
 public:
 	LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth);
 	virtual ~LatteTexture();
+	// removes the texture from the global list; the object itself is freed by Renderer::texture_destroy
+	void Detach();
+	bool m_detached{};
 
 	virtual void AllocateOnHost() = 0;
 
@@ -161,6 +175,10 @@ public:
 	uint64 lastUpdateEventCounter;
 	uint32 lastUpdateFrameCounter{};
 	uint32 reloadCount{};
+#if defined(CEMU_UWP)
+	// hash of the last decoded upload per slice/mip of array textures; unchanged data is not uploaded again
+	std::vector<uint64> uwpUploadHashes;
+#endif
 	// last update (from RAM data)
 	uint32 lastDataUpdateFrameCounter{};
 	// optimization

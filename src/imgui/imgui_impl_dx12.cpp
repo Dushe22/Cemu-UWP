@@ -49,6 +49,10 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <dxcapi.h>
+#if defined(IMGUI_DX12_PRECOMPILED_SHADERS)
+#include "imgui_impl_dx12_vs.h"
+#include "imgui_impl_dx12_ps.h"
+#endif
 
 // DirectX data
 struct ImGui_ImplDX12_RenderBuffers;
@@ -485,12 +489,20 @@ static bool ImGui_ImplDX12_CreateFontsTexture()
     return true;
 }
 
+// last CreateDeviceObjects failure, so the frontend can report which step failed
+static char g_lastError[512] = "";
+const char* ImGui_ImplDX12_GetLastError() { return g_lastError; }
+
 // Compiles HLSL to DXIL with DXC. Returns nullptr on failure.
-static IDxcBlob* ImGui_ImplDX12_CompileShader(const char* source, const wchar_t* profile)
+[[maybe_unused]] static IDxcBlob* ImGui_ImplDX12_CompileShader(const char* source, const wchar_t* profile)
 {
     IDxcCompiler3* compiler = nullptr;
-    if (FAILED(DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler))))
+    HRESULT createHr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler));
+    if (FAILED(createHr))
+    {
+        snprintf(g_lastError, sizeof(g_lastError), "DxcCreateInstance hr=0x%08X", (unsigned)createHr);
         return nullptr;
+    }
 
     DxcBuffer buffer = { source, strlen(source), DXC_CP_UTF8 };
     LPCWSTR args[] = { L"-E", L"main", L"-T", profile, L"-O3", L"-Qstrip_reflect", L"-Qstrip_debug" };
@@ -500,6 +512,17 @@ static IDxcBlob* ImGui_ImplDX12_CompileShader(const char* source, const wchar_t*
     if (SUCCEEDED(compiler->Compile(&buffer, args, (UINT32)IM_ARRAYSIZE(args), nullptr, IID_PPV_ARGS(&result))) &&
         SUCCEEDED(result->GetStatus(&status)) && SUCCEEDED(status))
         result->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&object), nullptr);
+    else if (result)
+    {
+        IDxcBlobUtf8* errors = nullptr;
+        result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
+        snprintf(g_lastError, sizeof(g_lastError), "DXC %ls status=0x%08X %s", profile, (unsigned)status,
+                 errors && errors->GetStringLength() ? errors->GetStringPointer() : "");
+        if (errors)
+            errors->Release();
+    }
+    else
+        snprintf(g_lastError, sizeof(g_lastError), "DXC %ls Compile call failed", profile);
     if (object && object->GetBufferSize() == 0)
     {
         object->Release();
@@ -518,6 +541,7 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
         return false;
     if (bd->pPipelineState)
         ImGui_ImplDX12_InvalidateDeviceObjects();
+    snprintf(g_lastError, sizeof(g_lastError), "root signature");
 
     // Create the root signature
     {
@@ -615,11 +639,15 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
     psoDesc.SampleDesc.Count = 1;
     psoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
 
-    IDxcBlob* vertexShaderBlob;
-    IDxcBlob* pixelShaderBlob;
+    IDxcBlob* vertexShaderBlob = nullptr;
+    IDxcBlob* pixelShaderBlob = nullptr;
 
     // Create the vertex shader
     {
+#if defined(IMGUI_DX12_PRECOMPILED_SHADERS)
+        // built from imgui_impl_dx12_vs.hlsl at compile time, so the UI does not depend on the runtime DXC
+        psoDesc.VS = { g_imgui_dx12_vs, sizeof(g_imgui_dx12_vs) };
+#else
         static const char* vertexShader =
             "cbuffer vertexBuffer : register(b0) \
             {\
@@ -652,6 +680,7 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
         if (!vertexShaderBlob)
             return false;
         psoDesc.VS = { vertexShaderBlob->GetBufferPointer(), vertexShaderBlob->GetBufferSize() };
+#endif
 
         // Create the input layout
         static D3D12_INPUT_ELEMENT_DESC local_layout[] =
@@ -665,6 +694,9 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
 
     // Create the pixel shader
     {
+#if defined(IMGUI_DX12_PRECOMPILED_SHADERS)
+        psoDesc.PS = { g_imgui_dx12_ps, sizeof(g_imgui_dx12_ps) };
+#else
         static const char* pixelShader =
             "struct PS_INPUT\
             {\
@@ -688,6 +720,7 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
             return false;
         }
         psoDesc.PS = { pixelShaderBlob->GetBufferPointer(), pixelShaderBlob->GetBufferSize() };
+#endif
     }
 
     // Create the blending setup
@@ -733,13 +766,19 @@ bool    ImGui_ImplDX12_CreateDeviceObjects()
     }
 
     HRESULT result_pipeline_state = bd->pd3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&bd->pPipelineState));
-    vertexShaderBlob->Release();
-    pixelShaderBlob->Release();
+    if (vertexShaderBlob)
+        vertexShaderBlob->Release();
+    if (pixelShaderBlob)
+        pixelShaderBlob->Release();
     if (result_pipeline_state != S_OK)
+    {
+        snprintf(g_lastError, sizeof(g_lastError), "CreateGraphicsPipelineState hr=0x%08X", (unsigned)result_pipeline_state);
         return false;
+    }
 
     if (!ImGui_ImplDX12_CreateFontsTexture())
     {
+        snprintf(g_lastError, sizeof(g_lastError), "font texture");
         ImGui_ImplDX12_InvalidateDeviceObjects();
         return false;
     }

@@ -1,4 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
+#include "Cafe/HW/Latte/Core/LatteTexture.h"
+#include "Cafe/HW/Latte/Core/LatteTextureView.h"
 #include "WindowSystem.h"
 
 #include "config/CemuConfig.h"
@@ -136,4 +138,19 @@ void Renderer::SaveScreenshot(const std::vector<uint8>& rgb_data, int width, int
 			}
 		})
 		.detach();
+}
+
+void Renderer::rendertarget_destroyCachedFBO(LatteCachedFBO* fbo)
+{
+	delete fbo;
+}
+
+void Renderer::texture_destroyView(LatteTextureView* view)
+{
+	delete view;
+}
+
+void Renderer::texture_destroy(LatteTexture* texture)
+{
+	delete texture;
 }

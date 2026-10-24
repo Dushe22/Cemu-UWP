@@ -123,6 +123,7 @@ bool cemuLog_advancedPPCLoggingEnabled();
 uint64 cemuLog_getFlag(LogType type);
 
 fs::path cemuLog_GetLogFilePath();
+fs::path cemuLog_GetActiveLogFilePath(); // log.txt, or log_<n>.txt after a stalled writer was replaced
 void cemuLog_createLogFile(bool triggeredByCrash);
 [[nodiscard]] std::unique_lock<std::recursive_mutex> cemuLog_acquire(); // used for logging multiple lines at once
 

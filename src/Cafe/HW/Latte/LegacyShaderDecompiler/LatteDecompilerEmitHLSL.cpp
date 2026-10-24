@@ -614,6 +614,24 @@ int3 textureSize(TextureCubeArray<uint4> tex, int lod)
 	return int3(w, h, elements);
 }
 
+int textureQueryLevels(Texture1D<float4> tex) { uint w, levels; tex.GetDimensions(0u, w, levels); return (int)levels; }
+int textureQueryLevels(Texture1D<uint4> tex) { uint w, levels; tex.GetDimensions(0u, w, levels); return (int)levels; }
+int textureQueryLevels(Texture1D<float> tex) { uint w, levels; tex.GetDimensions(0u, w, levels); return (int)levels; }
+int textureQueryLevels(Texture1DArray<float4> tex) { uint w, e, levels; tex.GetDimensions(0u, w, e, levels); return (int)levels; }
+int textureQueryLevels(Texture1DArray<uint4> tex) { uint w, e, levels; tex.GetDimensions(0u, w, e, levels); return (int)levels; }
+int textureQueryLevels(Texture1DArray<float> tex) { uint w, e, levels; tex.GetDimensions(0u, w, e, levels); return (int)levels; }
+int textureQueryLevels(Texture2D<float4> tex) { uint w, h, levels; tex.GetDimensions(0u, w, h, levels); return (int)levels; }
+int textureQueryLevels(Texture2D<uint4> tex) { uint w, h, levels; tex.GetDimensions(0u, w, h, levels); return (int)levels; }
+int textureQueryLevels(Texture2D<float> tex) { uint w, h, levels; tex.GetDimensions(0u, w, h, levels); return (int)levels; }
+int textureQueryLevels(Texture2DArray<float4> tex) { uint w, h, e, levels; tex.GetDimensions(0u, w, h, e, levels); return (int)levels; }
+int textureQueryLevels(Texture2DArray<uint4> tex) { uint w, h, e, levels; tex.GetDimensions(0u, w, h, e, levels); return (int)levels; }
+int textureQueryLevels(Texture2DArray<float> tex) { uint w, h, e, levels; tex.GetDimensions(0u, w, h, e, levels); return (int)levels; }
+int textureQueryLevels(Texture3D<float4> tex) { uint w, h, d, levels; tex.GetDimensions(0u, w, h, d, levels); return (int)levels; }
+int textureQueryLevels(Texture3D<uint4> tex) { uint w, h, d, levels; tex.GetDimensions(0u, w, h, d, levels); return (int)levels; }
+int textureQueryLevels(TextureCubeArray<float4> tex) { uint w, h, e, levels; tex.GetDimensions(0u, w, h, e, levels); return (int)levels; }
+int textureQueryLevels(TextureCubeArray<uint4> tex) { uint w, h, e, levels; tex.GetDimensions(0u, w, h, e, levels); return (int)levels; }
+int textureQueryLevels(TextureCubeArray<float> tex) { uint w, h, e, levels; tex.GetDimensions(0u, w, h, e, levels); return (int)levels; }
+
 float4 latteTexelFetch(Texture1D<float4> tex, int coord, int lod) { return tex.Load(int2(coord, lod)); }
 uint4 latteTexelFetch(Texture1D<uint4> tex, int coord, int lod) { return tex.Load(int2(coord, lod)); }
 float4 latteTexelFetch(Texture2D<float4> tex, int2 coord, int lod) { return tex.Load(int3(coord, lod)); }
@@ -960,6 +978,14 @@ float latteIntegerTextureLod(TextureCubeArray<uint4> tex, float4 dx, float4 dy)
 		src->add("uint4 latteTextureGrad(Texture1D<uint4> tex, SamplerState samplerState, float coord, float dx, float dy) { return latteIntegerTextureLoad(tex, samplerState, coord, latteIntegerTextureLod(tex, dx, dy), 0); }" HLSL_NL);
 		src->add("uint4 latteTextureGrad(Texture2D<uint4> tex, SamplerState samplerState, float2 coord, float2 dx, float2 dy) { return latteIntegerTextureLoad(tex, samplerState, coord, latteIntegerTextureLod(tex, dx, dy), 0); }" HLSL_NL);
 	}
+	// SAMPLE_G with texel offsets (upstream #2080 / 9a3f9b79)
+	src->add("float4 latteTextureGradOffset(Texture1D<float4> tex, SamplerState samplerState, float coord, float dx, float dy, int offset) { return tex.SampleGrad(samplerState, coord, dx, dy, offset); }" HLSL_NL);
+	src->add("float4 latteTextureGradOffset(Texture2D<float4> tex, SamplerState samplerState, float2 coord, float2 dx, float2 dy, int2 offset) { return tex.SampleGrad(samplerState, coord, dx, dy, offset); }" HLSL_NL);
+	if (hasIntegerTexture)
+	{
+		src->add("uint4 latteTextureGradOffset(Texture1D<uint4> tex, SamplerState samplerState, float coord, float dx, float dy, int offset) { return latteIntegerTextureLoad(tex, samplerState, coord, latteIntegerTextureLod(tex, dx, dy), offset); }" HLSL_NL);
+		src->add("uint4 latteTextureGradOffset(Texture2D<uint4> tex, SamplerState samplerState, float2 coord, float2 dx, float2 dy, int2 offset) { return latteIntegerTextureLoad(tex, samplerState, coord, latteIntegerTextureLod(tex, dx, dy), offset); }" HLSL_NL);
+	}
 
 	// SampleCmpLevel needs shader model 6.7 with advanced texture ops
 	src->add(R"(
@@ -1008,6 +1034,7 @@ float latteIntegerTextureLod(TextureCubeArray<uint4> tex, float4 dx, float4 dy)
 #define texture(tex, ...) latteTextureSample(tex, LATTE_TEXTURE_SAMPLER(tex), __VA_ARGS__)
 #define textureOffset(tex, ...) latteTextureSampleOffset(tex, LATTE_TEXTURE_SAMPLER(tex), __VA_ARGS__)
 #define textureGrad(tex, coord, dx, dy) latteTextureGrad(tex, LATTE_TEXTURE_SAMPLER(tex), coord, dx, dy)
+#define textureGradOffset(tex, coord, dx, dy, offset) latteTextureGradOffset(tex, LATTE_TEXTURE_SAMPLER(tex), coord, dx, dy, offset)
 #define textureLod(tex, ...) latteTextureSampleLevel(tex, LATTE_TEXTURE_SAMPLER(tex), __VA_ARGS__)
 #define textureLodOffset(tex, ...) latteTextureSampleLevelOffset(tex, LATTE_TEXTURE_SAMPLER(tex), __VA_ARGS__)
 #define texelFetch(tex, coord, lod) latteTexelFetch(tex, coord, lod)
@@ -1025,6 +1052,7 @@ float latteIntegerTextureLod(TextureCubeArray<uint4> tex, float4 dx, float4 dy)
 #define texture(tex, coord) tex.Sample(LATTE_TEXTURE_SAMPLER(tex), coord)
 #define textureOffset(tex, coord, offset) tex.Sample(LATTE_TEXTURE_SAMPLER(tex), coord, offset)
 #define textureGrad(tex, coord, dx, dy) tex.SampleGrad(LATTE_TEXTURE_SAMPLER(tex), coord, dx, dy)
+#define textureGradOffset(tex, coord, dx, dy, offset) tex.SampleGrad(LATTE_TEXTURE_SAMPLER(tex), coord, dx, dy, offset)
 )" HLSL_NL);
 	}
 	else
@@ -1033,6 +1061,7 @@ float latteIntegerTextureLod(TextureCubeArray<uint4> tex, float4 dx, float4 dy)
 #define texture(tex, coord) tex.SampleLevel(LATTE_TEXTURE_SAMPLER(tex), coord, 0.0f)
 #define textureOffset(tex, coord, offset) tex.SampleLevel(LATTE_TEXTURE_SAMPLER(tex), coord, 0.0f, offset)
 #define textureGrad(tex, coord, dx, dy) tex.SampleGrad(LATTE_TEXTURE_SAMPLER(tex), coord, dx, dy)
+#define textureGradOffset(tex, coord, dx, dy, offset) tex.SampleGrad(LATTE_TEXTURE_SAMPLER(tex), coord, dx, dy, offset)
 )" HLSL_NL);
 	}
 
@@ -1188,93 +1217,93 @@ const char* GetTextureObjectType(const LatteDecompilerShader* shader, sint32 tex
 	}
 }
 
-uint32 GetFetchFormatComponentCount(uint8 format)
+uint32 GetFetchFormatComponentCount(Latte::E_HWFMT format)
 {
 	switch (format)
 	{
-	case FMT_32_32_32_32:
-	case FMT_32_32_32_32_FLOAT:
-	case FMT_16_16_16_16:
-	case FMT_16_16_16_16_FLOAT:
-	case FMT_8_8_8_8:
-	case FMT_2_10_10_10:
+	case Latte::E_HWFMT::HWFMT_32_32_32_32:
+	case Latte::E_HWFMT::HWFMT_32_32_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_16_16:
+	case Latte::E_HWFMT::HWFMT_16_16_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_8_8_8_8:
+	case Latte::E_HWFMT::HWFMT_2_10_10_10:
 		return 4;
-	case FMT_32_32_32:
-	case FMT_32_32_32_FLOAT:
-	case FMT_16_16_16:
-	case FMT_16_16_16_FLOAT:
-	case FMT_8_8_8:
+	case Latte::E_HWFMT::HWFMT_32_32_32:
+	case Latte::E_HWFMT::HWFMT_32_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_16:
+	case Latte::E_HWFMT::HWFMT_16_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_8_8_8:
 		return 3;
-	case FMT_32_32:
-	case FMT_32_32_FLOAT:
-	case FMT_16_16:
-	case FMT_16_16_FLOAT:
-	case FMT_8_8:
+	case Latte::E_HWFMT::HWFMT_32_32:
+	case Latte::E_HWFMT::HWFMT_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16:
+	case Latte::E_HWFMT::HWFMT_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_8_8:
 		return 2;
-	case FMT_32:
-	case FMT_32_FLOAT:
-	case FMT_16:
-	case FMT_16_FLOAT:
-	case FMT_8:
+	case Latte::E_HWFMT::HWFMT_32:
+	case Latte::E_HWFMT::HWFMT_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16:
+	case Latte::E_HWFMT::HWFMT_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_8:
 		return 1;
 	default:
 		return 0;
 	}
 }
 
-uint32 GetFetchFormatComponentBits(uint8 format)
+uint32 GetFetchFormatComponentBits(Latte::E_HWFMT format)
 {
 	switch (format)
 	{
-	case FMT_32:
-	case FMT_32_FLOAT:
-	case FMT_32_32:
-	case FMT_32_32_FLOAT:
-	case FMT_32_32_32:
-	case FMT_32_32_32_FLOAT:
-	case FMT_32_32_32_32:
-	case FMT_32_32_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32:
+	case Latte::E_HWFMT::HWFMT_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_32:
+	case Latte::E_HWFMT::HWFMT_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_32_32:
+	case Latte::E_HWFMT::HWFMT_32_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_32_32_32:
+	case Latte::E_HWFMT::HWFMT_32_32_32_32_FLOAT:
 		return 32;
-	case FMT_16:
-	case FMT_16_FLOAT:
-	case FMT_16_16:
-	case FMT_16_16_FLOAT:
-	case FMT_16_16_16:
-	case FMT_16_16_16_FLOAT:
-	case FMT_16_16_16_16:
-	case FMT_16_16_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16:
+	case Latte::E_HWFMT::HWFMT_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16:
+	case Latte::E_HWFMT::HWFMT_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_16:
+	case Latte::E_HWFMT::HWFMT_16_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_16_16:
+	case Latte::E_HWFMT::HWFMT_16_16_16_16_FLOAT:
 		return 16;
-	case FMT_8:
-	case FMT_8_8:
-	case FMT_8_8_8:
-	case FMT_8_8_8_8:
+	case Latte::E_HWFMT::HWFMT_8:
+	case Latte::E_HWFMT::HWFMT_8_8:
+	case Latte::E_HWFMT::HWFMT_8_8_8:
+	case Latte::E_HWFMT::HWFMT_8_8_8_8:
 		return 8;
-	case FMT_2_10_10_10:
+	case Latte::E_HWFMT::HWFMT_2_10_10_10:
 		return 0;
 	default:
 		return 0;
 	}
 }
 
-bool IsFetchFormatFloat(uint8 format)
+bool IsFetchFormatFloat(Latte::E_HWFMT format)
 {
 	switch (format)
 	{
-	case FMT_32_FLOAT:
-	case FMT_32_32_FLOAT:
-	case FMT_32_32_32_FLOAT:
-	case FMT_32_32_32_32_FLOAT:
-	case FMT_16_FLOAT:
-	case FMT_16_16_FLOAT:
-	case FMT_16_16_16_FLOAT:
-	case FMT_16_16_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_32_32_32_32_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_16_FLOAT:
+	case Latte::E_HWFMT::HWFMT_16_16_16_16_FLOAT:
 		return true;
 	default:
 		return false;
 	}
 }
 
-std::string GetFetchByteOffsetExpression(const LatteParsedFetchShaderAttribute_t& attrib, const std::string& strideExpression)
+std::string GetFetchByteOffsetExpression(const LatteParsedFetchShaderAttribute& attrib, const std::string& strideExpression)
 {
 	switch (attrib.fetchType)
 	{
@@ -1290,7 +1319,7 @@ std::string GetFetchByteOffsetExpression(const LatteParsedFetchShaderAttribute_t
 	}
 }
 
-std::string GetFetchStrideExpression(const LatteParsedFetchShaderAttribute_t& attrib, uint32 staticStride, bool dynamicStride)
+std::string GetFetchStrideExpression(const LatteParsedFetchShaderAttribute& attrib, uint32 staticStride, bool dynamicStride)
 {
 	if (dynamicStride && attrib.attributeBufferIndex < LATTE_MAX_VERTEX_BUFFERS)
 		return fmt::format("uf_d3d12VertexStrides[{}].{}", attrib.attributeBufferIndex / 4, GetChannelName(attrib.attributeBufferIndex % 4));
@@ -1333,18 +1362,18 @@ uint32 GetFetchComponent8ByteOffset(LatteConst::VertexFetchEndianMode endianMode
 	return componentIndex;
 }
 
-void EmitHLSLFetchRawLoad(StringBuf* src, const LatteParsedFetchShaderAttribute_t& attrib, const std::string& bufferName)
+void EmitHLSLFetchRawLoad(StringBuf* src, const LatteParsedFetchShaderAttribute& attrib, const std::string& bufferName)
 {
 	const uint32 componentCount = GetFetchFormatComponentCount(attrib.format);
 	const uint32 componentBits = GetFetchFormatComponentBits(attrib.format);
 	if (componentCount == 0)
 	{
-		src->addFmt("\t\t// D3D12 TODO: unsupported vertex fetch format 0x{:02x}" HLSL_NL, attrib.format);
+		src->addFmt("\t\t// D3D12 TODO: unsupported vertex fetch format 0x{:02x}" HLSL_NL, (uint32)attrib.format);
 		src->add("\t\tuint4 attrDecoder = uint4(0u, 0u, 0u, 0u);" HLSL_NL);
 		return;
 	}
 
-	if (attrib.format == FMT_2_10_10_10)
+	if (attrib.format == Latte::E_HWFMT::HWFMT_2_10_10_10)
 	{
 		src->add("\t\tuint lattePacked;" HLSL_NL);
 		EmitHLSLFetchLoad32(src, "lattePacked", attrib.endianSwap, bufferName, 0);
@@ -1462,7 +1491,7 @@ void EmitHLSLFetchRawLoad(StringBuf* src, const LatteParsedFetchShaderAttribute_
 	}
 }
 
-std::string GetHLSLAttributeComponentExpression(const LatteParsedFetchShaderAttribute_t& attrib, uint8 ds, bool outputFloat)
+std::string GetHLSLAttributeComponentExpression(const LatteParsedFetchShaderAttribute& attrib, uint8 ds, bool outputFloat)
 {
 	if (ds >= 6)
 		ds = 4;
@@ -1481,7 +1510,7 @@ std::string GetHLSLAttributeComponentExpression(const LatteParsedFetchShaderAttr
 	return fmt::format("(int)attrDecoder.{}", GetChannelName(ds));
 }
 
-void EmitHLSLAttributeImport(LatteDecompilerShaderContext* shaderContext, LatteParsedFetchShaderAttribute_t& attrib, uint32 stride, bool dynamicStride)
+void EmitHLSLAttributeImport(LatteDecompilerShaderContext* shaderContext, LatteParsedFetchShaderAttribute& attrib, uint32 stride, bool dynamicStride)
 {
 	StringBuf* src = shaderContext->shaderSource;
 
@@ -1507,7 +1536,7 @@ void EmitHLSLAttributeImport(LatteDecompilerShaderContext* shaderContext, LatteP
 	src->addFmt("\t// fetch semantic {} buffer {} format=0x{:02x} nfa={} signed={} endian={} offset={} stride={} strideExpr={} -> r{}" HLSL_NL,
 				attrib.semanticId,
 				attrib.attributeBufferIndex,
-				attrib.format,
+				(uint32)attrib.format,
 				attrib.nfa,
 				attrib.isSigned,
 				(uint32)attrib.endianSwap,
@@ -2051,7 +2080,7 @@ void EmitHLSLExportCode(LatteDecompilerShaderContext* shaderContext, LatteDecomp
 	src->add("// hlsl export" HLSL_NL);
 	if (shaderContext->shaderType == LatteConst::ShaderType::Vertex)
 	{
-		if (cfInstruction->exportBurstCount != 0)
+		if (cfInstruction->exportBurstCount != 0 && cfInstruction->exportType != 2)
 			debugBreakpoint();
 		if (cfInstruction->exportType == 1 && cfInstruction->exportArrayBase == GPU7_DECOMPILER_CF_EXPORT_BASE_POSITION)
 		{
@@ -2087,17 +2116,43 @@ void EmitHLSLExportCode(LatteDecompilerShaderContext* shaderContext, LatteDecomp
 		}
 		else if (cfInstruction->exportType == 2 && cfInstruction->exportArrayBase < 32)
 		{
-			const uint32 vsSemanticId = LatteShaderPSInputTable::getVertexShaderOutParamSemanticId(shaderContext->contextRegisters, cfInstruction->exportArrayBase);
-			if (vsSemanticId != 0xFF && vsSemanticId <= LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX && FindPSInputBySemanticId(LatteSHRC_GetPSInputTable(), vsSemanticId))
+			// a burst writes consecutive parameters from consecutive GPRs (upstream 32e6628a)
+			for (uint32 burstIndex = 0; burstIndex < (cfInstruction->exportBurstCount + 1); burstIndex++)
 			{
-				src->addFmt("passParameterSem{} = ", vsSemanticId);
-				EmitHLSLExportReadCode(shaderContext, cfInstruction, LATTE_DECOMPILER_DTYPE_FLOAT, 0);
-				src->add(";" HLSL_NL);
+				const uint32 paramIndex = cfInstruction->exportArrayBase + burstIndex;
+				if (paramIndex >= 32)
+				{
+					cemu_assert_unimplemented();
+					break;
+				}
+				const uint32 vsSemanticId = LatteShaderPSInputTable::getVertexShaderOutParamSemanticId(shaderContext->contextRegisters, paramIndex);
+				if (vsSemanticId != 0xFF && vsSemanticId <= LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX && FindPSInputBySemanticId(LatteSHRC_GetPSInputTable(), vsSemanticId))
+				{
+					// preserve earlier exports for masked components
+					char componentMask[5]{};
+					uint32 componentCount = 0;
+					for (uint32 component = 0; component < 4; component++)
+					{
+						if (cfInstruction->exportComponentSel[component] != 7)
+							componentMask[componentCount++] = GetChannelName(component)[0];
+					}
+					if (componentCount == 0)
+						continue;
+					src->addFmt("passParameterSem{}", vsSemanticId);
+					if (componentCount < 4)
+						src->addFmt(".{}", componentMask);
+					src->add(" = (");
+					EmitHLSLExportReadCode(shaderContext, cfInstruction, LATTE_DECOMPILER_DTYPE_FLOAT, burstIndex);
+					src->add(")");
+					if (componentCount < 4)
+						src->addFmt(".{}", componentMask);
+					src->add(";" HLSL_NL);
+				}
+				else if (vsSemanticId != 0xFF)
+					src->addFmt("// skipped export to unsupported semanticId {}" HLSL_NL, vsSemanticId);
+				else
+					src->add("// skipped export to semanticId 255" HLSL_NL);
 			}
-			else if (vsSemanticId != 0xFF)
-				src->addFmt("// skipped export to unsupported semanticId {}" HLSL_NL, vsSemanticId);
-			else
-				src->add("// skipped export to semanticId 255" HLSL_NL);
 		}
 		else
 			cemu_assert_unimplemented();
@@ -3003,10 +3058,12 @@ struct GLSLInterfaceVariable
 // bindings and IO layout of the generated HLSL are kept and only the edited code is transplanted
 bool LatteDecompiler_ConvertGLSLPixelShaderToHLSL(const std::string& generatedHLSL, const std::string& glslSource, std::string& hlslOut)
 {
-	static const std::string kInterfaceEndMarker = "// end of shader inputs/outputs";
-	const size_t markerPos = glslSource.find(kInterfaceEndMarker);
+	// the whole file is scanned and its declarations dropped below: packs put preset #if blocks, #defines and
+	// helpers anywhere, and most have no "end of shader inputs/outputs" marker
+	const size_t markerPos = glslSource.size();
+	const size_t bodyPos = 0;
 	const size_t mainPos = generatedHLSL.find("\nPSOut main(");
-	if (markerPos == std::string::npos || mainPos == std::string::npos)
+	if (mainPos == std::string::npos)
 		return false;
 	const size_t signatureEnd = generatedHLSL.find('\n', mainPos + 1);
 	if (signatureEnd == std::string::npos)
@@ -3039,13 +3096,18 @@ bool LatteDecompiler_ConvertGLSLPixelShaderToHLSL(const std::string& generatedHL
 	{
 		const std::string locationText = (*it)[1].matched ? (*it)[1].str() : (*it)[2].str();
 		GLSLInterfaceVariable variable{ (uint32)std::stoul(locationText), (*it)[4].str(), (*it)[5].str() };
-		((*it)[3].str() == "in" ? inputs : outputs).push_back(variable);
+		auto& list = (*it)[3].str() == "in" ? inputs : outputs;
+		// preset branches (#if) repeat the same declarations
+		if (std::none_of(list.begin(), list.end(), [&](const GLSLInterfaceVariable& v) { return v.name == variable.name; }))
+			list.push_back(variable);
 	}
 	if (outputs.empty())
 		return false;
 
 	// split the edited code into top-level items and drop helpers the generated HLSL already defines
-	const std::string body = StripGLSLComments(glslSource.substr(markerPos + kInterfaceEndMarker.size()));
+	const std::string body = StripGLSLComments(glslSource.substr(bodyPos));
+	static const std::regex s_declaration(R"(^(?:layout|ATTR_LAYOUT|TEXTURE_LAYOUT|UNIFORM_BUFFER_LAYOUT|in[ \t]|out[ \t])|\buniform\b)");
+	static const std::regex s_droppedDirective(R"(^#[ \t]*(?:version|extension|define[ \t]+(?:ATTR_LAYOUT|UNIFORM_BUFFER_LAYOUT|TEXTURE_LAYOUT|SET_POSITION|GET_FRAGCOORD|gl_VertexID|gl_InstanceID)\b))");
 	static const std::regex s_functionHeader(R"([A-Za-z_][A-Za-z0-9_]*[ \t\r\n]+([A-Za-z_][A-Za-z0-9_]*)[ \t\r\n]*\(([^)]*)\))");
 	static const std::regex s_prototype(R"([A-Za-z_][A-Za-z0-9_]*[ \t\r\n]+[A-Za-z_][A-Za-z0-9_]*[ \t\r\n]*\([^=]*\))");
 	std::string convertedBody;
@@ -3059,7 +3121,9 @@ bool LatteDecompiler_ConvertGLSLPixelShaderToHLSL(const std::string& generatedHL
 		if (body[itemStart] == '#')
 		{
 			const size_t lineEnd = body.find('\n', itemStart);
-			convertedBody += body.substr(itemStart, lineEnd == std::string::npos ? std::string::npos : lineEnd - itemStart) + "\n";
+			const std::string directive = body.substr(itemStart, lineEnd == std::string::npos ? std::string::npos : lineEnd - itemStart);
+			if (!std::regex_search(directive, s_droppedDirective))
+				convertedBody += directive + "\n";
 			pos = lineEnd == std::string::npos ? body.size() : lineEnd + 1;
 			continue;
 		}
@@ -3067,10 +3131,12 @@ bool LatteDecompiler_ConvertGLSLPixelShaderToHLSL(const std::string& generatedHL
 		if (stop == std::string::npos)
 			return false;
 		const std::string head = TrimString(body.substr(itemStart, stop - itemStart));
+		// interface, texture and uniform declarations come from the generated HLSL
+		const bool isDeclaration = std::regex_search(head, s_declaration);
 		if (body[stop] == ';')
 		{
 			// globals are implicit uniforms in HLSL unless static
-			if (head.rfind("uniform", 0) != 0)
+			if (!isDeclaration)
 			{
 				const bool keepAsIs = head.rfind("static", 0) == 0 || std::regex_match(head, s_prototype);
 				convertedBody += (keepAsIs ? head : "static " + head) + ";\n";
@@ -3091,10 +3157,11 @@ bool LatteDecompiler_ConvertGLSLPixelShaderToHLSL(const std::string& generatedHL
 		if (depth != 0)
 			return false;
 		const std::string block = body.substr(stop, end - stop);
-		if (head.rfind("struct", 0) == 0)
+		if (head.rfind("struct", 0) == 0 || isDeclaration)
 		{
 			const size_t semicolon = body.find(';', end);
-			convertedBody += head + " " + block + ";\n";
+			if (!isDeclaration)
+				convertedBody += head + " " + block + ";\n";
 			pos = semicolon == std::string::npos ? end : semicolon + 1;
 			continue;
 		}
@@ -3117,6 +3184,11 @@ bool LatteDecompiler_ConvertGLSLPixelShaderToHLSL(const std::string& generatedHL
 	std::string out;
 	out.reserve(prefix.size() + convertedBody.size() + 8192);
 	out += prefix;
+	// GLSL vecN(v) from an equal or wider float vector; ambiguous with only the generated overloads
+	out += "float2 make_vec2(float2 v) { return v; }\nfloat2 make_vec2(float3 v) { return v.xy; }\nfloat2 make_vec2(float4 v) { return v.xy; }\n";
+	out += "float3 make_vec3(float3 v) { return v; }\nfloat3 make_vec3(float4 v) { return v.xyz; }\nfloat4 make_vec4(float4 v) { return v; }\n";
+	// shortcut: GLSL matrix * vector is not rewritten to mul(); such a shader fails in DXC and keeps the original
+	out += "typedef float2x2 mat2;\ntypedef float3x3 mat3;\ntypedef float4x4 mat4;\n";
 	out += "float2 mix(float2 a, float2 b, float t) { return lerp(a, b, t); }\n";
 	out += "float3 mix(float3 a, float3 b, float t) { return lerp(a, b, t); }\n";
 	out += "float4 mix(float4 a, float4 b, float t) { return lerp(a, b, t); }\n";

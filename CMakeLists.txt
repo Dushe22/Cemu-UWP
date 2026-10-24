@@ -15,7 +15,7 @@ if (CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT AND NOT CEMU_UWP_PERFORMANCE_EXPERIMENT)
 	message(FATAL_ERROR "CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT requires CEMU_UWP_PERFORMANCE_EXPERIMENT")
 endif()
 # feature bits enabled by default; bit 16 (active-unit enumeration) is still experimental
-set(CEMU_UWP_D3D12_CPU_OPTIMIZATION_MASK "167" CACHE STRING "D3D12 CPU optimization feature bits enabled in UWP builds (1,2,4,16,32,64,128)")
+set(CEMU_UWP_D3D12_CPU_OPTIMIZATION_MASK "183" CACHE STRING "D3D12 CPU optimization feature bits enabled in UWP builds (1,2,4,16,32,64,128)")
 if (NOT CEMU_UWP_D3D12_CPU_OPTIMIZATION_MASK MATCHES "^(0|[1-9][0-9]?[0-9]?)$")
 	message(FATAL_ERROR "CEMU_UWP_D3D12_CPU_OPTIMIZATION_MASK must be a canonical unsigned integer below 256")
 endif()

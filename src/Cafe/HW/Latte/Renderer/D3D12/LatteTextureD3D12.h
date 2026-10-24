@@ -27,6 +27,8 @@ public:
 	void SetSubresourceState(uint32 subresource, D3D12_RESOURCE_STATES state);
 	void SetAllSubresourceStates(D3D12_RESOURCE_STATES state);
 	bool AllSubresourcesInState(D3D12_RESOURCE_STATES state) const { return m_uniformStateValid && m_uniformState == state; }
+	// after per-subresource transitions: if every subresource ended in the same state, AllSubresourcesInState is fast again
+	void TryRestoreUniformState(D3D12_RESOURCE_STATES state);
 	uint32 GetSubresourceCount() const { return (uint32)m_subresourceStates.size(); }
 	uint32 GetArraySize() const { return m_arraySize; }
 	uint64 GetContentIdentity() const { return m_contentIdentity; }

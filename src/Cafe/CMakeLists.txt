@@ -569,6 +569,8 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/D3D12ViewDescription.h
     HW/Latte/Renderer/D3D12/D3D12PipelineCompiler.cpp
     HW/Latte/Renderer/D3D12/D3D12PipelineCompiler.h
+    HW/Latte/Renderer/D3D12/D3D12HlslPruner.cpp
+    HW/Latte/Renderer/D3D12/D3D12HlslPruner.h
     HW/Latte/Renderer/D3D12/D3D12PipelineRecipe.cpp
     HW/Latte/Renderer/D3D12/D3D12PipelineRecipe.h
     HW/Latte/Renderer/D3D12/D3D12PipelineStableCache.cpp

@@ -506,6 +506,11 @@ struct CemuConfig
 	ConfigValue<bool> gx2drawdone_sync { true };
 	ConfigValue<bool> render_upside_down{ false };
 	ConfigValue<bool> async_compile{ true };
+	// D3D12: record draws on a second thread (Phase 4, experimental; read when the renderer starts)
+	ConfigValue<bool> d3d12_threaded_recording{ false };
+	// D3D12 on Xbox: upload block-compressed texture arrays through a GPU copy instead of CPU writes. Never loaded or
+	// shown: the copy misplaces slices on Xbox (tested 22/10/2026); kept for the next upload approach
+	ConfigValue<bool> d3d12_gpu_array_upload{ false };
 	ConfigValue<bool> skip_resolution_rules_of_packs_with_skipped_shaders{ false };
 #ifdef ENABLE_METAL
 	ConfigValue<bool> force_mesh_shaders{ false };

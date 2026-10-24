@@ -162,6 +162,7 @@ void LatteStreamout_FinishDrawcall(bool useDirectMemoryMode)
 			// advance streamout offset
 			uint32 newOffset = LatteGPUState.contextRegister[mmVGT_STRMOUT_BUFFER_OFFSET_0 + i * 4] + activeStreamoutOperation.streamoutBufferWrite[i].rangeSize;
 			LatteGPUState.contextRegister[mmVGT_STRMOUT_BUFFER_OFFSET_0 + i * 4] = newOffset;
+			LatteGPUState_markRegistersDirty(mmVGT_STRMOUT_BUFFER_OFFSET_0 + i * 4, 1);
 		}
 		g_renderer->streamout_rendererFinishDrawcall();
 	}

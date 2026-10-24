@@ -19,11 +19,12 @@ namespace
 {
 constexpr uint8 kLegacyPipelineEntryVersion = 1;
 constexpr uint8 kPipelineEntryVersion = 2;
-constexpr uint32 kUwpPipelineCacheFormatVersion = 0xD3120003u;
+// 4: depth bias quantised (0.2.7.1); older recipes hold thousands of exact-bias duplicates
+constexpr uint32 kUwpPipelineCacheFormatVersion = 0xD3120004u;
 constexpr uint64 kRecipeFileTag = 0x4433313250534f31ull;
 
 constexpr uint32 kRecipeUsageMagic = 0x31555244u;
-constexpr uint32 kRecipeUsageVersion = 1;
+constexpr uint32 kRecipeUsageVersion = 2;
 // launches wait for pipelines used in one of the last few sessions; the rest are built after launch
 constexpr uint32 kRecentSessions = 3;
 // recipes nobody used for this many sessions are deleted
@@ -59,6 +60,8 @@ D3D12PipelineStableCache& D3D12PipelineStableCache::GetInstance()
 
 uint32 D3D12PipelineStableCache::BeginLoading(uint64 cacheTitleId)
 {
+	// blocking prewarm runs before the title starts, so it may use the loading limit
+	RendererShaderD3D12::SetTitleLoading(true);
 	StopPrewarm();
 	m_prewarmStop = false;
 	if (auto* renderer = D3D12Renderer::GetInstance())
@@ -172,7 +175,7 @@ uint32 D3D12PipelineStableCache::BeginLoading(uint64 cacheTitleId)
 	}
 
 	std::lock_guard controlLock(m_prewarmControlLock);
-	const size_t workerCount = std::min<size_t>(RendererShaderD3D12::GetNativeCompilationConcurrency(), m_blockingJobCount);
+	const size_t workerCount = std::min<size_t>(RendererShaderD3D12::GetLoadingCompilationConcurrency(), m_blockingJobCount);
 	for (size_t i = 0; i < workerCount; ++i)
 		m_prewarmWorkers.emplace_back(&D3D12PipelineStableCache::RunPrewarmWorker, this, m_blockingJobCount, false);
 	return (uint32)m_blockingJobCount;
@@ -221,13 +224,29 @@ void D3D12PipelineStableCache::SaveRecipeUsageLocked()
 	for (const auto& [pipelineKey, usage] : m_recipeUsage)
 		records.push_back({ pipelineKey, usage.lastSession, usage.sessionsUsed });
 	const RecipeUsageHeader header{ kRecipeUsageMagic, kRecipeUsageVersion, LATTE_DECOMPILER_HLSL_EMITTER_VERSION, m_session, (uint32)records.size() };
-	// a torn write fails validation on the next load and costs only one session of history
-	std::ofstream file(m_usagePath, std::ios::binary | std::ios::trunc);
-	if (!file)
+	// written next to the old file and swapped in only when complete: truncating in place on a full disk left an empty
+	// file, and the lost history made the next launches delete most recipes
+	std::filesystem::path tempPath = m_usagePath;
+	tempPath += ".tmp";
+	{
+		std::ofstream file(tempPath, std::ios::binary | std::ios::trunc);
+		if (!file)
+			return;
+		file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+		if (!records.empty())
+			file.write(reinterpret_cast<const char*>(records.data()), records.size() * sizeof(RecipeUsageRecord));
+		file.close();
+		if (file.fail())
+		{
+			std::error_code ec;
+			std::filesystem::remove(tempPath, ec);
+			return;
+		}
+	}
+	std::error_code renameError;
+	std::filesystem::rename(tempPath, m_usagePath, renameError);
+	if (renameError)
 		return;
-	file.write(reinterpret_cast<const char*>(&header), sizeof(header));
-	if (!records.empty())
-		file.write(reinterpret_cast<const char*>(records.data()), records.size() * sizeof(RecipeUsageRecord));
 	m_newUsesSinceSave = 0;
 	m_usageUnsaved = false;
 	m_lastUsageSaveTicks = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -276,9 +295,13 @@ void D3D12PipelineStableCache::PlanPrewarmLocked(const std::vector<PrewarmJob>& 
 	for (const PrewarmJob& job : inventory)
 	{
 		stored.emplace(job.pipelineKey);
-		// recipes without history get the full grace period
-		const RecipeUsage usage = m_recipeUsage.try_emplace(job.pipelineKey, RecipeUsage{ m_session, 0 }).first->second;
-		if (m_session - usage.lastSession >= kPruneAfterSessions)
+		// recipes without history get the full grace period: they count as used once now, because recipes are only stored
+		// when a draw uses them. With 0 they read as never used two sessions later and were deleted (a usage file lost to
+		// a full disk deleted 3254 of 4914 BOTW recipes, and those areas popped in again)
+		const RecipeUsage usage = m_recipeUsage.try_emplace(job.pipelineKey, RecipeUsage{ m_session, 1 }).first->second;
+		// a recipe no draw ever used (an async build whose bias drifted away) goes after 2 sessions, not 10
+		const bool neverUsed = (usage.sessionsUsed & ~kMustBeReadyFlag) == 0;
+		if (m_session - usage.lastSession >= (neverUsed ? 2u : kPruneAfterSessions))
 		{
 			DeleteRecipeLocked(job.pipelineKey);
 			m_recipeUsage.erase(job.pipelineKey);
@@ -288,7 +311,9 @@ void D3D12PipelineStableCache::PlanPrewarmLocked(const std::vector<PrewarmJob>& 
 		hasHistory = hasHistory || usage.sessionsUsed != 0;
 		if (livePipelines.contains(job.pipelineKey))
 			continue;
-		const bool recentlyUsed = usage.sessionsUsed != 0 && m_session - usage.lastSession <= kRecentSessions;
+		// a draw that cannot be skipped builds its pipeline on the render thread (0.5-1.1 s on Xbox), so it is always waited for
+		const bool mustBeReady = (usage.sessionsUsed & kMustBeReadyFlag) != 0;
+		const bool recentlyUsed = mustBeReady || ((usage.sessionsUsed & ~kMustBeReadyFlag) != 0 && m_session - usage.lastSession <= kRecentSessions);
 		(recentlyUsed ? recent : others).push_back({ job, usage });
 	}
 	// history of pipelines whose recipe is gone is of no further use
@@ -296,6 +321,7 @@ void D3D12PipelineStableCache::PlanPrewarmLocked(const std::vector<PrewarmJob>& 
 
 	// most used first, so an early stop keeps the most valuable ones
 	std::stable_sort(recent.begin(), recent.end(), [](const Candidate& a, const Candidate& b) {
+		// flagged first, then most used
 		return a.usage.sessionsUsed != b.usage.sessionsUsed ? a.usage.sessionsUsed > b.usage.sessionsUsed : a.usage.lastSession > b.usage.lastSession;
 	});
 	std::stable_sort(others.begin(), others.end(), [](const Candidate& a, const Candidate& b) {
@@ -413,6 +439,13 @@ void D3D12PipelineStableCache::RunPrewarmWorker(size_t endJob, bool background)
 			completed = false;
 			break;
 		}
+		// pipelines a draw is waiting for (new enemies, effects) go first; the driver builds one at a time
+		if (background)
+		{
+			auto* renderer = D3D12Renderer::GetInstance();
+			while (renderer && renderer->HasUrgentPipelineWork() && !m_prewarmStop.load(std::memory_order_acquire))
+				std::this_thread::sleep_for(std::chrono::milliseconds(2));
+		}
 		const size_t index = m_nextPrewarmJob.fetch_add(1, std::memory_order_relaxed);
 		if (index >= endJob)
 			break;
@@ -472,6 +505,8 @@ void D3D12PipelineStableCache::EndLoading()
 			worker.join();
 		m_prewarmWorkers.clear();
 	}
+	// the title starts now: compiles and background prewarm go back to the runtime limit
+	RendererShaderD3D12::SetTitleLoading(false);
 
 	bool background = !m_prewarmStop.load() && m_prewarmJobs.size() > m_blockingJobCount;
 	if (auto* renderer = D3D12Renderer::GetInstance())
@@ -548,19 +583,41 @@ void D3D12PipelineStableCache::Close()
 	m_recipeBytes = 0;
 }
 
-void D3D12PipelineStableCache::MarkPipelineUsed(uint64 pipelineStateHash)
+void D3D12PipelineStableCache::MarkPipelineUsed(uint64 pipelineStateHash, bool mustBeReady)
 {
 	std::lock_guard usageLock(m_usageLock);
 	if (m_session == 0)
 		return;
 	RecipeUsage& usage = m_recipeUsage[pipelineStateHash];
-	if (usage.lastSession == m_session && usage.sessionsUsed != 0)
+	const bool flagChanged = mustBeReady && (usage.sessionsUsed & kMustBeReadyFlag) == 0;
+	if (mustBeReady)
+		usage.sessionsUsed |= kMustBeReadyFlag;
+	if (usage.lastSession == m_session && (usage.sessionsUsed & ~kMustBeReadyFlag) != 0 && !flagChanged)
 		return;
+	if (usage.lastSession != m_session || (usage.sessionsUsed & ~kMustBeReadyFlag) == 0)
+		++usage.sessionsUsed;
 	usage.lastSession = m_session;
-	++usage.sessionsUsed;
 	m_usageUnsaved = true;
 	if (++m_newUsesSinceSave >= kUsageSaveInterval)
 		SaveRecipeUsageLocked();
+}
+
+bool D3D12PipelineStableCache::IsMustBeReady(uint64 pipelineStateHash)
+{
+	std::lock_guard usageLock(m_usageLock);
+	const auto it = m_recipeUsage.find(pipelineStateHash);
+	return it != m_recipeUsage.end() && (it->second.sessionsUsed & kMustBeReadyFlag) != 0;
+}
+
+std::string D3D12PipelineStableCache::DescribePipeline(uint64 pipelineStateHash)
+{
+	std::scoped_lock locks(m_cacheLock, m_usageLock);
+	const bool stored = m_recipeSizes.contains(pipelineStateHash);
+	const auto it = m_recipeUsage.find(pipelineStateHash);
+	if (it == m_recipeUsage.end())
+		return fmt::format("stored={} no usage record, session {}", stored ? 1 : 0, m_session);
+	return fmt::format("stored={} sessions={} last={} flagged={}, session {}", stored ? 1 : 0,
+		it->second.sessionsUsed & ~kMustBeReadyFlag, it->second.lastSession, (it->second.sessionsUsed & kMustBeReadyFlag) ? 1 : 0, m_session);
 }
 
 bool D3D12PipelineStableCache::AddPipelineToCache(uint64 baseHash, uint64 pipelineStateHash)

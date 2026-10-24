@@ -1,5 +1,7 @@
 # **Cemu - Wii U emulator**
 
+> **UWP / Xbox Series fork:** this repository builds Cemu as a UWP app with a Direct3D 12 renderer for Xbox Series consoles. See [UWP.md](UWP.md) for build, packaging and renderer notes.
+
 [![Build Process](https://github.com/cemu-project/Cemu/actions/workflows/build.yml/badge.svg)](https://github.com/cemu-project/Cemu/actions/workflows/build.yml)
 [![Discord](https://img.shields.io/discord/286429969104764928?label=Cemu&logo=discord&logoColor=FFFFFF)](https://discord.gg/5psYsup)
 [![Matrix Server](https://img.shields.io/matrix/cemu:cemu.info?server_fqdn=matrix.cemu.info&label=cemu:cemu.info&logo=matrix&logoColor=FFFFFF)](https://matrix.to/#/#cemu:cemu.info)

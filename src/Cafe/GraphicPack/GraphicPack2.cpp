@@ -838,6 +838,26 @@ bool GraphicPack2::SetActivePreset(std::string_view category, std::string_view n
 	return result;
 }
 
+bool GraphicPack2::HasShaderFiles() const
+{
+	fs::path path = m_rulesPath;
+	std::error_code ec;
+	for (auto& it : fs::directory_iterator(path.remove_filename(), ec))
+	{
+		if (!it.is_regular_file(ec))
+			continue;
+		const auto filename = it.path().filename().wstring();
+		uint64 baseHash = 0, auxHash = 0;
+		wchar_t shaderType[256]{};
+		if (filename.size() < 256 && swscanf(filename.c_str(), L"%" SCNx64 "_%" SCNx64 "_%ls", &baseHash, &auxHash, shaderType) == 3)
+			return true;
+		const auto extension = it.path().extension().wstring();
+		if (extension == L".glsl" || extension == L".hlsl")
+			return true;
+	}
+	return false;
+}
+
 void GraphicPack2::LoadShaders()
 {
 	fs::path path = GetRulesPath();
@@ -1084,7 +1104,14 @@ bool GraphicPack2::Activate()
 
 	// check if gp should be loaded
 	if (m_renderer_api.has_value() && m_renderer_api.value() != g_renderer->GetType())
-		return false;
+	{
+		// D3D12 resolves GPU queries like OpenGL does, so OpenGL-only game-code patches apply too (BOTW "NPC Stuttering
+		// Fix": distant animals froze without it). Packs with shaders stay out: those fix OpenGL rendering itself.
+		const bool openGLCodePatchOnD3D12 = m_renderer_api.value() == RendererAPI::OpenGL && g_renderer->GetType() == RendererAPI::Direct3D12 &&
+			!HasShaderFiles();
+		if (!openGLCodePatchOnD3D12)
+			return false;
+	}
 
 	if (m_gfx_vendor.has_value())
 	{

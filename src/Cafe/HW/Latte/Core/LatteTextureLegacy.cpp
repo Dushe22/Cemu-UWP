@@ -43,6 +43,21 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 {
 #if defined(CEMU_UWP)
 	LatteUwpHitchScope textureReloadScope(LatteUwpHitchOp::TextureReload);
+	const auto reloadStarted = std::chrono::steady_clock::now();
+	const LatteUwpTextureUploadStats statsBefore = g_uwpTextureUploadStats;
+	stdx::scope_exit logSlowReload([&]()
+	{
+		static uint32 s_slowReloadLogs = 0;
+		const uint64 elapsedMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - reloadStarted).count();
+		if (elapsedMs >= 100 && s_slowReloadLogs < 100)
+		{
+			++s_slowReloadLogs;
+			const auto& stats = g_uwpTextureUploadStats;
+			cemuLog_log(LogType::Force, "UWP slow texture reload: {} ms (decode {} ms, upload {} ms, slices uploaded {} skipped {}), {}x{}x{} mips={} dim={} format=0x{:04x} tileMode={} addr=0x{:08x} reloads={}",
+				elapsedMs, (stats.decodeUs - statsBefore.decodeUs) / 1000, (stats.uploadUs - statsBefore.uploadUs) / 1000, stats.uploaded - statsBefore.uploaded, stats.skipped - statsBefore.skipped,
+				tex->width, tex->height, tex->depth, tex->mipLevels, (uint32)tex->dim, (uint32)tex->format, (uint32)tex->tileMode, tex->physAddress, tex->reloadCount);
+		}
+	});
 #endif
 	tex->reloadCount++;
 	for(sint32 mip=0; mip<tex->mipLevels; mip++)
@@ -75,6 +90,7 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 			LatteTextureLoader_UpdateTextureSliceData(tex, 0, mip, tex->physAddress, tex->physMipAddress, tex->dim, tex->width, tex->height, tex->depth, tex->mipLevels, tex->pitch, tex->tileMode, tex->swizzle, true);
 		}
 	}
+	g_renderer->texture_finishSliceUploads();
 	tex->lastUpdateEventCounter = LatteTexture_getNextUpdateEventCounter();
 }
 

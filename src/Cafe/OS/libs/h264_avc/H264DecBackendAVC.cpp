@@ -151,6 +151,7 @@ namespace H264
 		{
 			constexpr uint32 maximumResolutionChanges = 2;
 			uint32 resolutionChanges = 0;
+			bool frameDecoded = false;
 
 			while (decodedSlice.dataToDecode.m_length != 0)
 			{
@@ -219,7 +220,10 @@ namespace H264
 				}
 
 				if (decodeOutput.u4_frame_decoded_flag)
+				{
 					m_numDecodedFrames++;
+					frameDecoded = true;
+				}
 				if (decodeOutput.u4_output_present)
 				{
 					cemu_assert(decodeOutput.e_output_format == IV_YUV_420SP_UV);
@@ -259,6 +263,10 @@ namespace H264
 				decodedSlice.dataToDecode.m_length -= decodeOutput.u4_num_bytes_consumed;
 			}
 
+			// a decoded frame held back for B-frame reordering is output later under this slice's index (or by Flush);
+			// reporting it as frameless now queued the slot twice and the video showed frames out of order
+			if (frameDecoded)
+				return;
 			PushNoFrameResult(decodedSlice);
 		}
 #endif

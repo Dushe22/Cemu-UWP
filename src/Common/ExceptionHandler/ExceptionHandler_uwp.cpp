@@ -26,6 +26,60 @@ std::string CrashTimestamp()
 		time.tm_hour, time.tm_min, time.tm_sec);
 }
 
+// walks the x64 unwind tables (no DbgHelp on UWP); offsets resolve with the PDB of this build.
+// No C++ objects here so a corrupted stack can be caught with __try.
+int CaptureStackFrames(const CONTEXT* crashContext, DWORD64* rips, DWORD64* bases, int maxFrames)
+{
+	int count = 0;
+	__try
+	{
+		CONTEXT context = *crashContext;
+		while (count < maxFrames && context.Rip != 0)
+		{
+			DWORD64 moduleBase = 0;
+			PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &moduleBase, nullptr);
+			rips[count] = context.Rip;
+			bases[count] = moduleBase;
+			++count;
+			if (!function)
+			{
+				// leaf function: the return address is on top of the stack
+				context.Rip = *reinterpret_cast<const DWORD64*>(context.Rsp);
+				context.Rsp += 8;
+				continue;
+			}
+			void* handlerData = nullptr;
+			DWORD64 establisherFrame = 0;
+			RtlVirtualUnwind(UNW_FLAG_NHANDLER, moduleBase, context.Rip, function, &context, &handlerData, &establisherFrame, nullptr);
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+	}
+	return count;
+}
+
+void LogStackTrace(const CONTEXT& crashContext, uint64 cemuImageBase)
+{
+	PWSTR threadName = nullptr;
+	if (SUCCEEDED(GetThreadDescription(GetCurrentThread(), &threadName)) && threadName)
+	{
+		char narrowName[128]{};
+		WideCharToMultiByte(CP_UTF8, 0, threadName, -1, narrowName, sizeof(narrowName) - 1, nullptr, nullptr);
+		CrashLog_WriteLine(fmt::format("Thread {} \"{}\"", GetCurrentThreadId(), narrowName));
+		LocalFree(threadName);
+	}
+	DWORD64 rips[32]{};
+	DWORD64 bases[32]{};
+	const int frames = CaptureStackFrames(&crashContext, rips, bases, 32);
+	CrashLog_WriteLine("Stack (module base + offset):");
+	for (int frame = 0; frame < frames; ++frame)
+	{
+		CrashLog_WriteLine(fmt::format("  #{:02d} {}@{:x}+0x{:x}", frame, bases[frame] == cemuImageBase ? "CemuUwp.exe" : "module",
+			(uint64)bases[frame], (uint64)(rips[frame] - bases[frame])));
+	}
+}
+
 void LogExceptionRecord(EXCEPTION_POINTERS* pointers)
 {
 	const uint64 imageBase = reinterpret_cast<uint64>(&__ImageBase);
@@ -49,6 +103,7 @@ void LogExceptionRecord(EXCEPTION_POINTERS* pointers)
 		CrashLog_WriteLine(fmt::format("R8 ={:016x} R9 ={:016x} R10={:016x} R11={:016x}", context->R8, context->R9, context->R10, context->R11));
 		CrashLog_WriteLine(fmt::format("R12={:016x} R13={:016x} R14={:016x} R15={:016x}", context->R12, context->R13, context->R14, context->R15));
 		CrashLog_WriteLine(fmt::format("RIP={:016x}", context->Rip));
+		LogStackTrace(*context, imageBase);
 	}
 }
 
@@ -70,7 +125,7 @@ void HandleCrash(std::string_view reason, EXCEPTION_POINTERS* pointers)
 	const fs::path crashFolder = ActiveSettings::GetUserDataPath("crashdump");
 	std::error_code ec;
 	fs::create_directories(crashFolder, ec);
-	fs::copy_file(ActiveSettings::GetUserDataPath("log.txt"), crashFolder / fmt::format("log_{}.txt", CrashTimestamp()), ec);
+	fs::copy_file(cemuLog_GetActiveLogFilePath(), crashFolder / fmt::format("log_{}.txt", CrashTimestamp()), ec);
 }
 
 void HandleFatalTermination(std::string_view reason)

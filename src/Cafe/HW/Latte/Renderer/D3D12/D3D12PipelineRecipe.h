@@ -47,6 +47,8 @@ struct Serialized
 {
 	std::vector<std::uint8_t> bytes;
 	Fingerprint fingerprint{};
+	// everything but the pipeline key: equal for recipes that build the same PSO under different keys
+	Fingerprint contentFingerprint{};
 };
 
 struct OwnedRecipe
@@ -67,6 +69,7 @@ struct OwnedRecipe
 	std::vector<std::uint8_t> geometryShader;
 	std::vector<std::uint8_t> pixelShader;
 	Fingerprint fingerprint{};
+	Fingerprint contentFingerprint{}; // see Serialized
 #if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
 	bool hasIndependentDepthStencil{};
 	D3D12_DEPTH_STENCIL_DESC2 independentDepthStencil{};

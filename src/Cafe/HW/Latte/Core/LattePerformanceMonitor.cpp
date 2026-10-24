@@ -9,7 +9,7 @@
 
 performanceMonitor_t performanceMonitor{};
 
-#if defined(LATTE_UWP_DETAILED_PROFILING)
+#if defined(LATTE_UWP_HITCH_LOG)
 namespace
 {
 constexpr size_t kHitchOpCount = static_cast<size_t>(LatteUwpHitchOp::Count);
@@ -244,7 +244,7 @@ void LattePerformanceMonitor_frameEnd()
 	performanceMonitor.gpuTime_dcStageDrawcallAPI.frameFinished();
 	performanceMonitor.gpuTime_waitForAsync.frameFinished();
 
-#if defined(LATTE_UWP_DETAILED_PROFILING)
+#if defined(LATTE_UWP_HITCH_LOG)
 	LogUwpFramePacing();
 #endif
 	// CPU wall times from the command processor, not GPU timestamps
@@ -262,10 +262,12 @@ void LattePerformanceMonitor_frameEnd()
 
 		static uint64 logElapsedTime = 0;
 		static uint64 logFrameCount = 0;
+		static uint64 logDrawCalls = 0;
 		if (isFirstUpdate)
 		{
 			logElapsedTime = 0;
 			logFrameCount = 0;
+			logDrawCalls = 0;
 			logIdleTicks = 0;
 			logGuestFenceTicks = 0;
 			logAsyncTicks = 0;
@@ -274,6 +276,7 @@ void LattePerformanceMonitor_frameEnd()
 		{
 			logElapsedTime += elapsedTime;
 			logFrameCount += performanceMonitor.cycle[performanceMonitor.cycleIndex].frameCounter;
+			logDrawCalls += performanceMonitor.cycle[performanceMonitor.cycleIndex].drawCallCounter;
 			if (logElapsedTime >= 5000)
 			{
 				const double gameFps = static_cast<double>(logFrameCount) * 1000.0 /
@@ -281,14 +284,15 @@ void LattePerformanceMonitor_frameEnd()
 				const double averageFrameTime = logFrameCount != 0 ?
 					static_cast<double>(logElapsedTime) / static_cast<double>(logFrameCount) : 0.0;
 				cemuLog_log(LogType::Force,
-					"UWP game-frame performance: frames={} window_ms={} fps={:.2f} avg_frame_ms={:.3f} "
+					"UWP game-frame performance: frames={} window_ms={} fps={:.2f} avg_frame_ms={:.3f} draws_per_frame={} "
 					"cpu_wait_ms commandInput/guestFence/readbackAsync={:.2f}/{:.2f}/{:.2f}",
-					logFrameCount, logElapsedTime, gameFps, averageFrameTime,
+					logFrameCount, logElapsedTime, gameFps, averageFrameTime, logFrameCount != 0 ? logDrawCalls / logFrameCount : 0,
 					static_cast<double>(PPCTimer_tscToMicroseconds(logIdleTicks)) / 1000.0,
 					static_cast<double>(PPCTimer_tscToMicroseconds(logGuestFenceTicks)) / 1000.0,
 					static_cast<double>(PPCTimer_tscToMicroseconds(logAsyncTicks)) / 1000.0);
 				logElapsedTime = 0;
 				logFrameCount = 0;
+				logDrawCalls = 0;
 				logIdleTicks = 0;
 				logGuestFenceTicks = 0;
 				logAsyncTicks = 0;

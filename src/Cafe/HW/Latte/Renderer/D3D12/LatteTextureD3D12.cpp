@@ -2,6 +2,7 @@
 
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.h"
+#include "config/CemuConfig.h"
 
 #include <algorithm>
 #include <atomic>
@@ -122,9 +123,10 @@ LatteTextureD3D12::LatteTextureD3D12(D3D12Renderer* renderer, Latte::E_DIM dim, 
 	// buffer copies place array slices above 0 of block-compressed textures wrongly on Xbox, CPU writes place them correctly
 	if (m_renderer && m_renderer->GetMemoryManager() && m_renderer->IsUma() &&
 		m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D && m_desc.DepthOrArraySize > 1 &&
-		m_desc.Flags == D3D12_RESOURCE_FLAG_NONE && IsBlockCompressedFormat(m_desc.Format))
+		m_desc.Flags == D3D12_RESOURCE_FLAG_NONE && IsBlockCompressedFormat(m_desc.Format) &&
+		!GetConfig().d3d12_gpu_array_upload) // that path uploads through a single-slice staging texture instead
 	{
-		m_cpuWritable = m_renderer->GetMemoryManager()->CreateCpuWritableTexture(m_desc, m_resource);
+		m_cpuWritable = m_renderer->GetMemoryManager()->CreateCpuWritableTexture(m_desc, m_resource, m_renderer->IsCacheCoherentUma());
 		textureCreated = m_cpuWritable;
 	}
 	if (!textureCreated && m_renderer && m_renderer->GetMemoryManager())
@@ -189,6 +191,19 @@ void LatteTextureD3D12::SetSubresourceState(uint32 subresource, D3D12_RESOURCE_S
 		m_uniformState = state;
 }
 
+void LatteTextureD3D12::TryRestoreUniformState(D3D12_RESOURCE_STATES state)
+{
+	if (m_uniformStateValid && m_uniformState == state)
+		return;
+	for (const D3D12_RESOURCE_STATES subresourceState : m_subresourceStates)
+	{
+		if (subresourceState != state)
+			return;
+	}
+	m_uniformStateValid = true;
+	m_uniformState = state;
+}
+
 void LatteTextureD3D12::SetAllSubresourceStates(D3D12_RESOURCE_STATES state)
 {
 	std::fill(m_subresourceStates.begin(), m_subresourceStates.end(), state);
@@ -221,6 +236,8 @@ void LatteTextureD3D12::MarkAllSubresourcesWritten()
 
 LatteTextureView* LatteTextureD3D12::CreateView(Latte::E_DIM dim, Latte::E_GX2SURFFMT format, sint32 firstMip, sint32 mipCount, sint32 firstSlice, sint32 sliceCount)
 {
+	// views allocate descriptors from the recorder's descriptor manager (Phase 4 S3)
+	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
 	cemu_assert_debug(mipCount > 0);
 	cemu_assert_debug(sliceCount > 0);
 	cemu_assert_debug((firstMip + mipCount) <= this->mipLevels);

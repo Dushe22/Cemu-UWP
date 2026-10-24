@@ -468,14 +468,16 @@ bool D3D12MemoryManager::CreateTexture(const D3D12_RESOURCE_DESC& desc, D3D12_RE
 	return true;
 }
 
-bool D3D12MemoryManager::CreateCpuWritableTexture(const D3D12_RESOURCE_DESC& desc, Resource& outResource)
+bool D3D12MemoryManager::CreateCpuWritableTexture(const D3D12_RESOURCE_DESC& desc, Resource& outResource, bool cacheCoherentUma)
 {
 	if (!m_device)
 		return false;
 
 	D3D12_HEAP_PROPERTIES heapProperties{};
 	heapProperties.Type = D3D12_HEAP_TYPE_CUSTOM;
-	heapProperties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
+	// WriteToSubresource swizzles on the CPU with scattered stores; into write-combined memory that ran at ~30 MB/s
+	// (3.6 s per reload of BOTW's 110 MB terrain array). Cache-coherent UMA allows write-back pages.
+	heapProperties.CPUPageProperty = cacheCoherentUma ? D3D12_CPU_PAGE_PROPERTY_WRITE_BACK : D3D12_CPU_PAGE_PROPERTY_WRITE_COMBINE;
 	heapProperties.MemoryPoolPreference = D3D12_MEMORY_POOL_L0;
 	ID3D12Resource* resource = nullptr;
 	const HRESULT hr = m_device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COMMON, nullptr, IID_PPV_ARGS(&resource));
@@ -526,6 +528,7 @@ void* D3D12MemoryManager::AcquireTextureUploadBuffer(uint32_t size)
 {
 	if (m_textureUploadBuffer.size() < size)
 		m_textureUploadBuffer.resize(size);
+	m_textureUploadBufferInUse = true;
 	return m_textureUploadBuffer.data();
 }
 
@@ -533,12 +536,12 @@ void D3D12MemoryManager::ReleaseTextureUploadBuffer(uint8_t* mem)
 {
 	if (!m_textureUploadBuffer.empty() && m_textureUploadBuffer.data() != mem)
 		throw std::runtime_error("Released D3D12 texture upload buffer does not match active buffer");
-	m_textureUploadBuffer.clear();
+	m_textureUploadBufferInUse = false;
 }
 
 uint64_t D3D12MemoryManager::TrimTextureUploadBuffer()
 {
-	if (!m_textureUploadBuffer.empty())
+	if (m_textureUploadBufferInUse)
 		return 0;
 	const uint64_t releasedBytes = m_textureUploadBuffer.capacity();
 	decltype(m_textureUploadBuffer) empty;

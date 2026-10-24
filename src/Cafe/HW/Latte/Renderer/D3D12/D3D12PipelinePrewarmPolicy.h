@@ -8,8 +8,10 @@ namespace D3D12PipelinePrewarmPolicy
 // storage and admission limits must match or the tail of the file is never prewarmed
 inline constexpr std::size_t kMaxRecipeCacheEntries = 16384;
 inline constexpr std::uint64_t kMaxRecipeCacheBytes = 256ull * 1024 * 1024;
-inline constexpr std::uint64_t kPrewarmMemoryHeadroom = 2ull * 1024 * 1024 * 1024;
-inline constexpr std::uint64_t kMaxPrewarmMemoryGrowth = 1024ull * 1024 * 1024;
+// stop about 0.4 GB below the point where heavy work is deferred (84% of 5 GB): BOTW's prewarm stopped at
+// 3.1 GB with 2 GB of the budget unused, leaving those pipelines to be built during play
+inline constexpr std::uint64_t kPrewarmMemoryHeadroom = 1280ull * 1024 * 1024;
+inline constexpr std::uint64_t kMaxPrewarmMemoryGrowth = 1536ull * 1024 * 1024;
 
 enum class Decision { Allow, RecordLimit, MemoryPressure, MemoryHeadroom, MemoryGrowth };
 

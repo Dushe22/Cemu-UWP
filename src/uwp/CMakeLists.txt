@@ -90,12 +90,18 @@ else()
 endif()
 
 set(CEMU_UWP_WINDOWS_KITS_10_DIR "C:/Program Files (x86)/Windows Kits/10" CACHE PATH "Windows Kits 10 root used for UWP redistributables")
-set(CEMU_UWP_DXC_REDIST_DIR "${CEMU_UWP_WINDOWS_KITS_10_DIR}/Redist/D3D/${CEMU_UWP_DXC_ARCH}")
-set(CEMU_UWP_DXC_SDK_BIN_DIR "${CEMU_UWP_WINDOWS_KITS_10_DIR}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/${CEMU_UWP_DXC_ARCH}")
-set(CEMU_UWP_DXC_SEARCH_DIRS
-	"${CEMU_UWP_DXC_SDK_BIN_DIR}"
-	"${CEMU_UWP_DXC_REDIST_DIR}"
-)
+# The DXC DLLs must match the dxcapi.h/dxcompiler.lib of the SDK we compile against.
+# Redist/D3D only carries the 10.0.19041 DXC, which predates IDxcCompiler3: DxcCreateInstance
+# then fails with E_NOINTERFACE and nothing renders. Never package that one.
+set(CEMU_UWP_SDK_VERSION "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+if(NOT CEMU_UWP_SDK_VERSION AND DEFINED ENV{WindowsSDKVersion})
+	string(REGEX REPLACE "[\\\\/]+$" "" CEMU_UWP_SDK_VERSION "$ENV{WindowsSDKVersion}")
+endif()
+if(NOT CEMU_UWP_SDK_VERSION)
+	message(FATAL_ERROR "CemuUwp: unknown Windows SDK version; pass -DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=10.0.xxxxx.0 or configure from a vcvars shell")
+endif()
+set(CEMU_UWP_DXC_SDK_BIN_DIR "${CEMU_UWP_WINDOWS_KITS_10_DIR}/bin/${CEMU_UWP_SDK_VERSION}/${CEMU_UWP_DXC_ARCH}")
+set(CEMU_UWP_DXC_SEARCH_DIRS "${CEMU_UWP_DXC_SDK_BIN_DIR}")
 foreach(dxc_file IN ITEMS dxcompiler.dll dxil.dll)
 	string(REPLACE "." "_" dxc_var_suffix "${dxc_file}")
 	set(dxc_var "CEMU_UWP_${dxc_var_suffix}_PATH")
@@ -109,7 +115,7 @@ foreach(dxc_file IN ITEMS dxcompiler.dll dxil.dll)
 		list(APPEND CEMU_UWP_CONTENT "${${dxc_var}}")
 		list(APPEND CEMU_UWP_RUNTIME_DLLS "${${dxc_var}}")
 	else()
-		message(WARNING "Could not find ${dxc_file} in ${CEMU_UWP_DXC_REDIST_DIR}; D3D12 shader compilation may fail at runtime")
+		message(FATAL_ERROR "CemuUwp: ${dxc_file} not found in ${CEMU_UWP_DXC_SDK_BIN_DIR}; D3D12 cannot compile shaders without it")
 	endif()
 endforeach()
 
@@ -183,6 +189,8 @@ if(CEMU_UWP_D3D12_DIAGNOSTICS)
 	target_link_options(CemuUwp PRIVATE /DEBUG:FULL)
 endif()
 
+# a map file resolves the module+offset stack frames of UWP crash logs (it does not change the code layout)
+target_link_options(CemuUwp PRIVATE "/MAP:src/uwp/CemuUwp.map") # relative to the build folder; an absolute path has a space
 target_compile_definitions(CemuUwp PRIVATE CEMU_UWP NOMINMAX WIN32_LEAN_AND_MEAN)
 target_include_directories(CemuUwp PRIVATE
 	"${CMAKE_CURRENT_SOURCE_DIR}"

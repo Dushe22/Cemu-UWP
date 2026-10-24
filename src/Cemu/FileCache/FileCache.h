@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <mutex>
+#include <unordered_map>
 
 struct _FileCacheAsyncWriter;
 
@@ -52,6 +53,8 @@ public:
 	bool GetUncompressedFileByIndexBounded(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut, size_t maxBytes);
 	bool GetUncompressedFileInfoByIndexBounded(sint32 index, uint64& name1, uint64& name2, uint32& size, size_t maxBytes);
 	bool HasFile(const FileName&& name);
+	// names of all stored files (name1, name2), for bulk membership checks
+	void GetFileNames(std::vector<std::pair<uint64, uint64>>& namesOut);
 
 	sint32 GetFileCount();
 
@@ -87,6 +90,9 @@ private:
 	void _addFileInternal(uint64 name1, uint64 name2, const uint8* fileData, sint32 fileSize, bool noCompression);
 	bool _getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut);
 	void asyncWriteFinished();
+	// name -> table index, so lookups do not scan the whole table (callers hold mutex)
+	void _rebuildNameIndex();
+	sint32 _findEntryIndex(uint64 name1, uint64 name2) const;
 
 	class FileStream* fileStream{};
 	uint64 dataOffset{};
@@ -99,6 +105,12 @@ private:
 	uint32 fileTableSize{};
 	// options
 	bool enableCompression{true};
+	struct NameHash
+	{
+		size_t operator()(const std::pair<uint64, uint64>& name) const { return (size_t)(name.first ^ (name.second * 0x9E3779B97F4A7C15ull)); }
+	};
+	std::unordered_map<std::pair<uint64, uint64>, sint32, NameHash> nameIndex;
+	sint32 freeSearchStart{};
 
 	std::recursive_mutex mutex;
 	std::mutex asyncWriteMutex;

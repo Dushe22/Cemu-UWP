@@ -15,6 +15,7 @@
 #if defined(CEMU_UWP)
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
 #include "input/emulated/VPADController.h"
+#include "uwp/UwpMemoryBudgetService.h"
 #endif
 
 #include <cinttypes>
@@ -120,7 +121,17 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 #endif
 
 			if (config.overlay.ram_usage)
+			{
+#if defined(CEMU_UWP)
+				// the console limits app memory usage, not the working set
+				const auto memory = CemuUwp::MemoryBudgetService::GetLatestSnapshot();
+				if (memory.enabled && memory.limitBytes != 0)
+					ImGui::Text("RAM: %uMB / %uMB (%s)", (uint32)(memory.usageBytes / (1024 * 1024)), (uint32)(memory.limitBytes / (1024 * 1024)),
+						CemuUwp::MemoryBudgetService::PressureName(memory.pressure));
+				else
+#endif
 				ImGui::Text("RAM: %dMB", g_state.ram_usage);
+			}
 
 			if(config.overlay.vram_usage && g_state.vramUsage != -1 && g_state.vramTotal != -1)
 				ImGui::Text("VRAM: %dMB / %dMB", g_state.vramUsage, g_state.vramTotal);

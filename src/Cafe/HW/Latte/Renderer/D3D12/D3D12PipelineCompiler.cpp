@@ -110,7 +110,8 @@ uint64 D3D12PipelineCompiler::CalculateGraphicsPipelineHash(const LatteFetchShad
 															const LatteDecompilerShader* geometryShader,
 															const LatteDecompilerShader* pixelShader,
 															const CachedFBOD3D12* fbo,
-															const LatteContextRegister& lcr)
+															const LatteContextRegister& lcr,
+															bool ignoreDepthBiasValues)
 {
 	uint64 stateHash = CalculateMinimalGraphicsPipelineHash(fetchShader, lcr);
 	stateHash = (stateHash >> 8) + (stateHash * 0x370531ull) % 0x7F980D3BF9B4639Dull;
@@ -128,11 +129,15 @@ uint64 D3D12PipelineCompiler::CalculateGraphicsPipelineHash(const LatteFetchShad
 		// bias values are set per draw
 		stateHash = MixHash(stateHash, 0xD7B1A5ull, 11);
 	}
+	else if (lcr.PA_SU_SC_MODE_CNTL.get_OFFSET_FRONT_ENABLED() && ignoreDepthBiasValues)
+	{
+		stateHash = MixHash(stateHash, 0xB1A5F7EEull, 11);
+	}
 	else if (lcr.PA_SU_SC_MODE_CNTL.get_OFFSET_FRONT_ENABLED())
 	{
-		stateHash = MixHash(stateHash, ctxRegister[Latte::REGADDR::PA_SU_POLY_OFFSET_FRONT_SCALE], 11);
+		stateHash = MixHash(stateHash, QuantizeDepthBiasBits(ctxRegister[Latte::REGADDR::PA_SU_POLY_OFFSET_FRONT_SCALE]), 11);
 		stateHash = MixHash(stateHash, ctxRegister[Latte::REGADDR::PA_SU_POLY_OFFSET_FRONT_OFFSET], 13);
-		stateHash = MixHash(stateHash, ctxRegister[Latte::REGADDR::PA_SU_POLY_OFFSET_CLAMP], 17);
+		stateHash = MixHash(stateHash, QuantizeDepthBiasBits(ctxRegister[Latte::REGADDR::PA_SU_POLY_OFFSET_CLAMP]), 17);
 	}
 
 	const uint32 colorControlReg = ctxRegister[Latte::REGADDR::CB_COLOR_CONTROL];

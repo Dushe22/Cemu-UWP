@@ -11,8 +11,13 @@ uint64 PPCTimer_tscToMicroseconds(uint64 us);
 
 #include <chrono>
 
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE) || defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
+// UWP release builds keep the sampled (1 in 64 draws) per-stage CPU profile: the forest is render-thread bound
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS) || defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE) || defined(CEMU_UWP_PERFORMANCE_EXPERIMENT) || defined(CEMU_UWP)
 #define LATTE_UWP_DETAILED_PROFILING
+#endif
+// release UWP builds keep the cheap per-frame hitch log (frames over 100 ms with what the render thread was doing)
+#if defined(LATTE_UWP_DETAILED_PROFILING) || defined(CEMU_UWP)
+#define LATTE_UWP_HITCH_LOG
 #endif
 
 // render-thread CPU wall times, not GPU timestamps; nested scopes may overlap
@@ -35,7 +40,7 @@ enum class LatteUwpHitchOp
 	Count
 };
 
-#if defined(LATTE_UWP_DETAILED_PROFILING)
+#if defined(LATTE_UWP_HITCH_LOG)
 void LatteUwpRecordHitchOperation(LatteUwpHitchOp operation, uint64 elapsedUs);
 #endif
 
@@ -169,7 +174,7 @@ private:
 class LatteUwpHitchScope
 {
 public:
-#if defined(LATTE_UWP_DETAILED_PROFILING)
+#if defined(LATTE_UWP_HITCH_LOG)
 	explicit LatteUwpHitchScope(LatteUwpHitchOp operation)
 		: m_operation(operation), m_started(std::chrono::steady_clock::now()) {}
 	~LatteUwpHitchScope()
@@ -185,7 +190,7 @@ public:
 	LatteUwpHitchScope& operator=(const LatteUwpHitchScope&) = delete;
 
 private:
-#if defined(LATTE_UWP_DETAILED_PROFILING)
+#if defined(LATTE_UWP_HITCH_LOG)
 	LatteUwpHitchOp m_operation;
 	std::chrono::steady_clock::time_point m_started;
 #endif

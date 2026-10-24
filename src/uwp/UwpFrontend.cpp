@@ -36,6 +36,7 @@
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12Renderer.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/RendererShaderD3D12.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
 #include "Cafe/OS/libs/erreula/erreula.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -416,7 +417,7 @@ bool s_nativeTextInputOwnedFrame = false;
 constexpr int kHomeColumns = 5;
 constexpr int kHomeRows = 3;
 constexpr int kHomePageSize = kHomeColumns * kHomeRows;
-constexpr int kQuickMenuItemCount = 7;
+constexpr int kQuickMenuItemCount = 8;
 constexpr float kOverlayFontSizePx = 22.0f;
 
 enum class FocusArea
@@ -531,6 +532,7 @@ struct TitleContextMenuState
 	std::string originalName;
 	std::string wikiUri;
 	std::vector<fs::path> shaderCachePaths;
+	uint64 shaderCacheBytes = 0;
 	fs::path gameDirectory;
 	fs::path saveDirectory;
 	fs::path updateDirectory;
@@ -2370,6 +2372,22 @@ void ActivateQuickMenuSelection()
 		s_quickMenuRepeatCounters = {};
 		break;
 	case 3:
+	{
+		// one switch for the stats that matter on console: FPS, CPU and memory against the app limit
+		auto& config = GetConfig();
+		const bool enable = config.overlay.position == ScreenPosition::kDisabled;
+		config.overlay.position = enable ? ScreenPosition::kTopRight : ScreenPosition::kDisabled; // top left holds most HUDs (BOTW hearts)
+		if (enable)
+		{
+			config.overlay.fps = true;
+			config.overlay.cpu_usage = true;
+			config.overlay.ram_usage = true;
+			config.overlay.vram_usage = true;
+		}
+		SaveConfig();
+		break;
+	}
+	case 4:
 		if (CemuUwp::CompanionService::IsStreamBusy())
 			break;
 		if (CemuUwp::CompanionService::IsStreamActive())
@@ -2377,12 +2395,12 @@ void ActivateQuickMenuSelection()
 		else
 			CemuUwp::CompanionService::RequestStreamStart();
 		break;
-	case 4:
+	case 5:
 		SetQuickMenuOpen(false);
 		if (!CemuHost::RestartTitle())
 			PushStatus(Tr("Restart unavailable"));
 		break;
-	case 5:
+	case 6:
 		SetQuickMenuOpen(false);
 		if (CemuUwp::WindowHost::HasLaunchOnExitUri())
 		{
@@ -2395,7 +2413,7 @@ void ActivateQuickMenuSelection()
 			OpenPage(Page::Home);
 		}
 		break;
-	case 6:
+	case 7:
 		SetQuickMenuOpen(false);
 		CemuHost::Shutdown();
 		winrt::Windows::ApplicationModel::Core::CoreApplication::Exit();
@@ -3015,6 +3033,8 @@ std::vector<fs::path> FindTitleShaderCachePaths(uint64 titleId)
 		ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_mtlpipeline.bin", titleId),
 		ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12pipeline.bin", titleId),
 		ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12_native_pso.bin", titleId),
+		ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12recipes.bin", titleId),
+		ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12recipes_usage.bin", titleId),
 	};
 	for (const fs::path& path : candidates)
 	{
@@ -3023,6 +3043,31 @@ std::vector<fs::path> FindTitleShaderCachePaths(uint64 titleId)
 			paths.emplace_back(path);
 	}
 	return paths;
+}
+
+uint64 GetShaderCacheBytes(const std::vector<fs::path>& paths)
+{
+	uint64 total = 0;
+	for (const fs::path& path : paths)
+	{
+		std::error_code ec;
+		if (fs::is_directory(path, ec))
+		{
+			for (auto it = fs::recursive_directory_iterator(path, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+			{
+				std::error_code sizeEc;
+				if (it->is_regular_file(sizeEc))
+					total += it->file_size(sizeEc);
+			}
+		}
+		else if (!ec)
+		{
+			const uint64 size = fs::file_size(path, ec);
+			if (!ec)
+				total += size;
+		}
+	}
+	return total;
 }
 
 std::string BuildTitleWikiUri(GameInfo2& gameInfo)
@@ -3146,6 +3191,7 @@ void OpenTitleContextMenu(const TitleTile& title)
 	if (state.hasDlc)
 		state.dlcDirectory = ExistingTitleDirectory(gameInfo.GetAOC().front().GetPath());
 	state.shaderCachePaths = FindTitleShaderCachePaths(state.baseTitleId);
+	state.shaderCacheBytes = GetShaderCacheBytes(state.shaderCachePaths);
 	state.metadata = UwpImGuiFrontend::LoadScreenScraperMetadata(
 		TitleMediaRoot(state.baseTitleId) / "metadata.json",
 		state.title.region, MetadataLanguage());
@@ -4473,8 +4519,46 @@ void DrawGraphicsSettings()
 		SaveConfig();
 	}
 	CheckboxConfig(Tr("Async shader compile"), config.async_compile);
+	CheckboxConfig(Tr("Threaded draw recording (experimental, restart Cemu)"), config.d3d12_threaded_recording);
 	CheckboxConfig(Tr("Full sync at GX2DrawDone()"), config.gx2drawdone_sync);
 	CheckboxConfig(Tr("Render upside down"), config.render_upside_down);
+
+	// console storage is tight; per-title removal lives in the title menu
+	SectionTitle(Tr("Shader caches"));
+	static std::optional<uint64> s_allShaderCacheBytes;
+	static bool s_confirmAllShaderCacheRemoval = false;
+	const fs::path shaderCacheRoot = ActiveSettings::GetCachePath("shaderCache");
+	if (!s_allShaderCacheBytes)
+		s_allShaderCacheBytes = GetShaderCacheBytes({ shaderCacheRoot });
+	ImGui::TextWrapped("%s", TrFormat("All titles: {:.1f} MB", (double)*s_allShaderCacheBytes / (1024.0 * 1024.0)).c_str());
+	if (CafeSystem::IsTitleRunning())
+	{
+		s_confirmAllShaderCacheRemoval = false;
+		ImGui::TextDisabled("%s", Tr("Quit the game to remove shader caches."));
+	}
+	else if (ShellButton(s_confirmAllShaderCacheRemoval ? Tr("Press again to remove every shader cache") : Tr("Remove all shader caches")))
+	{
+		if (!s_confirmAllShaderCacheRemoval)
+			s_confirmAllShaderCacheRemoval = true;
+		else
+		{
+			s_confirmAllShaderCacheRemoval = false;
+			size_t failed = 0;
+			std::error_code ec;
+			for (const auto& entry : fs::directory_iterator(shaderCacheRoot, ec))
+			{
+				std::error_code removeError;
+				fs::remove_all(entry.path(), removeError);
+				if (removeError)
+				{
+					failed++;
+					cemuLog_log(LogType::Force, "UWP failed to remove {}: {}", _pathToUtf8(entry.path()), removeError.message());
+				}
+			}
+			s_allShaderCacheBytes.reset();
+			PushStatus(failed == 0 ? std::string(Tr("Removed all shader caches")) : TrFormat("Removed shader caches; {} items failed", failed));
+		}
+	}
 
 	SectionTitle(Tr("Graphic packs"));
 	CheckboxConfig(Tr("Skip resolution rules from packs whose shaders cannot run on this renderer"),
@@ -5577,6 +5661,20 @@ void DrawGraphicPacks()
 		if (CafeSystem::IsTitleRunning() && pack->ContainsTitleId(CafeSystem::GetForegroundTitleId()))
 			PushStatus(Tr("Restart the title if this pack needs a full reload"));
 	}
+	// BOTW runs at 30 FPS on Series S; FPS++ "Normal Settings" keeps game speed right through dips,
+	// and the 30 limit keeps frame pacing even instead of chasing the 60 default
+	if (pack->GetName() == "FPS++" && pack->GetVirtualPath().find("Breath of the Wild") != std::string::npos &&
+		ShellButton(Tr("Series S recommended: 30 FPS, steady game speed")))
+	{
+		pack->SetEnabled(true);
+		const bool modeSet = pack->SetActivePreset("Mode", "Normal Settings");
+		const bool limitSet = pack->SetActivePreset("FPS Limit", "30FPS Limit");
+		// present every second TV refresh: with VSync off the emulator's 30 Hz drifts against the 60 Hz output
+		// and a frame now and then stays 3 refreshes, which shows as judder in camera pans and cutscenes
+		GetConfig().vsync = 2;
+		SaveGraphicPackState();
+		PushStatus(modeSet && limitSet ? Tr("FPS++ set for Series S; restart the game to apply") : Tr("This FPS++ version has different presets; set them manually"));
+	}
 	ImGui::Text(Tr("Version: %d"), pack->GetVersion());
 	ImGui::Text(Tr("Activated: %s"), pack->IsActivated() ? Tr("yes") : Tr("no"));
 	const auto& shaderAvailability = GetShaderAvailabilityForSelectedPack(pack);
@@ -6040,7 +6138,7 @@ void DrawLogs()
 	SectionTitle(Tr("Logs"));
 	if (ShellButton(Tr("Refresh logs"), ImVec2(160.0f, 42.0f)))
 	{
-		logText = TailFile(ActiveSettings::GetUserDataPath("log.txt"), 300);
+		logText = TailFile(cemuLog_GetActiveLogFilePath(), 300);
 		bootstrapText = TailFile(CemuUwp::StorageService::LocalRoot() / "bootstrap.log", 120);
 	}
 	ImGui::SameLine();
@@ -6048,7 +6146,7 @@ void DrawLogs()
 		cemuLog_waitForFlush();
 	if (logText.empty())
 	{
-		logText = TailFile(ActiveSettings::GetUserDataPath("log.txt"), 300);
+		logText = TailFile(cemuLog_GetActiveLogFilePath(), 300);
 		bootstrapText = TailFile(CemuUwp::StorageService::LocalRoot() / "bootstrap.log", 120);
 	}
 	if (ImGui::BeginTabBar("logs"))
@@ -6862,6 +6960,12 @@ void StartShellLaunch(const TitleTile& title, const UnitRect& rect, ShellTexture
 {
 	if (!title.launchable)
 		return;
+	// without DXC no game shader compiles: say why instead of booting into a black screen
+	if (const std::string& compilerError = RendererShaderD3D12::GetCompilerError(); !compilerError.empty())
+	{
+		s_notificationCenter.Push(compilerError, 12.0f);
+		return;
+	}
 	s_launchAnim.active = true;
 	s_launchAnim.launched = false;
 	s_launchAnim.timer = 0.0f;
@@ -7468,8 +7572,9 @@ void DrawTitleGameProfileEditor(const ShellLayoutContext& ctx, ImDrawList* draw,
 }
 void DrawTitleCacheConfirmation(const ShellLayoutContext& ctx, ImDrawList* draw, const UnitRect& panel)
 {
-	const std::string count = fmt::format("{} cache item{} found", s_titleContextMenu.shaderCachePaths.size(),
-		s_titleContextMenu.shaderCachePaths.size() == 1 ? "" : "s");
+	const std::string count = fmt::format("{} cache item{} found ({:.1f} MB)", s_titleContextMenu.shaderCachePaths.size(),
+		s_titleContextMenu.shaderCachePaths.size() == 1 ? "" : "s",
+		(double)s_titleContextMenu.shaderCacheBytes / (1024.0 * 1024.0));
 	const UwpImGuiFrontend::OverlayConfirmationModel model{
 		.prompt = "Remove this title's shader caches?",
 		.details = {
@@ -7705,6 +7810,8 @@ void DrawQuickMenuWindow()
 		{ "return", Tr("Return to Game"), {}, true },
 		{ "layout", Tr("Layout Mode"), Tr(LayoutName(currentLayout)), true },
 		{ "mapping", Tr("Controller Mapping"), Tr("Per-game profile"), true },
+		{ "overlay", Tr("Performance Overlay"),
+			GetConfig().overlay.position == ScreenPosition::kDisabled ? Tr("Off") : Tr("On"), true },
 		{ "stream", streamBusy ? Tr("Stream: working...") :
 			(streamActive ? Tr("Stop Stream") : Tr("Start Stream")), {}, !streamBusy },
 		{ "restart", Tr("Restart Game"), {}, true },

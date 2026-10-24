@@ -2,6 +2,7 @@
 
 #include "Cafe/HW/Latte/Core/LatteQueryObject.h"
 
+#include <atomic>
 #include <vector>
 
 class D3D12Renderer;
@@ -17,6 +18,11 @@ public:
 	bool getResult(uint64& numSamplesPassed) override;
 	void begin() override;
 	void end() override;
+private:
+	// the command-list half of begin/end, run where the recording state lives
+	void beginRecorded();
+	void endRecorded();
+public:
 	void beginFragment();
 	void endFragment();
 	void handleFinishedFragments();
@@ -39,4 +45,8 @@ private:
 	bool m_hasActiveQuery{};
 	bool m_hasActiveFragment{};
 	bool m_isStartingFragment{};
+	// threaded recording: the recorder publishes the final sample count here, so the Latte side reads it without
+	// draining the recording queue
+	std::atomic<bool> m_resultPublished{};
+	uint64 m_publishedResult{};
 };

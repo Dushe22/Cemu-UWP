@@ -5,6 +5,8 @@
 #include "config/ActiveSettings.h"
 #include "util/helpers/helpers.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12HlslPruner.h"
 #if defined(CEMU_UWP)
 #include "uwp/UwpMemoryBudgetService.h"
 #endif
@@ -27,6 +29,7 @@
 #include <mutex>
 #include <semaphore>
 #include <thread>
+#include <unordered_set>
 
 namespace
 {
@@ -42,10 +45,56 @@ std::atomic_uint64_t s_cacheLoadShadersDiscovered{ 0 };
 std::atomic_uint64_t s_cacheLoadPrewarmWaitMilliseconds{ 0 };
 std::atomic_uint64_t s_renderThreadCompilationWaits{ 0 };
 
-std::counting_semaphore<8>& NativeCompilationSlots()
+// game shaders whose DXIL can be dropped under memory pressure and reloaded from s_dxilCache
+std::mutex s_residencyMutex;
+std::unordered_set<RendererShaderD3D12*> s_residentGameShaders;
+std::atomic_uint64_t s_dxilEvictedBytes{ 0 };
+std::atomic_uint64_t s_dxilReloads{ 0 };
+std::atomic_uint64_t s_hlslPrunedBytes{ 0 };
+std::atomic_uint64_t s_hlslPruneFallbacks{ 0 };
+
+// Bounds concurrent DXC compiles and driver PSO creations. The limit is raised while a title loads
+// (nothing else runs then) and drops back to the runtime value afterwards; slots already taken above
+// a lowered limit simply finish.
+class NativeCompilationGate
 {
-	static std::counting_semaphore<8> slots(RendererShaderD3D12::GetNativeCompilationConcurrency());
-	return slots;
+public:
+	void Acquire()
+	{
+		std::unique_lock lock(m_mutex);
+		m_condition.wait(lock, [this]() { return m_active < m_limit; });
+		m_active++;
+	}
+
+	void Release()
+	{
+		{
+			std::scoped_lock lock(m_mutex);
+			m_active--;
+		}
+		m_condition.notify_one();
+	}
+
+	void SetLimit(uint32 limit)
+	{
+		{
+			std::scoped_lock lock(m_mutex);
+			m_limit = std::max<uint32>(limit, 1);
+		}
+		m_condition.notify_all();
+	}
+
+private:
+	std::mutex m_mutex;
+	std::condition_variable m_condition;
+	uint32 m_active{};
+	uint32 m_limit{ RendererShaderD3D12::GetNativeCompilationConcurrency() };
+};
+
+NativeCompilationGate& NativeCompilationSlots()
+{
+	static NativeCompilationGate gate;
+	return gate;
 }
 }
 
@@ -67,8 +116,33 @@ public:
 			threadCount, std::thread::hardware_concurrency());
 	}
 
+	// extra threads for the loading screen, when the emulated CPU is idle; they leave once the queue
+	// has drained so that at runtime no popped job ever waits for a slot the render thread needs
+	void StartLoadingThreads(uint32 count)
+	{
+		std::scoped_lock lock(m_loadingThreadsMutex);
+		if (!m_threadsActive.load(std::memory_order_acquire) || !m_loadingThreads.empty())
+			return;
+		m_loadingThreadsActive.store(true, std::memory_order_release);
+		for (uint32 i = 0; i < count; ++i)
+			m_loadingThreads.emplace_back(&_ShaderD3D12ThreadPool::LoadingThreadFunc, this);
+	}
+
+	void StopLoadingThreads()
+	{
+		std::vector<std::thread> threads;
+		{
+			std::scoped_lock lock(m_loadingThreadsMutex);
+			m_loadingThreadsActive.store(false, std::memory_order_release);
+			threads.swap(m_loadingThreads);
+		}
+		for (auto& thread : threads)
+			thread.join();
+	}
+
 	void StopThreads()
 	{
+		StopLoadingThreads();
 		if (m_threadsActive.load(std::memory_order_acquire))
 			WaitUntilIdle();
 		if (!m_threadsActive.exchange(false))
@@ -159,6 +233,39 @@ public:
 	}
 
 private:
+	bool TryRunQueuedJob()
+	{
+		RendererShaderD3D12* job = nullptr;
+		{
+			std::scoped_lock lock(m_compilationQueueMutex);
+			if (m_compilationQueue.empty())
+				return false;
+			job = m_compilationQueue.front();
+			m_compilationQueue.pop_front();
+			job->m_compilationState.setValue(RendererShaderD3D12::COMPILATION_STATE::COMPILING);
+		}
+		job->CompileInternal();
+		++g_compiled_shaders_async;
+		job->m_compilationState.setValue(RendererShaderD3D12::COMPILATION_STATE::DONE);
+		CompleteJob();
+		return true;
+	}
+
+	void LoadingThreadFunc()
+	{
+		SetThreadName("d3d12ShaderLoad");
+		SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+		while (m_loadingThreadsActive.load(std::memory_order_acquire))
+		{
+			// the timeout lets the thread notice the end of loading without stealing wake-ups
+			if (!m_compilationQueueCount.decrementWithWaitAndTimeout(50))
+				continue;
+			// an empty queue means the token was surplus (stolen jobs leave some); drop it like the
+			// regular workers do
+			TryRunQueuedJob();
+		}
+	}
+
 	void CompilerThreadFunc()
 	{
 		SetThreadName("d3d12ShaderComp");
@@ -199,6 +306,9 @@ private:
 	std::atomic_uint32_t m_pendingJobs{ 0 };
 	std::mutex m_idleMutex;
 	std::condition_variable m_idleCondition;
+	std::mutex m_loadingThreadsMutex;
+	std::vector<std::thread> m_loadingThreads;
+	std::atomic_bool m_loadingThreadsActive{ false };
 };
 
 _ShaderD3D12ThreadPool ShaderD3D12ThreadPool;
@@ -341,6 +451,36 @@ struct DxcThreadCompiler
 };
 
 thread_local DxcThreadCompiler t_dxcCompiler;
+
+std::string s_dxcError;
+
+// Logs which dxcompiler.dll got loaded. A DXC older than the SDK headers (e.g. the 10.0.19041
+// Redist one) has no IDxcCompiler3 and fails every compile with E_NOINTERFACE.
+void LogDxcRuntime()
+{
+	wchar_t path[MAX_PATH] = L"?";
+	if (HMODULE module = GetModuleHandleW(L"dxcompiler.dll"))
+		GetModuleFileNameW(module, path, MAX_PATH);
+
+	UINT32 major = 0, minor = 0;
+	Microsoft::WRL::ComPtr<IDxcVersionInfo> versionInfo;
+	const HRESULT versionHr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&versionInfo));
+	if (SUCCEEDED(versionHr))
+		versionInfo->GetVersion(&major, &minor);
+
+	Microsoft::WRL::ComPtr<IDxcCompiler3> compiler3;
+	const HRESULT compilerHr = DxcCreateInstance(CLSID_DxcCompiler, IID_PPV_ARGS(&compiler3));
+	cemuLog_log(LogType::Force, "D3D12: DXC {}.{} from {} (version hr=0x{:08x}, IDxcCompiler3 hr=0x{:08x})",
+		major, minor, boost::nowide::narrow(path), (uint32)versionHr, (uint32)compilerHr);
+	if (FAILED(compilerHr))
+	{
+		cemuLog_log(LogType::Force, "D3D12: the packaged dxcompiler.dll is too old or broken; shaders cannot compile. Package the DXC from Windows Kits/10/bin/<sdk>/x64.");
+		s_dxcError = fmt::format("Shader compiler unavailable (DXC {}.{}, error 0x{:08x}). Reinstall a build that ships the Windows SDK dxcompiler.dll.",
+			major, minor, (uint32)compilerHr);
+	}
+}
+
+std::once_flag s_dxcProbe;
 }
 
 uint32 RendererShaderD3D12::GetNativeCompilationConcurrency()
@@ -350,14 +490,27 @@ uint32 RendererShaderD3D12::GetNativeCompilationConcurrency()
 	return concurrency;
 }
 
+uint32 RendererShaderD3D12::GetLoadingCompilationConcurrency()
+{
+	// while a title loads, the emulated CPU is idle: use every hardware thread but one
+	static const uint32 concurrency = std::max(GetNativeCompilationConcurrency(),
+		std::clamp<uint32>(std::thread::hardware_concurrency(), 2u, 8u) - 1u);
+	return concurrency;
+}
+
+void RendererShaderD3D12::SetTitleLoading(bool loading)
+{
+	NativeCompilationSlots().SetLimit(loading ? GetLoadingCompilationConcurrency() : GetNativeCompilationConcurrency());
+}
+
 RendererShaderD3D12::NativeCompilationSlot::NativeCompilationSlot()
 {
-	NativeCompilationSlots().acquire();
+	NativeCompilationSlots().Acquire();
 }
 
 RendererShaderD3D12::NativeCompilationSlot::~NativeCompilationSlot()
 {
-	NativeCompilationSlots().release();
+	NativeCompilationSlots().Release();
 }
 
 RendererShaderD3D12::RendererShaderD3D12(ShaderType type, uint64 baseHash, uint64 auxHash, bool isGameShader, bool isGfxPackShader, const std::string& hlslCode)
@@ -365,6 +518,12 @@ RendererShaderD3D12::RendererShaderD3D12(ShaderType type, uint64 baseHash, uint6
 {
 	if (isGameShader && s_isLoadingShadersD3D12.load(std::memory_order_acquire))
 		s_cacheLoadShadersDiscovered.fetch_add(1, std::memory_order_relaxed);
+	m_dxilLastUseFrame = LatteGPUState.frameCounter;
+	if (isGameShader && !isGfxPackShader && baseHash != 0)
+	{
+		std::scoped_lock lock(s_residencyMutex);
+		s_residentGameShaders.insert(this);
+	}
 
 	if (ShaderD3D12ThreadPool.HasThreadsRunning())
 		ShaderD3D12ThreadPool.Queue(this);
@@ -374,6 +533,67 @@ RendererShaderD3D12::RendererShaderD3D12(ShaderType type, uint64 baseHash, uint6
 		CompileInternal();
 		m_compilationState.setValue(COMPILATION_STATE::DONE);
 	}
+}
+
+RendererShaderD3D12::~RendererShaderD3D12()
+{
+	std::scoped_lock lock(s_residencyMutex);
+	s_residentGameShaders.erase(this);
+}
+
+bool RendererShaderD3D12::EnsureDXILResident()
+{
+	if (m_dxilEvicted)
+	{
+		m_dxilEvicted = false;
+		uint64 h1, h2;
+		GenerateDXILCacheKey(m_type, m_baseHash, m_auxHash, m_hlslSourceHash, h1, h2);
+		std::vector<uint8> data;
+		if (s_dxilCache && s_dxilCache->GetFile({ h1, h2 }, data) && IsValidDxilContainer(data))
+		{
+			m_dxil = std::move(data);
+			s_dxilReloads.fetch_add(1, std::memory_order_relaxed);
+		}
+		else
+		{
+			cemuLog_log(LogType::Force, "D3D12: could not reload evicted DXIL for {} shader {:016x}_{:016x}",
+				StageName(m_type), m_baseHash, m_auxHash);
+		}
+	}
+	m_dxilLastUseFrame = LatteGPUState.frameCounter;
+	return !m_dxil.empty();
+}
+
+uint64 RendererShaderD3D12::EvictIdleDXIL(uint32 minIdleFrames, uint64 targetBytes)
+{
+	if (!s_dxilCache)
+		return 0;
+	// only drop what the cache can give back; one sorted name list keeps this linear
+	std::vector<std::pair<uint64, uint64>> cachedNames;
+	s_dxilCache->GetFileNames(cachedNames);
+	std::sort(cachedNames.begin(), cachedNames.end());
+
+	const uint32 frame = LatteGPUState.frameCounter;
+	uint64 released = 0;
+	std::scoped_lock lock(s_residencyMutex);
+	for (RendererShaderD3D12* shader : s_residentGameShaders)
+	{
+		if (shader->m_dxilEvicted || shader->m_dxil.empty() || !shader->m_compilationState.hasState(COMPILATION_STATE::DONE))
+			continue;
+		if (frame - shader->m_dxilLastUseFrame < minIdleFrames)
+			continue;
+		uint64 h1, h2;
+		GenerateDXILCacheKey(shader->m_type, shader->m_baseHash, shader->m_auxHash, shader->m_hlslSourceHash, h1, h2);
+		if (!std::binary_search(cachedNames.begin(), cachedNames.end(), std::make_pair(h1, h2)))
+			continue;
+		released += shader->m_dxil.capacity();
+		std::vector<uint8>().swap(shader->m_dxil);
+		shader->m_dxilEvicted = true;
+		if (targetBytes != 0 && released >= targetBytes)
+			break;
+	}
+	s_dxilEvictedBytes.fetch_add(released, std::memory_order_relaxed);
+	return released;
 }
 
 const wchar_t* RendererShaderD3D12::GetTargetProfile() const
@@ -394,10 +614,10 @@ const wchar_t* RendererShaderD3D12::GetTargetProfile() const
 
 bool RendererShaderD3D12::TryLoadFromCache()
 {
-	if (!s_dxilCache || m_isGfxPackShader || m_baseHash == 0)
-		return false;
-	// after cache loading game shaders are new; synthetic ones may load anytime
-	if (m_isGameShader && !s_isLoadingShadersD3D12.load(std::memory_order_acquire))
+	// also consulted after loading: a shader missing from the transferable cache (or recreated after a
+	// graphic pack toggle) may still have DXIL from an earlier session, and a lookup is far cheaper than DXC
+	// graphic pack replacements are cached too: the key covers the source, so an edited pack misses
+	if (!s_dxilCache || m_baseHash == 0)
 		return false;
 
 	uint64 h1, h2;
@@ -417,7 +637,7 @@ bool RendererShaderD3D12::TryLoadFromCache()
 
 void RendererShaderD3D12::StoreToCache() const
 {
-	if (!s_dxilCache || m_isGfxPackShader || m_baseHash == 0 || m_dxil.empty())
+	if (!s_dxilCache || m_baseHash == 0 || m_dxil.empty())
 		return;
 
 	uint64 h1, h2;
@@ -455,9 +675,17 @@ void RendererShaderD3D12::CompileInternal()
 		return;
 	}
 
+	// DXC parses every helper of the emitter's prelude; dropping the unreferenced ones roughly halves
+	// the compile time of a typical shader. The cache key stays on the full source.
+	std::string prunedHlsl;
+	const bool pruned = D3D12HlslPruner::PruneUnusedFunctions(m_hlslCode, "main", prunedHlsl);
+	if (pruned)
+		s_hlslPrunedBytes.fetch_add(m_hlslCode.size() - prunedHlsl.size(), std::memory_order_relaxed);
+	const std::string& compiledHlsl = pruned ? prunedHlsl : m_hlslCode;
+
 	DxcBuffer source{};
-	source.Ptr = m_hlslCode.data();
-	source.Size = m_hlslCode.size();
+	source.Ptr = compiledHlsl.data();
+	source.Size = compiledHlsl.size();
 	source.Encoding = DXC_CP_UTF8;
 
 	std::array<LPCWSTR, 9> args =
@@ -496,10 +724,39 @@ void RendererShaderD3D12::CompileInternal()
 
 	Microsoft::WRL::ComPtr<IDxcBlobUtf8> errors;
 	result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
-	const std::string diagnostics = BlobToString(errors.Get());
+	std::string diagnostics = BlobToString(errors.Get());
 
 	HRESULT status = S_OK;
 	result->GetStatus(&status);
+	if (FAILED(status) && pruned)
+	{
+		// should not happen; compile what the emitter produced so a pruner bug only costs time
+		s_hlslPruneFallbacks.fetch_add(1, std::memory_order_relaxed);
+		cemuLog_log(LogType::Force, "D3D12: pruned HLSL failed for {} shader {:016x}_{:016x}, compiling the full source:\n{}",
+			StageName(m_type), m_baseHash, m_auxHash, diagnostics.empty() ? "<no diagnostics>" : diagnostics);
+		source.Ptr = m_hlslCode.data();
+		source.Size = m_hlslCode.size();
+		result.Reset();
+		{
+#if defined(CEMU_UWP)
+			NativeCompilationSlot nativeCompilationSlot;
+#endif
+			hr = t_dxcCompiler.compiler->Compile(&source, args.data(), (uint32)args.size(), nullptr, IID_PPV_ARGS(&result));
+		}
+		if (FAILED(hr) || !result)
+		{
+			cemuLog_log(LogType::Force, "D3D12: DXC compile call failed for {} shader {:016x}_{:016x} (HRESULT 0x{:08x})",
+						StageName(m_type), m_baseHash, m_auxHash, (uint32)hr);
+			s_dxilFailed++;
+			m_compilationFinished = true;
+			return;
+		}
+		errors.Reset();
+		result->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&errors), nullptr);
+		diagnostics = BlobToString(errors.Get());
+		status = S_OK;
+		result->GetStatus(&status);
+	}
 	if (FAILED(status))
 	{
 		cemuLog_log(LogType::Force, "D3D12: DXC failed for {} shader {:016x}_{:016x} (game={}, gfxPack={}):\n{}",
@@ -584,6 +841,7 @@ bool RendererShaderD3D12::WaitForCompiled()
 
 void RendererShaderD3D12::Init()
 {
+	std::call_once(s_dxcProbe, LogDxcRuntime);
 	ShaderD3D12ThreadPool.StartThreads();
 }
 
@@ -605,6 +863,10 @@ void RendererShaderD3D12::ShaderCacheLoading_begin(uint64 cacheTitleId)
 	s_cacheLoadShadersDiscovered.store(0, std::memory_order_relaxed);
 	s_cacheLoadPrewarmWaitMilliseconds.store(0, std::memory_order_relaxed);
 	s_isLoadingShadersD3D12.store(true, std::memory_order_release);
+	SetTitleLoading(true);
+	const uint32 extraThreads = GetLoadingCompilationConcurrency() - GetNativeCompilationConcurrency();
+	if (extraThreads != 0)
+		ShaderD3D12ThreadPool.StartLoadingThreads(extraThreads);
 }
 
 void RendererShaderD3D12::ShaderCacheLoading_end()
@@ -613,6 +875,7 @@ void RendererShaderD3D12::ShaderCacheLoading_end()
 	const uint32 pendingAtEnd = ShaderD3D12ThreadPool.GetPendingCount();
 	const auto waitStart = std::chrono::steady_clock::now();
 	ShaderD3D12ThreadPool.WaitUntilIdle();
+	ShaderD3D12ThreadPool.StopLoadingThreads();
 	const uint64 waitMilliseconds = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(
 		std::chrono::steady_clock::now() - waitStart).count();
 	s_cacheLoadPrewarmWaitMilliseconds.store(waitMilliseconds, std::memory_order_relaxed);
@@ -625,12 +888,21 @@ void RendererShaderD3D12::ShaderCacheLoading_end()
 			waitMilliseconds);
 	}
 	s_isLoadingShadersD3D12.store(false, std::memory_order_release);
+	// the pipeline prewarm raises it again for its blocking part; some titles skip that phase
+	SetTitleLoading(false);
 }
 
 void RendererShaderD3D12::ShaderCacheLoading_Close()
 {
+	SetTitleLoading(false);
 	delete s_dxilCache;
 	s_dxilCache = nullptr;
+}
+
+const std::string& RendererShaderD3D12::GetCompilerError()
+{
+	std::call_once(s_dxcProbe, LogDxcRuntime);
+	return s_dxcError;
 }
 
 RendererShaderD3D12::Stats RendererShaderD3D12::GetStats()
@@ -647,5 +919,9 @@ RendererShaderD3D12::Stats RendererShaderD3D12::GetStats()
 		s_renderThreadCompilationWaits.load(std::memory_order_relaxed),
 		ShaderD3D12ThreadPool.GetQueuedCount(),
 		ShaderD3D12ThreadPool.GetThreadCount(),
+		s_dxilEvictedBytes.load(std::memory_order_relaxed),
+		s_dxilReloads.load(std::memory_order_relaxed),
+		s_hlslPrunedBytes.load(std::memory_order_relaxed),
+		s_hlslPruneFallbacks.load(std::memory_order_relaxed),
 	};
 }

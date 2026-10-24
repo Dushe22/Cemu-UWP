@@ -328,3 +328,24 @@ otp.bin is missing or invalid	otp.bin falta o no es válido
 seeprom.bin is missing or invalid	seeprom.bin falta o no es válido
 valid	válidos
 yes	sí
+All titles: {:.1f} MB	Todos los juegos: {:.1f} MB
+Off	Desactivado
+On	Activado
+Performance Overlay	Superposición de rendimiento
+Press again to remove every shader cache	Pulsa de nuevo para borrar todas las cachés de sombreadores
+Quit the game to remove shader caches.	Sal del juego para borrar las cachés de sombreadores.
+Remove all shader caches	Borrar todas las cachés de sombreadores
+Remove shader caches	Borrar cachés de sombreadores
+Removed all shader caches	Se borraron todas las cachés de sombreadores
+Removed shader caches; {} items failed	Cachés de sombreadores borradas; {} elementos fallaron
+Removed {} shader cache items	Se borraron {} elementos de caché de sombreadores
+Removed {} shader cache items; {} failed	Se borraron {} elementos de caché de sombreadores; {} fallaron
+Shader caches	Cachés de sombreadores
+Memory is almost full ({} / {} MB). Lower the resolution or disable heavy graphic packs if the game stutters or closes.	La memoria está casi llena ({} / {} MB). Baja la resolución o desactiva los graphic packs pesados si el juego tironea o se cierra.
+Series S recommended: 30 FPS, steady game speed	Recomendado para Series S: 30 FPS, velocidad de juego estable
+FPS++ set for Series S; restart the game to apply	FPS++ configurado para Series S; reiniciá el juego para aplicarlo
+This FPS++ version has different presets; set them manually	Esta versión de FPS++ tiene otros presets; configuralos a mano
+Experimental	Experimental
+GPU upload for compressed texture arrays	Subida por GPU de arrays de texturas comprimidas
+Faster first load of large texture arrays such as BOTW terrain (avoids multi-second freezes). If terrain or other textures look wrong, turn it off. Takes effect when a game starts.	Primera carga más rápida de arrays de texturas grandes como el terreno de BOTW (evita congelamientos de varios segundos). Si el terreno u otras texturas se ven mal, desactivalo. Se aplica al iniciar un juego.
+Threaded draw recording (experimental, restart Cemu)	Grabación de draws en otro hilo (experimental, reiniciar Cemu)

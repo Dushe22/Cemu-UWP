@@ -46,6 +46,10 @@ std::atomic_uint64_t s_allocationFailures{ 0 };
 std::atomic_uint64_t s_heapCompactions{ 0 };
 uint64_t s_lastSampledAllocationFailures = 0;
 winrt::event_token s_usageIncreasedToken{};
+// peak usage between the 5 s memory log lines, and the last system usage level, to show spikes before a termination
+uint64_t s_peakUsageBytes = 0;
+std::chrono::steady_clock::time_point s_lastMemoryReport{};
+int s_lastUsageLevel = -1;
 winrt::event_token s_limitChangingToken{};
 bool s_eventsRegistered = false;
 
@@ -183,7 +187,22 @@ bool Sample(bool forced, std::chrono::milliseconds minimumInterval)
 		result.usageBytes = MemoryManager::AppMemoryUsage();
 		result.limitBytes = MemoryManager::AppMemoryUsageLimit();
 		result.expectedLimitBytes = MemoryManager::ExpectedAppMemoryUsageLimit();
-		result.pressure = ClassifyPressure(result.usageBytes, result.limitBytes, MemoryManager::AppMemoryUsageLevel());
+		const AppMemoryUsageLevel usageLevel = MemoryManager::AppMemoryUsageLevel();
+		result.pressure = ClassifyPressure(result.usageBytes, result.limitBytes, usageLevel);
+		{
+			std::scoped_lock lock(s_stateMutex);
+			s_peakUsageBytes = std::max(s_peakUsageBytes, result.usageBytes);
+			const bool levelChanged = s_lastUsageLevel != (int)usageLevel;
+			if (levelChanged || now - s_lastMemoryReport >= std::chrono::seconds(5))
+			{
+				cemuLog_log(LogType::Force, "Xbox memory: usage {} MB, peak {} MB since last line, limit {} MB, system level {}{}.",
+					(unsigned long long)(result.usageBytes >> 20), (unsigned long long)(s_peakUsageBytes >> 20),
+					(unsigned long long)(result.limitBytes >> 20), (int)usageLevel, levelChanged ? " (changed)" : "");
+				s_lastUsageLevel = (int)usageLevel;
+				s_lastMemoryReport = now;
+				s_peakUsageBytes = result.usageBytes;
+			}
+		}
 		result.allocationFailures = s_allocationFailures.load(std::memory_order_relaxed);
 		result.heapCompactions = s_heapCompactions.load(std::memory_order_relaxed);
 
