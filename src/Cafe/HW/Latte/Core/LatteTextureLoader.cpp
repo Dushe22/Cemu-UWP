@@ -9,6 +9,21 @@
 // per-thread totals for the slow texture reload log
 thread_local LatteUwpTextureUploadStats g_uwpTextureUploadStats;
 
+uint64 LatteTexture_UwpDiagNowMs()
+{
+	return (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// BOTW terrain: 1024x1024x83 BC3. Tracks 2D arrays of at least 16 slices of 512x512
+bool LatteTexture_UwpIsDiagArray(const LatteTexture* texture)
+{
+	return texture->dim == Latte::E_DIM::DIM_2D_ARRAY && texture->depth >= 16 && texture->width * texture->height >= 512 * 512;
+}
+
+// mip 0 slice hash -> serial of the first texture that uploaded it (whole session)
+static std::mutex s_uwpDiagSliceMutex;
+static std::unordered_map<uint64, uint32> s_uwpDiagSliceOwners;
+
 static uint64 UwpHashUploadData(const uint8* data, size_t size)
 {
 	uint64 lanes[4] = { 0x9E3779B97F4A7C15ull, 0xC2B2AE3D27D4EB4Full, 0x165667B19E3779F9ull, 0x27D4EB2F165667C5ull };
@@ -729,6 +744,26 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 			const uint64 uploadHash = UwpHashUploadData((const uint8*)pixelData, imageSize);
 			skipUpload = tex->uwpUploadHashes[hashIndex] == uploadHash;
 			tex->uwpUploadHashes[hashIndex] = uploadHash;
+			if (tex->uwpDiagSerial != 0 && mipIndex == 0)
+			{
+				auto& stats = g_uwpTextureUploadStats;
+				++stats.diagSlices;
+				stats.diagSignature = std::rotl(stats.diagSignature, 7) ^ uploadHash;
+				if (!skipUpload)
+				{
+					++stats.diagChanged;
+					if (stats.diagChanged <= 24)
+						stats.diagChangedList += fmt::format("{}{}", stats.diagChangedList.empty() ? "" : ",", sliceIndex);
+					std::lock_guard lock(s_uwpDiagSliceMutex);
+					auto [it, inserted] = s_uwpDiagSliceOwners.try_emplace(uploadHash, tex->uwpDiagSerial);
+					if (!inserted)
+					{
+						++stats.diagKnown;
+						if (it->second != tex->uwpDiagSerial)
+							++stats.diagKnownOtherTexture;
+					}
+				}
+			}
 		}
 	}
 	if (skipUpload)

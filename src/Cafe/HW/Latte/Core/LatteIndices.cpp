@@ -99,6 +99,60 @@ void LatteIndices_invalidateAll()
 	}
 }
 
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Espresso/PPCState.h"
+#include <intrin.h>
+// UWP: where index decoding spends its time (Kakariko: ~1.05 us per draw, ~0.7 s every 5 s on the Latte thread).
+// Logged every 5 s by the D3D12 SwapBuffers
+namespace LatteIndicesUwpStats
+{
+	enum Part : uint32 { CacheHit, NoIndices, Reserve, Quads, QuadStrip, LineLoop, Fan, PlainFast, PlainRestartRemap, PlainLE, IndexMaxRescan, UploadAndCache, PartCount };
+	constexpr const char* kNames[PartCount] = { "cacheHit", "noIndices", "reserve", "quads", "quadStrip", "lineLoop", "fan", "plainFast", "plainRestartRemap", "plainLE", "indexMaxRescan", "upload+cacheInsert" };
+	uint64 ticks[PartCount]{};
+	uint64 calls[PartCount]{};
+	uint64 indices[PartCount]{};
+	uint64 lookupTicks = 0;
+	uint64 decodeCalls = 0;
+
+	struct Lap
+	{
+		uint64 last = __rdtsc();
+		void operator()(uint32 part, uint32 count)
+		{
+			const uint64 now = __rdtsc();
+			ticks[part] += now - last;
+			++calls[part];
+			indices[part] += count;
+			last = now;
+		}
+	};
+}
+
+void LatteIndices_UwpLogStats()
+{
+	using namespace LatteIndicesUwpStats;
+	if (decodeCalls == 0)
+		return;
+	std::string parts;
+	for (uint32 i = 0; i < PartCount; ++i)
+	{
+		if (calls[i] == 0)
+			continue;
+		parts += fmt::format(" {} {:.1f} ms ({}x, {}k idx)", kNames[i], (double)PPCTimer_tscToMicroseconds(ticks[i]) / 1000.0, calls[i], indices[i] / 1000);
+	}
+	cemuLog_log(LogType::Force, "UWP index decode split: {} calls, cache lookup {:.1f} ms;{}", decodeCalls,
+		(double)PPCTimer_tscToMicroseconds(lookupTicks) / 1000.0, parts);
+	std::fill(std::begin(ticks), std::end(ticks), 0);
+	std::fill(std::begin(calls), std::end(calls), 0);
+	std::fill(std::begin(indices), std::end(indices), 0);
+	lookupTicks = 0;
+	decodeCalls = 0;
+}
+#define LATTE_INDICES_LAP(part) indexStatsLap(LatteIndicesUwpStats::part, count)
+#else
+#define LATTE_INDICES_LAP(part)
+#endif
+
 uint64 LatteIndices_GetNextUsageIndex()
 {
 	return LatteIndexCache.currentUsageCounter++;
@@ -775,6 +829,10 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	// [x] decode data directly into coherent memory buffer?
 	// [ ] better cache implementation, allow to cache across frames
 
+#if defined(CEMU_UWP)
+	LatteIndicesUwpStats::Lap indexStatsLap;
+	++LatteIndicesUwpStats::decodeCalls;
+#endif
 	const RendererAPI rendererType = g_renderer->GetType();
 	const uint32 primitiveRestartIndex = LatteGPUState.contextNew.VGT_MULTI_PRIM_IB_RESET_INDX.get_RESTART_INDEX();
 #if defined(CEMU_UWP)
@@ -826,6 +884,7 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		outputCount = cacheEntry->outputCount;
 		indexAllocation = cacheEntry->indexAllocation;
 		cacheEntry->lastUsed = LatteIndices_GetNextUsageIndex();
+		LATTE_INDICES_LAP(CacheHit);
 		return;
 	}
 
@@ -847,11 +906,13 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		indexMax = std::max(count, 1u)-1;
 		renderIndexType = Renderer::INDEX_TYPE::NONE;
 		indexAllocation = {};
+		LATTE_INDICES_LAP(NoIndices);
 		return; // no indices
 	}
 	// query index buffer from renderer
 	indexAllocation = g_renderer->indexData_reserveIndexMemory(indexOutputSize);
 	void* indexOutputPtr = indexAllocation.mem;
+	LATTE_INDICES_LAP(Reserve);
 #if defined(CEMU_UWP)
 	if (!indexOutputPtr || !indexAllocation.rendererInternal)
 	{
@@ -894,6 +955,7 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		else
 			cemu_assert_debug(false);
 		indexMaxIsAccurate = true;
+		LATTE_INDICES_LAP(Quads);
 	}
 	else if (primitiveMode == LattePrimitiveMode::QUAD_STRIP)
 	{
@@ -923,6 +985,7 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		else
 			cemu_assert_debug(false);
 		indexMaxIsAccurate = true;
+		LATTE_INDICES_LAP(QuadStrip);
 	}
 	else if (primitiveMode == LattePrimitiveMode::LINE_LOOP)
 	{
@@ -962,6 +1025,7 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		else
 			cemu_assert_debug(false);
 		indexMaxIsAccurate = true;
+		LATTE_INDICES_LAP(LineLoop);
 	}
 	else if (primitiveMode == LattePrimitiveMode::TRIANGLE_FAN && (rendererType == RendererAPI::Metal || rendererType == RendererAPI::Direct3D12))
 	{
@@ -1031,6 +1095,7 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		else
 			cemu_assert_debug(false);
 		indexMaxIsAccurate = true;
+		LATTE_INDICES_LAP(Fan);
 	}
 	else
 	{
@@ -1109,11 +1174,20 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 		else
 			cemu_assert_debug(false);
 		outputCount = count;
+#if defined(CEMU_UWP)
+		if (indexMaxIsAccurate)
+			LATTE_INDICES_LAP(PlainRestartRemap);
+		else if (indexType == LatteIndexType::U16_LE || indexType == LatteIndexType::U32_LE)
+			LATTE_INDICES_LAP(PlainLE);
+		else
+			LATTE_INDICES_LAP(PlainFast);
+#endif
 	}
 	// fast passthrough converters include the restart value in their maximum
 	if (!indexMaxIsAccurate && primitiveRestartEnabled && primitiveRestartIndex == indexMax)
 	{
 		LatteIndices_alternativeCalculateIndexMax(indexData, indexType, count, primitiveRestartIndex, indexMax);
+		LATTE_INDICES_LAP(IndexMaxRescan);
 	}
 	if (outputCount == 0)
 		indexMax = 0;
@@ -1149,4 +1223,5 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	lruEntry->outputCount = outputCount;
 	lruEntry->indexAllocation = indexAllocation;
 	lruEntry->lastUsed = LatteIndices_GetNextUsageIndex();
+	LATTE_INDICES_LAP(UploadAndCache);
 }

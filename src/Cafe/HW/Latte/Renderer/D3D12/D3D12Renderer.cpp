@@ -69,6 +69,8 @@
 #include <bit>
 #include <optional>
 #include <chrono>
+#include <intrin.h>
+#include "Cafe/HW/Espresso/PPCState.h"
 #include <cmath>
 #include <cstdlib>
 #include <ctime>
@@ -3756,6 +3758,33 @@ void D3D12Renderer::CreateDevice()
 	cemuLog_log(LogType::Force, "Using D3D12 GPU: {}", m_selectedDeviceName);
 	cemuLog_log(LogType::Force, "D3D12 feature level: {}, shader model: 0x{:x}, resource binding tier: {}, tiled resources tier: {}",
 				D3D12FeatureLevelName(m_featureLevel), (uint32)m_shaderModel, (uint32)m_resourceBindingTier, (uint32)m_tiledResourcesTier);
+	{
+		// the shader model above is capped at 6.4 by its query; this asks for the real maximum, plus features that
+		// decide whether bindless descriptors, enhanced barriers or work graphs are options on this device
+		D3D_SHADER_MODEL maxShaderModel = D3D_SHADER_MODEL_6_4;
+		for (D3D_SHADER_MODEL candidate : { D3D_SHADER_MODEL_6_9, D3D_SHADER_MODEL_6_8, D3D_SHADER_MODEL_6_7, D3D_SHADER_MODEL_6_6, D3D_SHADER_MODEL_6_5 })
+		{
+			D3D12_FEATURE_DATA_SHADER_MODEL query{ candidate };
+			if (SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &query, sizeof(query))))
+			{
+				maxShaderModel = query.HighestShaderModel;
+				break;
+			}
+		}
+		D3D12_FEATURE_DATA_D3D12_OPTIONS options{};
+		D3D12_FEATURE_DATA_D3D12_OPTIONS7 options7{};
+		D3D12_FEATURE_DATA_D3D12_OPTIONS12 options12{};
+		D3D12_FEATURE_DATA_D3D12_OPTIONS21 options21{};
+		const bool hasOptions = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options, sizeof(options)));
+		const bool hasOptions7 = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options7, sizeof(options7)));
+		const bool hasOptions12 = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS12, &options12, sizeof(options12)));
+		const bool hasOptions21 = SUCCEEDED(m_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS21, &options21, sizeof(options21)));
+		cemuLog_log(LogType::Force, "D3D12 device capabilities: max shader model 0x{:x}, resource heap tier {}, mesh shader tier {}, enhanced barriers {}, work graphs tier {}",
+			(uint32)maxShaderModel, hasOptions ? std::to_string((uint32)options.ResourceHeapTier) : "?",
+			hasOptions7 ? std::to_string((uint32)options7.MeshShaderTier) : "?",
+			hasOptions12 ? (options12.EnhancedBarriersSupported ? "yes" : "no") : "?",
+			hasOptions21 ? std::to_string((uint32)options21.WorkGraphsTier) : "?");
+	}
 	cemuLog_log(LogType::Force, "D3D12 root signature version: 1.{}, UMA: {}, cache coherent UMA: {}, debug layer: {}, info queue: {}, DRED: {}",
 				m_rootSignatureVersion >= D3D_ROOT_SIGNATURE_VERSION_1_1 ? 1 : 0,
 				m_isUma ? "yes" : "no",
@@ -5764,7 +5793,13 @@ D3D12DescriptorManager::Allocation D3D12Renderer::BuildGameResourceTable(LatteDe
 				vertexSrv.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
 				vertexSrv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 				vertexSrv.Buffer.FirstElement = binding.offset / 4;
+				// the view reaches the end of the buffer cache, like Vulkan's vertex buffer bind: BOTW's short grass
+				// fetches past the size computed from the index/instance range, and D3D12 returned zeros there
+				// (collapsed vertices, so that grass layer was missing or flickered)
 				vertexSrv.Buffer.NumElements = std::max<UINT>(1, AlignUpU32(binding.size + (binding.offset & 3), 4) / 4);
+				if (m_bufferCache.size > binding.offset)
+					vertexSrv.Buffer.NumElements = std::max<UINT>(vertexSrv.Buffer.NumElements,
+						(UINT)std::min<uint64>((m_bufferCache.size - binding.offset) / 4, std::numeric_limits<UINT>::max()));
 				vertexSrv.Buffer.StructureByteStride = 0;
 				vertexSrv.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 				CreateShaderResourceViewChecked(m_bufferCache.resource.Get(), &vertexSrv, OffsetCpuHandle(allocation.cpu, descriptorSize, kGameSrvDescriptorOffset + bindingPoint), "vertex buffer", true);
@@ -7179,7 +7214,7 @@ void D3D12Renderer::ReleaseStaleAsyncGamePipelines()
 	}
 }
 
-size_t D3D12Renderer::ReleaseUnusedPrewarmedPipelines(uint32 minAgeFrames, size_t maxPipelines)
+size_t D3D12Renderer::ReleaseUnusedPrewarmedPipelines(uint32 minAgeFrames, size_t maxPipelines, bool highPressure)
 {
 	const uint32 frame = LatteGPUState.frameCounter;
 	size_t released = 0;
@@ -7187,7 +7222,7 @@ size_t D3D12Renderer::ReleaseUnusedPrewarmedPipelines(uint32 minAgeFrames, size_
 	for (auto it = m_pendingGamePipelineRecipes.begin(); it != m_pendingGamePipelineRecipes.end() && released < maxPipelines;)
 	{
 		// kept: its draw cannot be skipped, so without it the render thread stalls 0.2-1.2 s (rain, Sheikah Slate)
-		if (frame - it->second.adoptedFrame >= minAgeFrames && !pipelineStableCache.IsMustBeReady(it->first))
+		if (frame - it->second.adoptedFrame >= minAgeFrames && !pipelineStableCache.KeepUnderMemoryPressure(it->first, highPressure))
 		{
 			m_asyncPipelinesInFlight.erase(it->first);
 			it = m_pendingGamePipelineRecipes.erase(it); // never bound, so no GPU reference
@@ -7230,7 +7265,13 @@ void D3D12Renderer::AsyncPipelineThreadFunc()
 			// both workers busy and the game ran at ~24 FPS in light scenes until the queue drained (0.2.8.5 turned async
 			// off instead). Short bursts (enemy deaths, drops, a new ability) keep both, or they pop in for seconds.
 			constexpr size_t kGuardedQueueForOneWorker = 32;
-			if (CemuUwp::MemoryBudgetService::IsHeavyWorkDeferred() && m_asyncPipelineJobs.size() > kGuardedQueueForOneWorker &&
+			// prioritized caching keeps the whole cache live, so the guard is on most of the time after a few teleports and
+			// a new area's pipelines took ~20 s one at a time (BOTW: 138 queued); with it, both workers run while the
+			// pressure is still soft
+			const bool bothWorkersUnderGuard = D3D12PipelineStableCache::GetInstance().IsPrioritized() &&
+				CemuUwp::MemoryBudgetService::GetLatestSnapshot().pressure <= CemuUwp::MemoryBudgetService::Pressure::Soft;
+			if (CemuUwp::MemoryBudgetService::IsHeavyWorkDeferred() && !bothWorkersUnderGuard &&
+				m_asyncPipelineJobs.size() > kGuardedQueueForOneWorker &&
 				m_asyncPipelineJobsOutstanding.load(std::memory_order_acquire) != 0)
 			{
 				m_asyncPipelineCondition.wait_for(lock, std::chrono::milliseconds(20));
@@ -7255,9 +7296,16 @@ void D3D12Renderer::AsyncPipelineThreadFunc()
 				recipe.pipelineKey == job.pipelineKey)
 			{
 				recipe.BindRootSignature(job.rootSignature.Get());
-				// the render thread is blocked on a pipeline of its own: do not queue ahead of it in the driver
-				for (uint32 waitedMs = 0; m_renderThreadPipelineCreates.load(std::memory_order_acquire) != 0 && waitedMs < 2000; ++waitedMs)
+				// the render thread is blocked on a pipeline of its own: do not queue ahead of it in the driver. This used to
+				// give up after 2 s, and a render-thread PSO then took 15 s behind a queue of 141 background builds (BOTW)
+				uint32 waitedMs = 0;
+				while (m_renderThreadPipelineCreates.load(std::memory_order_acquire) != 0 && !m_asyncPipelineStop)
+				{
 					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+					++waitedMs;
+				}
+				if (waitedMs >= 2000 && m_slowAsyncPipelineLogs.fetch_add(1, std::memory_order_relaxed) < 100)
+					cemuLog_log(LogType::Force, "D3D12: background PSO waited {} ms for a render-thread PSO.", waitedMs);
 				const auto createStarted = std::chrono::steady_clock::now();
 				hr = m_device->CreateGraphicsPipelineState(&recipe.desc, IID_PPV_ARGS(&pipeline));
 				const uint64 createMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - createStarted).count();
@@ -10101,7 +10149,7 @@ uint64 D3D12Renderer::GetTextureAllocationSize(const D3D12_RESOURCE_DESC& desc) 
 	return allocationInfo.SizeInBytes;
 }
 
-size_t D3D12Renderer::EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipelines)
+size_t D3D12Renderer::EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipelines, bool highPressure)
 {
 	const uint32 currentFrame = LatteGPUState.frameCounter;
 	std::vector<std::pair<uint32, uint64>> candidates; // age, key
@@ -10114,7 +10162,7 @@ size_t D3D12Renderer::EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipe
 		const uint32 age = currentFrame - entry.lastUsedFrame;
 		// kept: a draw that cannot be skipped rebuilds it on the render thread (BOTW: 0.14-1.2 s each when rain
 		// returned after the memory guard had evicted its PSOs)
-		if (age >= minAgeFrames && !pipelineStableCache.IsMustBeReady(key))
+		if (age >= minAgeFrames && !pipelineStableCache.KeepUnderMemoryPressure(key, highPressure))
 			candidates.emplace_back(age, key);
 	}
 	const size_t count = std::min(maxPipelines, candidates.size());
@@ -10136,8 +10184,13 @@ size_t D3D12Renderer::EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipe
 }
 
 D3D12Renderer::UwpTextureEvictionResult D3D12Renderer::EvictUwpTextureCache(
-	uint32 maxTextures, uint32 minAgeFrames, uint64 targetBytes)
+	uint32 maxTextures, uint32 minAgeFrames, uint64 targetBytes, bool keepExpensiveReloads)
 {
+	// BOTW's terrain material arrays (1024x1024x83 BC3 + 512x512x83, ~130 MB) are the same for the whole map, but the
+	// game stops drawing them for a few seconds on the map screen, loading screens, sleeping and teleports. Picked as
+	// the largest cold texture, they were deleted and rebuilt identical 1.3-2 s later (7 times in 15 min)
+	constexpr uint32 kExpensiveReloadMinAgeFrames = 60 * 60 * 2; // 2 min at 60 FPS, 4 at 30
+	constexpr uint64 kExpensiveReloadMinBytes = 8ull * 1024ull * 1024ull; // the 512x512x83 BC1 companion is ~14.5 MB
 	struct Candidate
 	{
 		LatteTexture* texture{};
@@ -10158,10 +10211,16 @@ D3D12Renderer::UwpTextureEvictionResult D3D12Renderer::EvictUwpTextureCache(
 			continue;
 		auto* d3dTexture = static_cast<LatteTextureD3D12*>(texture);
 		const uint64 allocationBytes = d3dTexture->GetAllocationSize();
-		candidates.push_back({
-			texture,
-			allocationBytes != 0 ? allocationBytes : GetTextureAllocationSize(d3dTexture->GetDesc()),
-			ageFrames });
+		const uint64 bytes = allocationBytes != 0 ? allocationBytes : GetTextureAllocationSize(d3dTexture->GetDesc());
+		// large arrays loaded from guest memory: every slice is decoded and written by the CPU again on reload
+		const bool expensiveReload = texture->dim == Latte::E_DIM::DIM_2D_ARRAY && texture->depth >= 16 &&
+			!texture->isUpdatedOnGPU && bytes >= kExpensiveReloadMinBytes;
+		if (keepExpensiveReloads && expensiveReload && ageFrames < kExpensiveReloadMinAgeFrames)
+		{
+			++m_uwpExpensiveTexturesKept;
+			continue;
+		}
+		candidates.push_back({ texture, bytes, ageFrames });
 	}
 
 	const auto compareCandidates = [](const Candidate& lhs, const Candidate& rhs)
@@ -10264,7 +10323,7 @@ void D3D12Renderer::ProcessUwpMemoryPressure()
 	{
 		auto& pipelineStableCache = D3D12PipelineStableCache::GetInstance();
 		const size_t discardedRecipes = std::erase_if(m_pendingGamePipelineRecipes,
-			[&](const auto& entry) { return !entry.second.fromAsync && !pipelineStableCache.IsMustBeReady(entry.first); });
+			[&](const auto& entry) { return !entry.second.fromAsync && !pipelineStableCache.KeepUnderMemoryPressure(entry.first, true); });
 		if (discardedRecipes != 0)
 			cemuLog_log(LogType::Force, "D3D12 UWP: memory pressure {} dropped {} unused prewarmed PSOs ({} kept).",
 				CemuUwp::MemoryBudgetService::PressureName(snapshot.pressure), discardedRecipes, m_pendingGamePipelineRecipes.size());
@@ -10320,16 +10379,27 @@ void D3D12Renderer::ProcessUwpMemoryPressure()
 	const uint64 targetTextureBytes = std::min(remainingRequest, maxTextureBytes);
 	UwpTextureEvictionResult evicted{};
 	if (targetTextureBytes != 0 || snapshot.pressure != Pressure::Soft)
-		evicted = EvictUwpTextureCache(maxTextures, minAgeFrames, targetTextureBytes);
+		evicted = EvictUwpTextureCache(maxTextures, minAgeFrames, targetTextureBytes, snapshot.pressure == Pressure::Soft);
 	// PSOs keep their shader ISA in video memory; with async creation a cold one is cheap to rebuild
 	size_t evictedPipelines = 0;
 	// launch prewarm keeps thousands of PSOs alive that the current area never draws (BOTW forest: 2.4k at 82%)
 	if (snapshot.pressure == Pressure::Soft)
-		evictedPipelines = EvictColdGamePipelines(60 * 60 * 5, 128) + ReleaseUnusedPrewarmedPipelines(60 * 60 * 5, 256);
+	{
+		// prioritized caching keeps the whole cache live, so soft pressure arrives sooner and the memory guard then builds
+		// new pipelines one at a time (BOTW teleport: 150 queued, ~25 s of skipped draws). Occasional pipelines go after
+		// 3600 frames (1 min at 60 FPS, 2 at 30) instead of five times that, unused prewarmed ones first; core and frequent
+		// stay (KeepUnderMemoryPressure), and anything a draw used within those frames stays
+		if (D3D12PipelineStableCache::GetInstance().IsPrioritized())
+		{
+			evictedPipelines += ReleaseUnusedPrewarmedPipelines(60 * 60, 512, false);
+			evictedPipelines += EvictColdGamePipelines(60 * 60, 256, false);
+		}
+		evictedPipelines += EvictColdGamePipelines(60 * 60 * 5, 128, false) + ReleaseUnusedPrewarmedPipelines(60 * 60 * 5, 256, false);
+	}
 	else if (snapshot.pressure == Pressure::Hard)
-		evictedPipelines = EvictColdGamePipelines(60 * 60, 256) + ReleaseUnusedPrewarmedPipelines(60 * 60, 512);
+		evictedPipelines = EvictColdGamePipelines(60 * 60, 256, true) + ReleaseUnusedPrewarmedPipelines(60 * 60, 512, true);
 	else if (snapshot.pressure == Pressure::Critical)
-		evictedPipelines = EvictColdGamePipelines(60 * 5, 1024) + ReleaseUnusedPrewarmedPipelines(60 * 5, 2048);
+		evictedPipelines = EvictColdGamePipelines(60 * 5, 1024, true) + ReleaseUnusedPrewarmedPipelines(60 * 5, 2048, true);
 	// shader bytecode is only needed for new PSOs and the DXIL cache can give it back
 	uint64 evictedDxilBytes = 0;
 	if (snapshot.pressure == Pressure::Hard)
@@ -10387,7 +10457,7 @@ void D3D12Renderer::ProcessUwpMemoryPressure()
 	{
 		lastLoggedTrimPass = m_memoryPressureTrimPasses;
 		cemuLog_log(LogType::Force,
-			"D3D12 Xbox memory trim: pressure={} usage={}/{}MB textures={} estimated={}MB scratch={}MB descriptorPool={}MB requested={}MB pipelines={} shaderBytecode={}MB.",
+			"D3D12 Xbox memory trim: pressure={} usage={}/{}MB textures={} estimated={}MB scratch={}MB descriptorPool={}MB requested={}MB pipelines={} shaderBytecode={}MB large arrays kept={}.",
 			CemuUwp::MemoryBudgetService::PressureName(snapshot.pressure),
 			(unsigned long long)(snapshot.usageBytes / (1024ull * 1024ull)),
 			(unsigned long long)(snapshot.limitBytes / (1024ull * 1024ull)),
@@ -10397,7 +10467,7 @@ void D3D12Renderer::ProcessUwpMemoryPressure()
 			(unsigned long long)(descriptorPoolBytes / (1024ull * 1024ull)),
 			(unsigned long long)(snapshot.recommendedReleaseBytes / (1024ull * 1024ull)),
 			evictedPipelines,
-			(unsigned long long)(evictedDxilBytes / (1024ull * 1024ull)));
+			(unsigned long long)(evictedDxilBytes / (1024ull * 1024ull)), m_uwpExpensiveTexturesKept);
 	}
 }
 
@@ -13637,9 +13707,104 @@ void D3D12Renderer::LogDroppedDrawSummary()
 }
 
 
+void LatteIndices_UwpLogStats();
+extern uint64 g_uwpTextureLookupTicks;
+extern uint64 g_uwpTextureChangeTicks;
+extern uint64 g_uwpTextureLookupMemoHits;
+extern uint64 g_uwpTextureLookupMemoMisses;
+extern uint64 g_uwpOutputCopyNs;
+extern uint64 g_uwpOutputOverlayNs;
+extern uint64 g_uwpOutputCopies;
+
+namespace
+{
+	// render thread cost of putting a frame on screen, to decide if a separate present thread pays off
+	struct UwpOutputCost
+	{
+		uint64 intervalStartMs = 0;
+		uint64 swaps = 0;
+		uint64 swapNs = 0;
+		uint64 drainNs = 0;
+		uint64 submitNs = 0;
+		uint64 presentNs = 0;
+		uint64 maxSwapNs = 0;
+	} s_uwpOutputCost;
+
+	// draw_beginSequence split on the Latte thread (Kakariko: ~2.8 us per sequence, 17 % of the thread)
+	enum UwpSeqPart : uint32 { SeqQueue, SeqShaders, SeqFbo, SeqTextures, SeqApply, SeqPartCount };
+	uint64 s_uwpSeqTicks[SeqPartCount]{};
+	uint64 s_uwpSeqCount = 0;
+	uint64 s_uwpSeqTextureLoops = 0;
+
+	uint64 UwpElapsedNs(std::chrono::steady_clock::time_point since)
+	{
+		return (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - since).count();
+	}
+
+	void LogUwpOutputCost(uint64 swapNs, uint64 drainNs, uint64 submitNs, uint64 presentNs)
+	{
+		auto& c = s_uwpOutputCost;
+		const uint64 nowMs = GetTickCount64();
+		if (c.intervalStartMs == 0)
+			c.intervalStartMs = nowMs;
+		++c.swaps;
+		c.swapNs += swapNs;
+		c.drainNs += drainNs;
+		c.submitNs += submitNs;
+		c.presentNs += presentNs;
+		c.maxSwapNs = std::max(c.maxSwapNs, swapNs);
+		const uint64 intervalMs = nowMs - c.intervalStartMs;
+		if (intervalMs < 5000)
+			return;
+		if (CafeSystem::IsTitleRunning() && s_uwpSeqCount != 0)
+		{
+			const double seqs = (double)s_uwpSeqCount;
+			auto us = [&](uint32 part) { return (double)PPCTimer_tscToMicroseconds(s_uwpSeqTicks[part]) / seqs; };
+			auto ms = [&](uint32 part) { return (double)PPCTimer_tscToMicroseconds(s_uwpSeqTicks[part]) / 1000.0; };
+			cemuLog_log(LogType::Force,
+				"UWP sequence begin split: {} sequences, texture passes {}; us per sequence (ms total) queue {:.2f} ({:.0f}), shaders {:.2f} ({:.0f}), fbo {:.2f} ({:.0f}), textures {:.2f} ({:.0f}), apply+viewport+scissor {:.2f} ({:.0f})",
+				s_uwpSeqCount, s_uwpSeqTextureLoops, us(SeqQueue), ms(SeqQueue), us(SeqShaders), ms(SeqShaders), us(SeqFbo), ms(SeqFbo),
+				us(SeqTextures), ms(SeqTextures), us(SeqApply), ms(SeqApply));
+			cemuLog_log(LogType::Force, "UWP texture units: view lookup {:.0f} ms (memo hits {}, lookups {}), change check+reload+bookkeeping {:.0f} ms",
+				(double)PPCTimer_tscToMicroseconds(g_uwpTextureLookupTicks) / 1000.0, g_uwpTextureLookupMemoHits, g_uwpTextureLookupMemoMisses,
+				(double)PPCTimer_tscToMicroseconds(g_uwpTextureChangeTicks) / 1000.0);
+		}
+		g_uwpTextureLookupTicks = 0;
+		g_uwpTextureChangeTicks = 0;
+		g_uwpTextureLookupMemoHits = 0;
+		g_uwpTextureLookupMemoMisses = 0;
+		if (CafeSystem::IsTitleRunning())
+			LatteIndices_UwpLogStats();
+		std::fill(std::begin(s_uwpSeqTicks), std::end(s_uwpSeqTicks), 0);
+		s_uwpSeqCount = 0;
+		s_uwpSeqTextureLoops = 0;
+		if (CafeSystem::IsTitleRunning())
+		{
+			const double n = (double)c.swaps;
+			const double copyMs = (double)g_uwpOutputCopyNs / 1e6;
+			const double overlayMs = (double)g_uwpOutputOverlayNs / 1e6;
+			const double totalMs = copyMs + (double)c.swapNs / 1e6;
+			cemuLog_log(LogType::Force,
+				"UWP output cost: {} swaps, {} backbuffer copies in {} ms; per swap: copy {:.2f} ms (ImGui overlay {:.2f}), swap {:.2f} ms (recorder drain {:.2f}, submit {:.2f}, Present {:.2f}), max swap {:.2f} ms; render thread {:.0f} ms ({:.1f}%)",
+				c.swaps, g_uwpOutputCopies, intervalMs, (copyMs - overlayMs) / n, overlayMs / n, (double)c.swapNs / 1e6 / n,
+				(double)c.drainNs / 1e6 / n, (double)c.submitNs / 1e6 / n, (double)c.presentNs / 1e6 / n, (double)c.maxSwapNs / 1e6,
+				totalMs, totalMs * 100.0 / (double)intervalMs);
+		}
+		c = {};
+		c.intervalStartMs = nowMs;
+		g_uwpOutputCopyNs = 0;
+		g_uwpOutputOverlayNs = 0;
+		g_uwpOutputCopies = 0;
+	}
+}
+
 void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+	const auto swapStarted = std::chrono::steady_clock::now();
 	D3D12_EXCLUSIVE_RECORDING();
+	const uint64 drainNs = UwpElapsedNs(swapStarted);
+	uint64 submitNs = 0;
+	uint64 outputPresentNs = 0;
 	FlushPendingDestroys();
 	D3D12PipelineStableCache::GetInstance().SaveUsageIfDue();
 #if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
@@ -13668,7 +13833,11 @@ void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 				DrawUwpCachedOutput(i != 0);
 		}
 	}
-	ExecuteCurrentCommandList(SubmitPresent);
+	{
+		const auto submitStarted = std::chrono::steady_clock::now();
+		ExecuteCurrentCommandList(SubmitPresent);
+		submitNs = UwpElapsedNs(submitStarted);
+	}
 	m_uwpPresentFences[m_uwpPresentFenceIndex++ % m_uwpPresentFences.size()] = m_uwpLastSubmittedFence;
 	// the settings offer every, every second and every third refresh; the latter paces 30 and 20 fps
 	// titles evenly instead of collapsing to every refresh
@@ -13693,7 +13862,9 @@ void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 		{
 			LatteUwpHitchScope hitchScope(LatteUwpHitchOp::Present);
 			D3D12GpuWatchdog::ActivityScope watchdogActivity(m_gpuWatchdog, D3D12GpuWatchdog::Activity::Present, presentedFrame);
+			const auto outputPresentStarted = std::chrono::steady_clock::now();
 			hr = m_mainSwapchain.swapchain->Present(syncInterval, 0);
+			outputPresentNs = UwpElapsedNs(outputPresentStarted);
 		}
 #if defined(LATTE_UWP_DETAILED_PROFILING)
 		const uint64 presentElapsedUs = (uint64)std::chrono::duration_cast<std::chrono::microseconds>(
@@ -13733,6 +13904,7 @@ void D3D12Renderer::SwapBuffers(bool swapTV, bool swapDRC)
 	m_uwpCompositeFrameRendered = false;
 	m_uwpOutputDrawnThisFrame = {};
 	m_uwpOutputPendingThisFrame = {};
+	LogUwpOutputCost(UwpElapsedNs(swapStarted), drainNs, submitNs, outputPresentNs);
 	return;
 	D3D12TraceEvent("swapbuffers_begin", "swapTV={} swapPad={} syncInterval={} tvActive={} tvFrame={} tvSize={}x{} padActive={} padFrame={} padSize={}x{} submittedDraws={}",
 					swapTV ? 1 : 0,
@@ -18031,6 +18203,9 @@ void D3D12Renderer::draw_beginSequence()
 		if (!m_commandListOpen)
 			ResetCommandList();
 	};
+	++s_uwpSeqCount;
+	uint64 seqTick = __rdtsc();
+	auto seqLap = [&seqTick](uint32 part) { const uint64 now = __rdtsc(); s_uwpSeqTicks[part] += now - seqTick; seqTick = now; };
 	if (ShouldQueueRecording())
 		QueueRecording(beginRecording);
 	else
@@ -18039,8 +18214,10 @@ void D3D12Renderer::draw_beginSequence()
 	m_drawSequenceSkip = false;
 
 	const bool streamoutEnable = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
+	seqLap(SeqQueue);
 
 	LatteSHRC_UpdateActiveShaders();
+	seqLap(SeqShaders);
 	if (LatteGPUState.activeShaderHasError)
 	{
 #if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
@@ -18058,7 +18235,9 @@ void D3D12Renderer::draw_beginSequence()
 	while (true)
 	{
 		LatteGPUState.repeatTextureInitialization = false;
-		if (!LatteMRT::UpdateCurrentFBO())
+		const bool fboUpdated = LatteMRT::UpdateCurrentFBO();
+		seqLap(SeqFbo);
+		if (!fboUpdated)
 		{
 #if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
 			++m_correctnessSequenceInvalidFbo;
@@ -18083,6 +18262,8 @@ void D3D12Renderer::draw_beginSequence()
 		}
 
 		LatteTexture_updateTextures();
+		++s_uwpSeqTextureLoops;
+		seqLap(SeqTextures);
 		if (!LatteGPUState.repeatTextureInitialization)
 			break;
 	}
@@ -18090,6 +18271,7 @@ void D3D12Renderer::draw_beginSequence()
 	LatteMRT::ApplyCurrentState();
 	LatteRenderTarget_updateViewport();
 	LatteRenderTarget_updateScissorBox();
+	seqLap(SeqApply);
 
 	bool rasterizerEnable = LatteGPUState.contextNew.PA_CL_CLIP_CNTL.get_DX_RASTERIZATION_KILL() == false;
 	if (!LatteGPUState.contextNew.PA_CL_VTE_CNTL.get_VPORT_X_OFFSET_ENA())
@@ -19690,23 +19872,106 @@ bool D3D12Renderer::EnsureIndexResident(D3D12IndexAllocation& allocation, uint32
 	return true;
 }
 
+namespace
+{
+	// index allocations are taken on the Latte thread and released on the recorder: a new object plus a zero-filled
+	// vector per draw, freed on the other thread, cost ~1.5 us per decoded draw (~9 % of the Latte thread in Kakariko).
+	// Free allocations are kept by power-of-two capacity
+	class IndexAllocationPool
+	{
+	public:
+		using Allocation = D3D12Renderer::D3D12IndexAllocation;
+		static constexpr uint32 kMinShift = 6;
+		static constexpr uint32 kMaxShift = 20;
+		static constexpr size_t kMaxPooledBytes = 32 * 1024 * 1024;
+
+		Allocation* Take(uint32 size)
+		{
+			const uint32 shift = ShiftFor(size);
+			if (shift <= kMaxShift)
+			{
+				std::scoped_lock lock(m_mutex);
+				auto& list = m_free[shift - kMinShift];
+				if (!list.empty())
+				{
+					Allocation* allocation = list.back();
+					list.pop_back();
+					m_pooledBytes -= allocation->GetDecodedCapacity();
+					return allocation;
+				}
+			}
+			auto* allocation = new (std::nothrow) Allocation();
+			if (!allocation)
+				return nullptr;
+			const size_t bytes = shift <= kMaxShift ? ((size_t)1 << shift) : (size_t)size;
+			const size_t blocks = (bytes + sizeof(Allocation::DecodedIndexBlock) - 1) / sizeof(Allocation::DecodedIndexBlock);
+			allocation->decodedData.reset(new (std::nothrow) Allocation::DecodedIndexBlock[blocks]);
+			if (!allocation->decodedData)
+			{
+				delete allocation;
+				return nullptr;
+			}
+			allocation->decodedBlocks = blocks;
+			return allocation;
+		}
+
+		void Give(Allocation* allocation)
+		{
+			const size_t capacity = allocation->GetDecodedCapacity();
+			const uint32 shift = ShiftFor((uint32)std::min<size_t>(capacity, UINT32_MAX));
+			if (shift > kMaxShift || ((size_t)1 << shift) != capacity)
+			{
+				delete allocation;
+				return;
+			}
+			allocation->previewDataSize = 0;
+			allocation->residentResource = nullptr;
+			allocation->residentOffset = 0;
+			allocation->residentFence = 0;
+			allocation->residentSize = 0;
+			allocation->size = 0;
+			{
+				std::scoped_lock lock(m_mutex);
+				if (m_pooledBytes + capacity <= kMaxPooledBytes)
+				{
+					m_free[shift - kMinShift].push_back(allocation);
+					m_pooledBytes += capacity;
+					return;
+				}
+			}
+			delete allocation;
+		}
+
+		~IndexAllocationPool()
+		{
+			for (auto& list : m_free)
+				for (Allocation* allocation : list)
+					delete allocation;
+		}
+
+	private:
+		static uint32 ShiftFor(uint32 size)
+		{
+			uint32 shift = kMinShift;
+			while (shift <= kMaxShift && ((size_t)1 << shift) < size)
+				++shift;
+			return shift;
+		}
+
+		std::mutex m_mutex;
+		std::array<std::vector<Allocation*>, kMaxShift - kMinShift + 1> m_free;
+		size_t m_pooledBytes = 0;
+	};
+	IndexAllocationPool s_indexAllocationPool;
+}
+
 D3D12Renderer::IndexAllocation D3D12Renderer::indexData_reserveIndexMemory(uint32 size)
 {
 	++m_uwpBufferProfile.indexReserves;
 	m_uwpBufferProfile.indexRequestedBytes += size;
-	auto* allocation = new (std::nothrow) D3D12IndexAllocation();
+	auto* allocation = s_indexAllocationPool.Take(size);
 	if (!allocation)
 		return {};
-	try
-	{
-		allocation->decodedData.resize(((size_t)size + sizeof(D3D12IndexAllocation::DecodedIndexBlock) - 1) /
-			sizeof(D3D12IndexAllocation::DecodedIndexBlock));
-	}
-	catch (const std::bad_alloc&)
-	{
-		delete allocation;
-		return {};
-	}
 	allocation->size = size;
 	D3D12TraceEvent("index_reserve", "size={} allocation={} cpuPtr={} storage=cpu_staging",
 		size,
@@ -19735,7 +20000,7 @@ void D3D12Renderer::indexData_releaseIndexMemory(IndexAllocation& allocation)
 			(const void*)d3dAllocation->residentResource,
 			(unsigned long long)d3dAllocation->residentOffset,
 			(unsigned long long)d3dAllocation->residentFence);
-		delete d3dAllocation;
+		s_indexAllocationPool.Give(d3dAllocation);
 	}
 	allocation = {};
 }

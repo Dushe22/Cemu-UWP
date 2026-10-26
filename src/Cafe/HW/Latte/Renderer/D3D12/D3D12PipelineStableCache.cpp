@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cemu/FileCache/FileCache.h"
 #include "config/ActiveSettings.h"
+#include "config/CemuConfig.h"
 #include "util/helpers/Serializer.h"
 #include "util/helpers/helpers.h"
 
@@ -24,11 +25,11 @@ constexpr uint32 kUwpPipelineCacheFormatVersion = 0xD3120004u;
 constexpr uint64 kRecipeFileTag = 0x4433313250534f31ull;
 
 constexpr uint32 kRecipeUsageMagic = 0x31555244u;
-constexpr uint32 kRecipeUsageVersion = 2;
+// 3: adds the day of last use; version 2 files load with today's date, so nothing is pruned at once
+constexpr uint32 kRecipeUsageVersion = 3;
+constexpr uint32 kLegacyRecipeUsageVersion = 2;
 // launches wait for pipelines used in one of the last few sessions; the rest are built after launch
 constexpr uint32 kRecentSessions = 3;
-// recipes nobody used for this many sessions are deleted
-constexpr uint32 kPruneAfterSessions = 10;
 // usage is saved during play too, since a closed app may never reach Close
 constexpr uint32 kUsageSaveInterval = 128;
 constexpr auto kUsageSaveDelay = std::chrono::seconds(10);
@@ -42,13 +43,22 @@ struct RecipeUsageHeader
 	uint32 count;
 };
 
-struct RecipeUsageRecord
+struct LegacyRecipeUsageRecord
 {
 	uint64 pipelineKey;
 	uint32 lastSession;
 	uint32 sessionsUsed;
 };
-static_assert(sizeof(RecipeUsageHeader) == 20 && sizeof(RecipeUsageRecord) == 16);
+
+struct RecipeUsageRecord
+{
+	uint64 pipelineKey;
+	uint32 lastSession;
+	uint32 sessionsUsed;
+	uint32 lastUsedDay;
+	uint32 reserved;
+};
+static_assert(sizeof(RecipeUsageHeader) == 20 && sizeof(LegacyRecipeUsageRecord) == 16 && sizeof(RecipeUsageRecord) == 24);
 }
 
 D3D12PipelineStableCache g_d3d12PipelineStableCacheInstance;
@@ -64,6 +74,7 @@ uint32 D3D12PipelineStableCache::BeginLoading(uint64 cacheTitleId)
 	RendererShaderD3D12::SetTitleLoading(true);
 	StopPrewarm();
 	m_prewarmStop = false;
+	m_prioritized = GetConfig().d3d12_prioritized_pipeline_cache.GetValue();
 	if (auto* renderer = D3D12Renderer::GetInstance())
 	{
 		std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
@@ -188,16 +199,25 @@ void D3D12PipelineStableCache::LoadRecipeUsageLocked(uint64 cacheTitleId)
 	m_usageHistoryFound = false;
 	m_shaderGeneratorChanged = false;
 	m_session = 1;
+	m_today = (uint32)(std::chrono::duration_cast<std::chrono::hours>(std::chrono::system_clock::now().time_since_epoch()).count() / 24);
 	m_usagePath = ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_d3d12recipes_usage.bin", cacheTitleId);
 
 	std::ifstream file(m_usagePath, std::ios::binary);
 	RecipeUsageHeader header{};
 	if (!file || !file.read(reinterpret_cast<char*>(&header), sizeof(header)) ||
-		header.magic != kRecipeUsageMagic || header.version != kRecipeUsageVersion ||
+		header.magic != kRecipeUsageMagic || (header.version != kRecipeUsageVersion && header.version != kLegacyRecipeUsageVersion) ||
 		header.count > D3D12PipelinePrewarmPolicy::kMaxRecipeCacheEntries * 4)
 		return;
 	std::vector<RecipeUsageRecord> records(header.count);
-	if (header.count != 0 && !file.read(reinterpret_cast<char*>(records.data()), records.size() * sizeof(RecipeUsageRecord)))
+	if (header.version == kLegacyRecipeUsageVersion)
+	{
+		std::vector<LegacyRecipeUsageRecord> legacy(header.count);
+		if (header.count != 0 && !file.read(reinterpret_cast<char*>(legacy.data()), legacy.size() * sizeof(LegacyRecipeUsageRecord)))
+			return;
+		for (size_t i = 0; i < legacy.size(); ++i)
+			records[i] = { legacy[i].pipelineKey, legacy[i].lastSession, legacy[i].sessionsUsed, m_today, 0 };
+	}
+	else if (header.count != 0 && !file.read(reinterpret_cast<char*>(records.data()), records.size() * sizeof(RecipeUsageRecord)))
 		return;
 
 	m_usageHistoryFound = true;
@@ -211,7 +231,7 @@ void D3D12PipelineStableCache::LoadRecipeUsageLocked(uint64 cacheTitleId)
 	for (const RecipeUsageRecord& record : records)
 	{
 		if (record.lastSession <= header.session)
-			m_recipeUsage[record.pipelineKey] = { record.lastSession, record.sessionsUsed };
+			m_recipeUsage[record.pipelineKey] = { record.lastSession, record.sessionsUsed, record.lastUsedDay };
 	}
 }
 
@@ -222,7 +242,7 @@ void D3D12PipelineStableCache::SaveRecipeUsageLocked()
 	std::vector<RecipeUsageRecord> records;
 	records.reserve(m_recipeUsage.size());
 	for (const auto& [pipelineKey, usage] : m_recipeUsage)
-		records.push_back({ pipelineKey, usage.lastSession, usage.sessionsUsed });
+		records.push_back({ pipelineKey, usage.lastSession, usage.sessionsUsed, usage.lastUsedDay, 0 });
 	const RecipeUsageHeader header{ kRecipeUsageMagic, kRecipeUsageVersion, LATTE_DECOMPILER_HLSL_EMITTER_VERSION, m_session, (uint32)records.size() };
 	// written next to the old file and swapped in only when complete: truncating in place on a full disk left an empty
 	// file, and the lost history made the next launches delete most recipes
@@ -298,10 +318,11 @@ void D3D12PipelineStableCache::PlanPrewarmLocked(const std::vector<PrewarmJob>& 
 		// recipes without history get the full grace period: they count as used once now, because recipes are only stored
 		// when a draw uses them. With 0 they read as never used two sessions later and were deleted (a usage file lost to
 		// a full disk deleted 3254 of 4914 BOTW recipes, and those areas popped in again)
-		const RecipeUsage usage = m_recipeUsage.try_emplace(job.pipelineKey, RecipeUsage{ m_session, 1 }).first->second;
-		// a recipe no draw ever used (an async build whose bias drifted away) goes after 2 sessions, not 10
+		const RecipeUsage usage = m_recipeUsage.try_emplace(job.pipelineKey, RecipeUsage{ m_session, 1, m_today }).first->second;
 		const bool neverUsed = (usage.sessionsUsed & ~kMustBeReadyFlag) == 0;
-		if (m_session - usage.lastSession >= (neverUsed ? 2u : kPruneAfterSessions))
+		const uint32 daysSinceUse = m_today > usage.lastUsedDay ? m_today - usage.lastUsedDay : 0;
+		if (D3D12PipelinePrewarmPolicy::ShouldPruneRecipe(neverUsed, (usage.sessionsUsed & kMustBeReadyFlag) != 0,
+			m_session - usage.lastSession, daysSinceUse))
 		{
 			DeleteRecipeLocked(job.pipelineKey);
 			m_recipeUsage.erase(job.pipelineKey);
@@ -319,6 +340,24 @@ void D3D12PipelineStableCache::PlanPrewarmLocked(const std::vector<PrewarmJob>& 
 	// history of pipelines whose recipe is gone is of no further use
 	std::erase_if(m_recipeUsage, [&](const auto& entry) { return !stored.contains(entry.first); });
 
+	{
+		// tiers and how many sessions each recipe was used in, to tune the tier thresholds from real data
+		std::array<uint32, 3> tiers{};
+		uint32 flagged = 0;
+		std::array<uint32, 6> sessionBuckets{}; // 1, 2, 3-4, 5-9, 10-19, 20+
+		for (const auto& [pipelineKey, usage] : m_recipeUsage)
+		{
+			const bool mustBeReady = (usage.sessionsUsed & kMustBeReadyFlag) != 0;
+			const uint32 sessionsUsed = usage.sessionsUsed & ~kMustBeReadyFlag;
+			flagged += mustBeReady ? 1 : 0;
+			++tiers[(size_t)D3D12PipelinePrewarmPolicy::ClassifyRecipe(mustBeReady, sessionsUsed, m_session) - 1];
+			const size_t bucket = sessionsUsed <= 1 ? 0 : sessionsUsed == 2 ? 1 : sessionsUsed <= 4 ? 2 : sessionsUsed <= 9 ? 3 : sessionsUsed <= 19 ? 4 : 5;
+			++sessionBuckets[bucket];
+		}
+		cemuLog_log(LogType::Force, "D3D12 UWP pipeline tiers ({}): core {} ({} must-be-ready), frequent {}, occasional {}; recipes by sessions used: 1: {}, 2: {}, 3-4: {}, 5-9: {}, 10-19: {}, 20+: {}.",
+			m_prioritized ? "prioritized caching on" : "logged only", tiers[0], flagged, tiers[1], tiers[2], sessionBuckets[0], sessionBuckets[1], sessionBuckets[2], sessionBuckets[3], sessionBuckets[4], sessionBuckets[5]);
+	}
+
 	// most used first, so an early stop keeps the most valuable ones
 	std::stable_sort(recent.begin(), recent.end(), [](const Candidate& a, const Candidate& b) {
 		// flagged first, then most used
@@ -328,16 +367,38 @@ void D3D12PipelineStableCache::PlanPrewarmLocked(const std::vector<PrewarmJob>& 
 		return a.usage.lastSession != b.usage.lastSession ? a.usage.lastSession > b.usage.lastSession : a.usage.sessionsUsed > b.usage.sessionsUsed;
 	});
 	m_prewarmJobs.reserve(recent.size() + others.size());
-	for (const Candidate& candidate : recent)
-		m_prewarmJobs.push_back(candidate.job);
-	for (const Candidate& candidate : others)
-		m_prewarmJobs.push_back(candidate.job);
-	// without any history yet, nothing tells which pipelines matter, so launches wait for all of them as before
-	m_blockingJobCount = hasHistory ? recent.size() : m_prewarmJobs.size();
+	if (m_prioritized)
+	{
+		// launch waits for everything, core first: the prewarm admission stops at the memory headroom, so when the cache
+		// does not fit what is left out is the least used
+		std::vector<Candidate> all = std::move(recent);
+		all.insert(all.end(), others.begin(), others.end());
+		auto tierOf = [this](const RecipeUsage& usage) {
+			return D3D12PipelinePrewarmPolicy::ClassifyRecipe((usage.sessionsUsed & kMustBeReadyFlag) != 0, usage.sessionsUsed & ~kMustBeReadyFlag, m_session);
+		};
+		std::stable_sort(all.begin(), all.end(), [&](const Candidate& a, const Candidate& b) {
+			const auto tierA = tierOf(a.usage), tierB = tierOf(b.usage);
+			if (tierA != tierB)
+				return tierA < tierB;
+			return (a.usage.sessionsUsed & ~kMustBeReadyFlag) > (b.usage.sessionsUsed & ~kMustBeReadyFlag);
+		});
+		for (const Candidate& candidate : all)
+			m_prewarmJobs.push_back(candidate.job);
+		m_blockingJobCount = m_prewarmJobs.size();
+	}
+	else
+	{
+		for (const Candidate& candidate : recent)
+			m_prewarmJobs.push_back(candidate.job);
+		for (const Candidate& candidate : others)
+			m_prewarmJobs.push_back(candidate.job);
+		// without any history yet, nothing tells which pipelines matter, so launches wait for all of them as before
+		m_blockingJobCount = hasHistory ? recent.size() : m_prewarmJobs.size();
+	}
 
-	cemuLog_log(LogType::Force, "D3D12 UWP pipeline recipes: session {}{}: launch waits for {} recently used, {} built after launch, {} already live, {} pruned after {} unused sessions.",
+	cemuLog_log(LogType::Force, "D3D12 UWP pipeline recipes: session {}{}: launch waits for {} recently used, {} built after launch, {} already live, {} pruned after {} unused days.",
 		m_session, hasHistory ? "" : " (no usage history yet)", m_blockingJobCount, m_prewarmJobs.size() - m_blockingJobCount,
-		livePipelines.size(), m_recipesPruned, kPruneAfterSessions);
+		livePipelines.size(), m_recipesPruned, D3D12PipelinePrewarmPolicy::kPruneAfterDays);
 }
 
 void D3D12PipelineStableCache::DeleteRecipeLocked(uint64 pipelineKey)
@@ -592,6 +653,7 @@ void D3D12PipelineStableCache::MarkPipelineUsed(uint64 pipelineStateHash, bool m
 	const bool flagChanged = mustBeReady && (usage.sessionsUsed & kMustBeReadyFlag) == 0;
 	if (mustBeReady)
 		usage.sessionsUsed |= kMustBeReadyFlag;
+	usage.lastUsedDay = m_today;
 	if (usage.lastSession == m_session && (usage.sessionsUsed & ~kMustBeReadyFlag) != 0 && !flagChanged)
 		return;
 	if (usage.lastSession != m_session || (usage.sessionsUsed & ~kMustBeReadyFlag) == 0)
@@ -609,6 +671,21 @@ bool D3D12PipelineStableCache::IsMustBeReady(uint64 pipelineStateHash)
 	return it != m_recipeUsage.end() && (it->second.sessionsUsed & kMustBeReadyFlag) != 0;
 }
 
+bool D3D12PipelineStableCache::KeepUnderMemoryPressure(uint64 pipelineStateHash, bool highPressure)
+{
+	std::lock_guard usageLock(m_usageLock);
+	const auto it = m_recipeUsage.find(pipelineStateHash);
+	if (it == m_recipeUsage.end())
+		return false;
+	const bool mustBeReady = (it->second.sessionsUsed & kMustBeReadyFlag) != 0;
+	if (mustBeReady)
+		return true;
+	if (!m_prioritized)
+		return false;
+	const auto tier = D3D12PipelinePrewarmPolicy::ClassifyRecipe(false, it->second.sessionsUsed & ~kMustBeReadyFlag, m_session);
+	return tier == D3D12PipelinePrewarmPolicy::Tier::Core || (tier == D3D12PipelinePrewarmPolicy::Tier::Frequent && !highPressure);
+}
+
 std::string D3D12PipelineStableCache::DescribePipeline(uint64 pipelineStateHash)
 {
 	std::scoped_lock locks(m_cacheLock, m_usageLock);
@@ -616,8 +693,9 @@ std::string D3D12PipelineStableCache::DescribePipeline(uint64 pipelineStateHash)
 	const auto it = m_recipeUsage.find(pipelineStateHash);
 	if (it == m_recipeUsage.end())
 		return fmt::format("stored={} no usage record, session {}", stored ? 1 : 0, m_session);
-	return fmt::format("stored={} sessions={} last={} flagged={}, session {}", stored ? 1 : 0,
-		it->second.sessionsUsed & ~kMustBeReadyFlag, it->second.lastSession, (it->second.sessionsUsed & kMustBeReadyFlag) ? 1 : 0, m_session);
+	return fmt::format("stored={} sessions={} last={} flagged={} days since use={}, session {}", stored ? 1 : 0,
+		it->second.sessionsUsed & ~kMustBeReadyFlag, it->second.lastSession, (it->second.sessionsUsed & kMustBeReadyFlag) ? 1 : 0,
+		m_today > it->second.lastUsedDay ? m_today - it->second.lastUsedDay : 0, m_session);
 }
 
 bool D3D12PipelineStableCache::AddPipelineToCache(uint64 baseHash, uint64 pipelineStateHash)

@@ -32,6 +32,73 @@ void LatteThread_HandleOSScreen();
 
 void LatteThread_Exit();
 
+#if defined(CEMU_UWP)
+#include "Cafe/HW/Espresso/PPCState.h"
+#include <intrin.h>
+// UWP: exclusive time of the Latte thread by kind of work, to find what besides draws costs it (Kakariko: ~7.5 ms per
+// frame unexplained). Time switches category only at coarse boundaries; register writes and packet parsing fall into
+// "other". Logged every 5 s
+namespace LatteCpProfile
+{
+	enum Cat : uint32 { Other, Draw, SeqBegin, SeqEnd, Idle, WaitRegMem, SurfaceSync, SurfaceCopy, Clear, ExpandDepth, Output, Query, MemWriteEop, LoadReg, Streamout, Async, Count };
+	constexpr const char* kNames[Count] = { "other(parse+regs)", "draw", "seqBegin", "seqEnd", "idle", "waitRegMem", "surfaceSync", "surfaceCopy", "clear", "expandDepth", "output", "query", "memWrite/eop", "loadReg", "streamout", "asyncCmds" };
+	uint64 s_ticks[Count]{};
+	uint64 s_counts[Count]{};
+	uint32 s_cur = Other;
+	uint64 s_last = 0;
+	uint64 s_logStartTick = 0;
+
+	inline void Switch(uint32 cat)
+	{
+		const uint64 now = __rdtsc();
+		if (s_last != 0)
+			s_ticks[s_cur] += now - s_last;
+		s_last = now;
+		s_cur = cat;
+	}
+
+	void LogIfDue()
+	{
+		const uint64 now = __rdtsc();
+		if (s_logStartTick == 0)
+		{
+			s_logStartTick = now;
+			return;
+		}
+		const uint64 elapsedUs = PPCTimer_tscToMicroseconds(now - s_logStartTick);
+		if (elapsedUs < 5000000)
+			return;
+		Switch(s_cur);
+		std::string parts;
+		uint64 busyTicks = 0;
+		for (uint32 i = 0; i < Count; ++i)
+			if (i != Idle)
+				busyTicks += s_ticks[i];
+		for (uint32 i = 0; i < Count; ++i)
+		{
+			if (s_ticks[i] == 0 && s_counts[i] == 0)
+				continue;
+			parts += fmt::format(" {} {:.1f} ms ({}x)", kNames[i], (double)PPCTimer_tscToMicroseconds(s_ticks[i]) / 1000.0, s_counts[i]);
+		}
+		cemuLog_log(LogType::Force, "UWP Latte thread split over {:.0f} ms: busy (not idle) {:.0f} ms;{}", (double)elapsedUs / 1000.0,
+			(double)PPCTimer_tscToMicroseconds(busyTicks) / 1000.0, parts);
+		std::fill(std::begin(s_ticks), std::end(s_ticks), 0);
+		std::fill(std::begin(s_counts), std::end(s_counts), 0);
+		s_logStartTick = now;
+	}
+
+	struct Scope
+	{
+		uint32 prev;
+		explicit Scope(uint32 cat) : prev(s_cur) { ++s_counts[cat]; Switch(cat); }
+		~Scope() { Switch(prev); }
+	};
+}
+#define LATTE_CP_PROFILE(cat) LatteCpProfile::Scope latteCpProfileScope(LatteCpProfile::cat)
+#else
+#define LATTE_CP_PROFILE(cat)
+#endif
+
 class DrawPassContext
 {
 	struct CmdQueuePos
@@ -58,11 +125,13 @@ public:
 		m_drawcallContext.gsUniformBufferDirtyMask = 0;
 		m_drawcallContext.aluConstVSDirty = false;
 		m_drawcallContext.aluConstPSDirty = false;
+		LATTE_CP_PROFILE(SeqBegin);
 		g_renderer->draw_beginSequence();
 	}
 
 	void executeDraw(uint32 count, bool isAutoIndex, MPTR physIndices)
 	{
+		LATTE_CP_PROFILE(Draw);
 		uint32 baseVertex = LatteGPUState.contextRegister[mmSQ_VTX_BASE_VTX_LOC];
 		uint32 baseInstance = LatteGPUState.contextRegister[mmSQ_VTX_START_INST_LOC];
 		uint32 numInstances = LatteGPUState.contextNew.VGT_DMA_NUM_INSTANCES.get_NUM_INSTANCES();
@@ -93,6 +162,7 @@ public:
 
 	void endDrawPass()
 	{
+		LATTE_CP_PROFILE(SeqEnd);
 		g_renderer->draw_endSequence();
 		m_drawPassActive = false;
 	}
@@ -217,6 +287,9 @@ uint32 LatteCP_readU32Deprc()
 			g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
 		}
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
+#if defined(CEMU_UWP)
+		LATTE_CP_PROFILE(Idle);
+#endif
 		// no command data available, spin in a busy loop for a bit then check again
 		for (sint32 busy = 0; busy < 80; busy++)
 		{
@@ -253,6 +326,7 @@ void LatteCP_skipWords(uint32 wordsToSkip)
 
 LatteCMDPtr LatteCP_itSurfaceSync(LatteCMDPtr cmd)
 {
+	LATTE_CP_PROFILE(SurfaceSync);
 	Latte::E_COHER_CNTL invalidationFlags = static_cast<Latte::E_COHER_CNTL>(LatteReadCMD());
 	uint32 size = LatteReadCMD() << 8;
 	MPTR addressPhys = LatteReadCMD() << 8;
@@ -319,6 +393,7 @@ void LatteCP_itIndirectBuffer(LatteCMDPtr cmd, uint32 nWords, DrawPassContext& d
 
 LatteCMDPtr LatteCP_itStreamoutBufferUpdate(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Streamout);
 	cemu_assert_debug(nWords == 5);
 	uint32 updateControl = LatteReadCMD();
 	uint32 physicalAddressWrite = LatteReadCMD();
@@ -512,6 +587,7 @@ LatteCMDPtr LatteCP_itNumInstances(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(WaitRegMem);
 	cemu_assert_debug(nWords == 6);
 	uint32 word0 = LatteReadCMD();
 	uint32 word1 = LatteReadCMD();
@@ -637,6 +713,7 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itMemWrite(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(MemWriteEop);
 	cemu_assert_debug(nWords == 4);
 	uint32 word0 = LatteReadCMD();
 	uint32 word1 = LatteReadCMD();
@@ -677,6 +754,7 @@ LatteCMDPtr LatteCP_itMemWrite(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itEventWriteEOP(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(MemWriteEop);
 	cemu_assert_debug(nWords == 5);
 	uint32 word0 = LatteReadCMD();
 	uint32 word1 = LatteReadCMD();
@@ -706,6 +784,7 @@ LatteCMDPtr LatteCP_itEventWriteEOP(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itMemSemaphore(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(WaitRegMem);
 	cemu_assert_debug(nWords == 2);
 	MPTR semaphorePhysicalAddress = LatteReadCMD();
 	uint32 semaphoreControl = LatteReadCMD();
@@ -757,6 +836,7 @@ LatteCMDPtr LatteCP_itContextControl(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itLoadReg(LatteCMDPtr cmd, uint32 nWords, uint32 regBase)
 {
+	LATTE_CP_PROFILE(LoadReg);
 	if (nWords < 2 || (nWords & 1) != 0)
 	{
 		cemuLog_logDebug(LogType::Force, "itLoadReg: Invalid nWords value");
@@ -922,6 +1002,7 @@ LatteCMDPtr LatteCP_itHLESpecialState(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLEBeginOcclusionQuery(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Query);
 	cemu_assert_debug(nWords == 1);
 	MPTR queryMPTR = (MPTR)LatteReadCMD();
 	LatteQuery_BeginOcclusionQuery(queryMPTR);
@@ -930,6 +1011,7 @@ LatteCMDPtr LatteCP_itHLEBeginOcclusionQuery(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLEEndOcclusionQuery(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Query);
 	cemu_assert_debug(nWords == 1);
 	MPTR queryMPTR = (MPTR)LatteReadCMD();
 	LatteQuery_EndOcclusionQuery(queryMPTR);
@@ -938,6 +1020,7 @@ LatteCMDPtr LatteCP_itHLEEndOcclusionQuery(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLEBottomOfPipeCB(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(MemWriteEop);
 	cemu_assert_debug(nWords == 3);
 	MPTR timestampMPTR = (uint32)LatteReadCMD();
 	uint32 timestampHigh = (uint32)LatteReadCMD();
@@ -954,6 +1037,7 @@ LatteCMDPtr LatteCP_itHLEBottomOfPipeCB(LatteCMDPtr cmd, uint32 nWords)
 // GPU-side handler for GX2CopySurface/GX2CopySurfaceEx and similar
 LatteCMDPtr LatteCP_itHLECopySurfaceNew(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(SurfaceCopy);
 	cemu_assert_debug(nWords == 4+9*2);
 	// copy rect
 	LatteSurfaceCopyRect copyRect;
@@ -990,6 +1074,7 @@ LatteCMDPtr LatteCP_itHLECopySurfaceNew(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLEExpandDepthBuffer(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(ExpandDepth);
 	cemu_assert_debug(nWords == 8);
 	MPTR depthBufferMPTR = LatteReadCMD();
 	auto depthBufferFormat = (Latte::E_GX2SURFFMT)LatteReadCMD();
@@ -1006,6 +1091,7 @@ LatteCMDPtr LatteCP_itHLEExpandDepthBuffer(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLEClearColorDepthStencil(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Clear);
 	cemu_assert_debug(nWords == 23);
 	uint32 clearMask = LatteReadCMD(); // color (1), depth (2), stencil (4)
 	// color buffer
@@ -1047,6 +1133,7 @@ LatteCMDPtr LatteCP_itHLEClearColorDepthStencil(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLERequestSwapBuffers(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Output);
 	catchOpenGLError();
 	cemu_assert_debug(nWords == 1);
 	MPTR reserved1 = LatteReadCMD();
@@ -1057,6 +1144,10 @@ LatteCMDPtr LatteCP_itHLERequestSwapBuffers(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLESwapScanBuffer(LatteCMDPtr cmd, uint32 nWords)
 {
+#if defined(CEMU_UWP)
+	LatteCpProfile::LogIfDue();
+#endif
+	LATTE_CP_PROFILE(Output);
 	catchOpenGLError();
 	cemu_assert_debug(nWords == 1);
 	MPTR reserved1 = LatteReadCMD(); // reserved
@@ -1066,6 +1157,7 @@ LatteCMDPtr LatteCP_itHLESwapScanBuffer(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Output);
 	catchOpenGLError();
 	cemu_assert_debug(nWords == 1);
 	MPTR reserved1 = LatteReadCMD(); // reserved
@@ -1087,6 +1179,7 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 
 LatteCMDPtr LatteCP_itHLECopyColorBufferToScanBuffer(LatteCMDPtr cmd, uint32 nWords)
 {
+	LATTE_CP_PROFILE(Output);
 	MPTR colorBufferPtr = LatteReadCMD(); // physical address
 	uint32 colorBufferWidth = LatteReadCMD();
 	uint32 colorBufferHeight = LatteReadCMD();

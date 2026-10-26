@@ -508,6 +508,7 @@ struct CemuConfig
 	ConfigValue<bool> async_compile{ true };
 	// D3D12: record draws on a second thread (Phase 4, experimental; read when the renderer starts)
 	ConfigValue<bool> d3d12_threaded_recording{ false };
+	ConfigValue<bool> d3d12_prioritized_pipeline_cache{ false };
 	// D3D12 on Xbox: upload block-compressed texture arrays through a GPU copy instead of CPU writes. Never loaded or
 	// shown: the copy misplaces slices on Xbox (tested 22/10/2026); kept for the next upload approach
 	ConfigValue<bool> d3d12_gpu_array_upload{ false };
@@ -592,6 +593,9 @@ struct CemuConfig
 		ConfigValue<bool> touch_cursor{ true };
 		ConfigValue<std::string> toggle_swap_binding{ "Gamepad:View+Y" };
 		ConfigValue<std::string> quick_menu_binding{ "Gamepad:Menu+View" };
+		// turns the virtual gyro (Tilt) on and off during a game; off or empty = only from the quick menu
+		ConfigValue<bool> virtual_gyro_combo_enabled{ false };
+		ConfigValue<std::string> virtual_gyro_binding{ "" };
 		std::unordered_map<uint64, UwpGameLayoutEntry> game_layouts;
 	}uwp_display{};
 

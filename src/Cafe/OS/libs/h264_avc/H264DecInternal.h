@@ -10,6 +10,36 @@ namespace H264
 {
 	using H264ByteBuffer = std::vector<uint8>;
 
+#if defined(CEMU_UWP)
+	// video (FMV) diagnostics, logged every 5 s while a game decodes video
+	struct H264UwpStats
+	{
+		std::atomic<uint32> submitted{};      // H264DECExecute calls
+		std::atomic<uint32> decodedFrames{};  // inputs that produced a decoded picture
+		std::atomic<uint64> decodeUs{};       // decoder time for those inputs
+		std::atomic<uint32> decodeUsMax{};
+		std::atomic<uint32> slowDecodes{};    // inputs that took >= 33 ms
+		std::atomic<uint32> outputFrames{};
+		std::atomic<uint64> copyUs{};         // copy of each output picture into guest memory
+		std::atomic<uint32> gameWaits{};      // H264DECExecute had to wait for a decoded frame
+		std::atomic<uint64> gameWaitUs{};
+		std::atomic<uint32> gameWaitUsMax{};
+		std::atomic<uint32> queuedMax{};      // inputs waiting for the decoder thread
+		std::atomic<uint32> width{}, height{}, buffered{};
+		std::atomic<uint32> begins{}, ends{};          // H264DECBegin / H264DECEnd calls (a second Begin starts recovery)
+		std::atomic<uint32> rejectedRecovering{};       // Execute calls refused while waiting for an IDR frame
+		std::atomic<uint32> recoveredAtIdr{};
+		std::atomic<uint32> executeGapUsMax{};          // longest time between two Execute calls
+		std::atomic<uint32> backwardTimestamps{};       // output frames whose timestamp is lower than the previous output
+	};
+	extern H264UwpStats g_h264UwpStats;
+	inline void H264UwpStatsMax(std::atomic<uint32>& target, uint32 value)
+	{
+		uint32 current = target.load(std::memory_order_relaxed);
+		while (value > current && !target.compare_exchange_weak(current, value, std::memory_order_relaxed)) {}
+	}
+#endif
+
 	class H264DecoderBackend
 	{
 	  protected:
@@ -78,6 +108,9 @@ namespace H264
 			ds.result.timestamp = timestamp;
 
 			m_decodeQueue.push_back(std::distance(m_decodedSliceArray.data(), &ds));
+#if defined(CEMU_UWP)
+			H264UwpStatsMax(g_h264UwpStats.queuedMax, (uint32)m_decodeQueue.size());
+#endif
 			m_decodeSem.increment();
 		}
 

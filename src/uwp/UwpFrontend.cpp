@@ -91,6 +91,7 @@
 #include <utility>
 #include <unordered_map>
 #include <unordered_set>
+#include "input/api/WGI/WGIGamepadController.h"
 
 namespace
 {
@@ -404,6 +405,11 @@ struct ButtonSnapshot
 	bool rb = false;
 	bool menu = false;
 	bool view = false;
+	// stick clicks and triggers: only used by shortcut bindings
+	bool ls = false;
+	bool rs = false;
+	bool lt = false;
+	bool rt = false;
 	float rightStickY = 0.0f;
 	UwpQuickMenuBinding::Snapshot quickMenu{};
 };
@@ -417,7 +423,7 @@ bool s_nativeTextInputOwnedFrame = false;
 constexpr int kHomeColumns = 5;
 constexpr int kHomeRows = 3;
 constexpr int kHomePageSize = kHomeColumns * kHomeRows;
-constexpr int kQuickMenuItemCount = 8;
+constexpr int kQuickMenuItemCount = 9;
 constexpr float kOverlayFontSizePx = 22.0f;
 
 enum class FocusArea
@@ -1965,6 +1971,10 @@ ButtonSnapshot ReadButtons()
 			result.rb |= down(GamepadButtons::RightShoulder);
 			result.menu |= down(GamepadButtons::Menu);
 			result.view |= down(GamepadButtons::View);
+			result.ls |= down(GamepadButtons::LeftThumbstick);
+			result.rs |= down(GamepadButtons::RightThumbstick);
+			result.lt |= reading.LeftTrigger > 0.5;
+			result.rt |= reading.RightTrigger > 0.5;
 			if (std::abs(reading.RightThumbstickY) > std::abs(result.rightStickY))
 				result.rightStickY = static_cast<float>(reading.RightThumbstickY);
 		}
@@ -1989,6 +1999,10 @@ ButtonSnapshot ReadButtons()
 		result.rb |= virtualKeyDown(VirtualKey::GamepadRightShoulder) || ImGui::IsKeyDown(ImGuiKey_GamepadR1);
 		result.menu |= virtualKeyDown(VirtualKey::GamepadMenu) || ImGui::IsKeyDown(ImGuiKey_GamepadStart);
 		result.view |= virtualKeyDown(VirtualKey::GamepadView) || ImGui::IsKeyDown(ImGuiKey_GamepadBack);
+		result.ls |= virtualKeyDown(VirtualKey::GamepadLeftThumbstickButton);
+		result.rs |= virtualKeyDown(VirtualKey::GamepadRightThumbstickButton);
+		result.lt |= virtualKeyDown(VirtualKey::GamepadLeftTrigger);
+		result.rt |= virtualKeyDown(VirtualKey::GamepadRightTrigger);
 		result.quickMenu.ObserveGamepad(UwpQuickMenuBinding::Buttons(
 			result.a, result.b, result.x, result.y,
 			virtualKeyDown(VirtualKey::GamepadDPadUp) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp),
@@ -2207,6 +2221,10 @@ bool ButtonTokenDown(const ButtonSnapshot& buttons, std::string token)
 	if (token == "rb" || token == "r1" || token == "rightshoulder") return buttons.rb;
 	if (token == "menu" || token == "start") return buttons.menu;
 	if (token == "view" || token == "select") return buttons.view;
+	if (token == "ls" || token == "l3" || token == "leftstick") return buttons.ls;
+	if (token == "rs" || token == "r3" || token == "rightstick") return buttons.rs;
+	if (token == "lt" || token == "l2" || token == "lefttrigger") return buttons.lt;
+	if (token == "rt" || token == "r2" || token == "righttrigger") return buttons.rt;
 	return false;
 }
 
@@ -2314,6 +2332,78 @@ bool BindingPressed(const std::string& binding, const ButtonSnapshot& buttons, c
 	return !GamepadComboDown(parts.combo, previousButtons);
 }
 
+// Settings > Input records the virtual gyro combo from the pad: wait for every button to be released (the A that
+// opened it), then collect what is held until everything is released again
+enum class GyroComboCapture { Off, WaitRelease, Recording };
+GyroComboCapture s_gyroComboCapture = GyroComboCapture::Off;
+ButtonSnapshot s_gyroComboCaptured{};
+float s_gyroComboCaptureSeconds = 0.0f;
+constexpr float kGyroComboCaptureTimeout = 10.0f;
+
+bool AnyComboButtonDown(const ButtonSnapshot& b)
+{
+	return b.a || b.b || b.x || b.y || b.up || b.down || b.left || b.right || b.lb || b.rb ||
+		b.menu || b.view || b.ls || b.rs || b.lt || b.rt;
+}
+
+std::string GamepadComboString(const ButtonSnapshot& b)
+{
+	const std::pair<bool, const char*> parts[] = {
+		{ b.lt, "LT" }, { b.rt, "RT" }, { b.lb, "LB" }, { b.rb, "RB" }, { b.ls, "L3" }, { b.rs, "R3" },
+		{ b.view, "View" }, { b.menu, "Menu" }, { b.up, "Up" }, { b.down, "Down" }, { b.left, "Left" }, { b.right, "Right" },
+		{ b.a, "A" }, { b.b, "B" }, { b.x, "X" }, { b.y, "Y" },
+	};
+	std::string combo;
+	for (const auto& [down, name] : parts)
+	{
+		if (!down)
+			continue;
+		combo += combo.empty() ? "Gamepad:" : "+";
+		combo += name;
+	}
+	return combo;
+}
+
+// returns true while recording owns the controller (menus ignore it)
+bool UpdateGyroComboCapture(const ButtonSnapshot& buttons)
+{
+	if (s_gyroComboCapture == GyroComboCapture::Off)
+		return false;
+	s_gyroComboCaptureSeconds += std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 0.25f);
+	const bool anyDown = AnyComboButtonDown(buttons);
+	if (s_gyroComboCapture == GyroComboCapture::WaitRelease)
+	{
+		if (!anyDown)
+		{
+			s_gyroComboCapture = GyroComboCapture::Recording;
+			s_gyroComboCaptured = {};
+			s_gyroComboCaptureSeconds = 0.0f;
+		}
+		return true;
+	}
+	if (anyDown)
+	{
+		ButtonSnapshot& c = s_gyroComboCaptured;
+		c.a |= buttons.a; c.b |= buttons.b; c.x |= buttons.x; c.y |= buttons.y;
+		c.up |= buttons.up; c.down |= buttons.down; c.left |= buttons.left; c.right |= buttons.right;
+		c.lb |= buttons.lb; c.rb |= buttons.rb; c.menu |= buttons.menu; c.view |= buttons.view;
+		c.ls |= buttons.ls; c.rs |= buttons.rs; c.lt |= buttons.lt; c.rt |= buttons.rt;
+		return true;
+	}
+	if (AnyComboButtonDown(s_gyroComboCaptured))
+	{
+		GetConfig().uwp_display.virtual_gyro_binding = GamepadComboString(s_gyroComboCaptured);
+		SaveConfig();
+		s_gyroComboCapture = GyroComboCapture::Off;
+	}
+	else if (s_gyroComboCaptureSeconds > kGyroComboCaptureTimeout)
+	{
+		s_gyroComboCapture = GyroComboCapture::Off;
+	}
+	// stay owned this frame so the release doesn't reach the menus
+	return true;
+}
+
 bool ProcessGlobalShortcutBindings(const ButtonSnapshot& buttons)
 {
 	auto& display = GetConfig().uwp_display;
@@ -2323,6 +2413,17 @@ bool ProcessGlobalShortcutBindings(const ButtonSnapshot& buttons)
 		display.swap_screens = !display.swap_screens.GetValue();
 		SaveConfig();
 		PushStatus(display.swap_screens.GetValue() ? Tr("Screens swapped") : Tr("Screens restored"));
+		consumed = true;
+	}
+	if (CafeSystem::IsTitleRunning() && display.virtual_gyro_combo_enabled.GetValue() &&
+		BindingPressed(display.virtual_gyro_binding.GetValue(), buttons, s_previousButtons))
+	{
+		WGIGamepadController::SetVirtualMotionMode(
+			WGIGamepadController::GetVirtualMotionMode() == WGIGamepadController::VirtualMotionMode::Off ?
+				WGIGamepadController::VirtualMotionMode::Tilt : WGIGamepadController::VirtualMotionMode::Off);
+		// in-game overlay: the frontend's own notifications only draw in the menus
+		LatteOverlay_pushNotification(WGIGamepadController::GetVirtualMotionMode() == WGIGamepadController::VirtualMotionMode::Off ?
+			Tr("Virtual gyro off") : Tr("Virtual gyro on: the right stick tilts the GamePad"), 3000);
 		consumed = true;
 	}
 	if (CafeSystem::IsTitleRunning() && UwpQuickMenuBinding::Pressed(buttons.quickMenu, s_previousButtons.quickMenu))
@@ -2417,6 +2518,11 @@ void ActivateQuickMenuSelection()
 		SetQuickMenuOpen(false);
 		CemuHost::Shutdown();
 		winrt::Windows::ApplicationModel::Core::CoreApplication::Exit();
+		break;
+	case 8:
+		WGIGamepadController::SetVirtualMotionMode(
+			WGIGamepadController::GetVirtualMotionMode() == WGIGamepadController::VirtualMotionMode::Off ?
+				WGIGamepadController::VirtualMotionMode::Tilt : WGIGamepadController::VirtualMotionMode::Off);
 		break;
 	default:
 		break;
@@ -4520,6 +4626,8 @@ void DrawGraphicsSettings()
 	}
 	CheckboxConfig(Tr("Async shader compile"), config.async_compile);
 	CheckboxConfig(Tr("Threaded draw recording (experimental, restart Cemu)"), config.d3d12_threaded_recording);
+	CheckboxConfig(Tr("Prioritized pipeline caching (experimental, applies when a game starts)"), config.d3d12_prioritized_pipeline_cache);
+	ImGui::TextDisabled("%s", Tr("Loads every cached pipeline that fits in memory at game start, most used first, and keeps the most used ones under memory pressure. Longer loading, less pop-in."));
 	CheckboxConfig(Tr("Full sync at GX2DrawDone()"), config.gx2drawdone_sync);
 	CheckboxConfig(Tr("Render upside down"), config.render_upside_down);
 
@@ -4558,6 +4666,66 @@ void DrawGraphicsSettings()
 			s_allShaderCacheBytes.reset();
 			PushStatus(failed == 0 ? std::string(Tr("Removed all shader caches")) : TrFormat("Removed shader caches; {} items failed", failed));
 		}
+	}
+
+	// backup to a USB drive or any folder the picker can reach; the copy runs off the UI thread
+	static std::future<std::string> s_shaderCacheCopy;
+	if (s_shaderCacheCopy.valid() && s_shaderCacheCopy.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+	{
+		PushStatus(s_shaderCacheCopy.get());
+		s_allShaderCacheBytes.reset();
+	}
+	auto pickCacheFolder = [shaderCacheRoot](bool exportCaches)
+	{
+		UwpImGuiFrontend::PickerRequest request;
+		request.startLocation = UwpImGuiFrontend::PickerStartLocation::Computer;
+		request.fileTypes = { L"*" };
+		request.futureAccessToken = L"shader-cache-backup";
+		const bool started = PickerService().PickFolder(std::move(request), MakePickerCallbacks(
+			[shaderCacheRoot, exportCaches](std::unique_ptr<UwpImGuiFrontend::PickedItem> item) {
+				if (!item)
+					return;
+				const fs::path picked = item->path;
+				s_shaderCacheCopy = std::async(std::launch::async, [shaderCacheRoot, picked, exportCaches]() -> std::string {
+					std::error_code ec;
+					if (exportCaches)
+					{
+						const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+						std::tm local{};
+						localtime_s(&local, &now);
+						const fs::path target = picked / fmt::format("Cemu shader caches {:04}-{:02}-{:02} {:02}-{:02}",
+							local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min);
+						fs::copy(shaderCacheRoot, target, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+						if (ec)
+							cemuLog_log(LogType::Force, "UWP shader cache export to {} failed: {}", _pathToUtf8(target), ec.message());
+						return ec ? std::string(Tr("Shader cache export failed; see log.txt")) : TrFormat("Shader caches exported to {}", _pathToUtf8(target));
+					}
+					// an export folder holds precompiled/ and transferable/ like the cache folder itself
+					if (!fs::exists(picked / "transferable", ec) && !fs::exists(picked / "precompiled", ec))
+						return Tr("That folder has no exported shader caches");
+					fs::copy(picked, shaderCacheRoot, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+					if (ec)
+						cemuLog_log(LogType::Force, "UWP shader cache import from {} failed: {}", _pathToUtf8(picked), ec.message());
+					return ec ? std::string(Tr("Shader cache import failed; see log.txt")) : std::string(Tr("Shader caches imported"));
+				});
+			},
+			[](std::string_view error) {
+				cemuLog_log(LogType::Force, "UWP shader cache folder picker failed: {}", error);
+				PushStatus(Tr("Could not open the folder picker"));
+			}));
+		if (!started)
+			PushStatus(Tr("A file or folder picker is already open"));
+	};
+	if (s_shaderCacheCopy.valid())
+		ImGui::TextDisabled("%s", Tr("Copying shader caches..."));
+	else if (CafeSystem::IsTitleRunning())
+		ImGui::TextDisabled("%s", Tr("Quit the game to export or import shader caches."));
+	else
+	{
+		if (ShellButton(Tr("Export shader caches to a folder or USB drive")))
+			pickCacheFolder(true);
+		if (ShellButton(Tr("Import shader caches from an exported folder")))
+			pickCacheFolder(false);
 	}
 
 	SectionTitle(Tr("Graphic packs"));
@@ -5096,6 +5264,36 @@ void DrawStorageSettings()
 void DrawInputSettings()
 {
 	auto& config = GetConfig();
+
+	SectionTitle(Tr("Virtual gyro"));
+	ImGui::TextWrapped(Tr("For games that need GamePad motion: while on, the right stick tilts the GamePad instead of moving the camera. It is always available from the quick menu."));
+	CheckboxConfig(Tr("Toggle the virtual gyro with a button combo"), config.uwp_display.virtual_gyro_combo_enabled);
+	if (config.uwp_display.virtual_gyro_combo_enabled.GetValue())
+	{
+		const std::string binding = config.uwp_display.virtual_gyro_binding.GetValue();
+		if (s_gyroComboCapture == GyroComboCapture::Recording)
+		{
+			const std::string held = GamepadComboString(s_gyroComboCaptured);
+			ImGui::TextWrapped(Tr("Hold the buttons of the combo, then release them all (%d s)"),
+				(int)std::ceil(std::max(0.0f, kGyroComboCaptureTimeout - s_gyroComboCaptureSeconds)));
+			if (!held.empty())
+				ImGui::TextUnformatted(held.c_str());
+		}
+		else if (s_gyroComboCapture == GyroComboCapture::WaitRelease)
+		{
+			ImGui::TextWrapped(Tr("Release all buttons..."));
+		}
+		else
+		{
+			ImGui::Text(Tr("Combo: %s"), binding.empty() ? Tr("none") : binding.c_str());
+			if (ShellButton(Tr("Record combo"), ImVec2(220.0f, 40.0f)))
+			{
+				s_gyroComboCapture = GyroComboCapture::WaitRelease;
+				s_gyroComboCaptureSeconds = 0.0f;
+			}
+		}
+		ImGui::TextDisabled(Tr("The game also receives these buttons, so pick a combo that does nothing harmful in it. Up/Down/Left/Right also react to the left stick."));
+	}
 
 	SectionTitle(Tr("Emulated USB devices"));
 	CheckboxConfig(Tr("Emulate Skylander Portal"), config.emulated_usb_devices.emulate_skylander_portal);
@@ -5672,6 +5870,7 @@ void DrawGraphicPacks()
 		// present every second TV refresh: with VSync off the emulator's 30 Hz drifts against the 60 Hz output
 		// and a frame now and then stays 3 refreshes, which shows as judder in camera pans and cutscenes
 		GetConfig().vsync = 2;
+		SaveConfig();
 		SaveGraphicPackState();
 		PushStatus(modeSet && limitSet ? Tr("FPS++ set for Series S; restart the game to apply") : Tr("This FPS++ version has different presets; set them manually"));
 	}
@@ -5726,7 +5925,20 @@ void DrawGraphicPacks()
 				if (ShellSelectable(preset->name.c_str(), selected, ImVec2(320.0f, 42.0f)))
 				{
 					if (pack->SetActivePreset(category, preset->name))
+					{
 						SaveGraphicPackState();
+						// VSync every second/third refresh (set by the Series S button) holds the game at 30 FPS or less,
+						// so an FPS++ limit above 30 never showed
+						if (pack->GetName() == "FPS++" && category == "FPS Limit" && !preset->name.starts_with("30") &&
+							GetConfig().vsync.GetValue() >= 2)
+						{
+							GetConfig().vsync = 0;
+							SaveConfig();
+							PushStatus(Tr("VSync turned off: every second refresh limits the game to 30 FPS"));
+						}
+						if (CafeSystem::IsTitleRunning() && pack->IsEnabled() && pack->RequiresRestart(false, true))
+							PushStatus(Tr("Restart the game to apply this preset"));
+					}
 					ImGui::CloseCurrentPopup();
 				}
 				if (selected)
@@ -7817,6 +8029,9 @@ void DrawQuickMenuWindow()
 		{ "restart", Tr("Restart Game"), {}, true },
 		{ "quit", Tr("Quit Game"), {}, true },
 		{ "exit", Tr("Exit Cemu"), {}, true },
+		{ "motion", Tr("Virtual gyro"),
+			WGIGamepadController::GetVirtualMotionMode() == WGIGamepadController::VirtualMotionMode::Off ?
+				Tr("Off") : Tr("Tilt (right stick)"), true },
 	};
 	model.choices.reserve(kUwpLayoutEntries.size());
 	for (const auto& [_, label] : kUwpLayoutEntries)
@@ -8135,7 +8350,7 @@ void BeginFrame()
 		titleInstallOwnsInput || usersDialogOwnsInput ||
 		(s_page != Page::Home && !s_quickMenuOpen);
 	ImGui_UwpSetGamepadNavigationEnabled(!nativeTextInputActive && !titleContextOwnsInput &&
-		!s_titleInstallInputReleaseBarrier && s_imguiOwnsNavigation);
+		!s_titleInstallInputReleaseBarrier && s_imguiOwnsNavigation && s_gyroComboCapture == GyroComboCapture::Off);
 
 	s_frontendUptime += std::clamp(ImGui::GetIO().DeltaTime, 0.0f, 1.0f / 15.0f);
 	ServiceStaticTextureDecodeQueue();
@@ -8152,6 +8367,9 @@ void Draw()
 {
 	const bool nativeTextInputActive = CemuUwp::InputProvider::IsCoreTextInputActive();
 	ButtonSnapshot buttons = ReadButtons();
+	const bool comboCaptureOwnsInput = UpdateGyroComboCapture(buttons);
+	if (comboCaptureOwnsInput)
+		buttons = ButtonSnapshot{};
 	BeginRetainedInputFrame(buttons);
 	const auto& titles = GetCachedHomeTitles();
 	bool pickerOpen;
@@ -8165,7 +8383,7 @@ void Draw()
 		if (systemBackRequested || Pressed(buttons.b, s_previousButtons.b))
 			UwpImGuiFrontend::DismissNativeTextInput();
 	}
-	else if (!nativeTextInputActive && !s_titleInstallInputReleaseBarrier)
+	else if (!nativeTextInputActive && !s_titleInstallInputReleaseBarrier && !comboCaptureOwnsInput)
 	{
 		if (s_titleContextInputReleaseBarrier)
 		{

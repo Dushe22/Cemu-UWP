@@ -119,10 +119,14 @@ inline uint32 _getViewBucketKeyNoRes(MPTR physAddress, uint32 pitch)
 }
 
 LatteTexViewBucket texViewBucket[TEXTURE_VIEW_BUCKETS] = { };
+// bumped whenever a lookup entry is added or removed: a lookup result remembered under the same generation is still what
+// the lookup would return (entries are appended, so only a removal can change the first match)
+uint64 g_latteTextureViewLookupGeneration = 1;
 LatteTexViewBucket texViewBucket_nores[TEXTURE_VIEW_BUCKETS] = { };
 
 void LatteTextureViewLookupCache::Add(LatteTextureView* view, uint32 baseMip, uint32 baseSlice)
 {
+	++g_latteTextureViewLookupGeneration;
 	LatteTexViewLookupDesc desc(view);
 	if (baseMip != 0 || baseSlice != 0)
 		desc.SetParametersForSubTexture(baseMip, baseSlice);
@@ -138,6 +142,7 @@ void LatteTextureViewLookupCache::Add(LatteTextureView* view, uint32 baseMip, ui
 
 void LatteTextureViewLookupCache::RemoveAll(LatteTextureView* view)
 {
+	++g_latteTextureViewLookupGeneration;
 	for (auto& key : view->viewLookUpCacheKeys)
 	{
 		auto& bucket = texViewBucket[key].list;

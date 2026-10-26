@@ -129,9 +129,13 @@ void LatteTextureReadbackInfoD3D12::ForceFinish()
 
 uint8* LatteTextureReadbackInfoD3D12::GetData()
 {
-	// the readback ring is reused once the fence passes: read it while the recorder allocates nothing new
-	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);
+	// the readback ring is reused once the fence passes: the ring lock keeps the recorder from allocating over this
+	// range (or freeing its buffer) during the copy. Before, this drained the whole recording queue (GetData was the
+	// largest Latte wait in dense areas: 750-850 calls and 200-290 ms every 5 s)
 	ForceFinish();
+	std::unique_lock<std::mutex> ringLock;
+	if (m_renderer && m_linearData.empty())
+		ringLock = m_renderer->GetMemoryManager()->LockReadbackRing();
 	if (!m_readback.IsValid())
 	{
 #if defined(CEMU_UWP_D3D12_DIAGNOSTICS)

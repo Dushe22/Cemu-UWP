@@ -60,6 +60,10 @@ public:
 	size_t GetCachedPipelineCount();
 	// a draw that could not be skipped used this pipeline, so freeing its prewarmed PSO brings back a render-thread build
 	bool IsMustBeReady(uint64 pipelineStateHash);
+	// memory pressure trims: must-be-ready always stays; with prioritized caching core stays too, and frequent unless
+	// pressure is high
+	bool KeepUnderMemoryPressure(uint64 pipelineStateHash, bool highPressure);
+	bool IsPrioritized() const { return m_prioritized; }
 	// "stored=.. sessions=.. last=.. flagged=..", for logs about pipelines built on the render thread
 	std::string DescribePipeline(uint64 pipelineStateHash);
 
@@ -68,7 +72,10 @@ private:
 	{
 		uint32 lastSession{};
 		uint32 sessionsUsed{}; // top bit: kMustBeReadyFlag
+		uint32 lastUsedDay{}; // days since 1970 (UTC)
 	};
+	uint32 m_today{};
+	bool m_prioritized{}; // "Prioritized pipeline caching", read when a game starts
 	static constexpr uint32 kMustBeReadyFlag = 0x80000000u;
 	struct PrewarmJob
 	{

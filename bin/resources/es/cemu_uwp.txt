@@ -30,6 +30,8 @@ Apply Quick Menu combo	Aplicar combinación del menú rápido
 Artwork	Ilustraciones
 Audio latency	Latencia de audio
 Backend	Motor
+Copying shader caches...	Copiando cachés de shaders...
+Could not open the folder picker	No se pudo abrir el selector de carpetas
 CPU mode	Modo de CPU
 CPU usage	Uso de la CPU
 Can't change the MLC path while a game is running	No se puede cambiar la ruta MLC mientras hay un juego en marcha
@@ -99,6 +101,7 @@ Every refresh	Cada actualización
 Every second refresh	Cada dos actualizaciones
 Every third refresh	Cada tres actualizaciones
 Exit Cemu	Salir de Cemu
+Export shader caches to a folder or USB drive	Exportar cachés de shaders a una carpeta o USB
 FPS	FPS
 Failed to copy title image	No se pudo copiar la imagen del título
 Failed to save Screenscraper account	No se pudo guardar la cuenta de Screenscraper
@@ -140,6 +143,7 @@ Gyroscope sensitivity	Sensibilidad del giroscopio
 Hold stick button	Mantener el botón del stick
 Home	inicio
 Horizontal pointer sensitivity	Sensibilidad horizontal del puntero
+Import shader caches from an exported folder	Importar cachés de shaders de una carpeta exportada
 Input	Entrada
 Input channels	Canales de entrada
 Input volume	Volumen de entrada
@@ -164,6 +168,7 @@ Left Stick	Stick izquierdo
 Left stick	Stick izquierdo
 Left stick deadzone	Zona muerta del stick izquierdo
 Left stick range	Alcance del stick izquierdo
+Loads every cached pipeline that fits in memory at game start, most used first, and keeps the most used ones under memory pressure. Longer loading, less pop-in.	Carga al iniciar el juego todos los pipelines guardados que entren en memoria, primero los más usados, y conserva los más usados cuando falta memoria. Carga más larga, menos pop-in.
 Logs	Registros
 MLC path saved - restart Cemu to use it (accounts and saves are not moved)	Ruta MLC guardada: reinicia Cemu para usarla (las cuentas y las partidas no se mueven)
 MLC storage	Almacenamiento MLC
@@ -217,11 +222,13 @@ Portal volume	Volumen del portal
 Portuguese	Portugués
 Power	Encendido
 Preferred region	Región preferida
+Prioritized pipeline caching (experimental, applies when a game starts)	Caché de pipelines priorizada (experimental, se aplica al iniciar un juego)
 Quick Menu	Menú rápido
 Quick Menu combo reset to Menu + View	Combinación del menú rápido restablecida a Menu + View
 Quick Menu combo saved	Combinación del menú rápido guardada
 Quick menu combo	Combinación del menú rápido
 Quit Game	Cerrar el juego
+Quit the game to export or import shader caches.	Cerrá el juego para exportar o importar las cachés de shaders.
 RAM usage	Uso de RAM
 Ready	Listo
 Refresh list	Actualizar la lista
@@ -238,6 +245,7 @@ Requires at least two different gamepad buttons held together.	Requiere mantener
 Reset Quick Menu to Menu + View	Restablecer el menú rápido a Menú + Vista
 Restart Game	Reiniciar el juego
 Restart on enable/preset: %s / %s	Reiniciar al activar/cambiar de preajuste: %s / %s
+Restart the game to apply this preset	Reiniciá el juego para aplicar este preset
 Restart the title if this pack needs a full reload	Reinicia el título si este paquete necesita una recarga completa
 Restart unavailable	Reinicio no disponible
 Resume scan	Reanudar el análisis
@@ -261,6 +269,10 @@ Screenscraper download is already running	Ya hay una descarga de Screenscraper e
 Screenshot	Captura de pantalla
 Selected account is not a complete online account	La cuenta seleccionada no es una cuenta en línea completa
 Set	Definido
+Shader cache export failed; see log.txt	Falló la exportación de las cachés de shaders; mirá log.txt
+Shader cache import failed; see log.txt	Falló la importación de las cachés de shaders; mirá log.txt
+Shader caches exported to {}	Cachés de shaders exportadas a {}
+Shader caches imported	Cachés de shaders importadas
 Shader compiling notifications	Avisos de compilación de shaders
 Shaders: %s	Sombreadores: %s
 Shared title media: %s	Archivos compartidos de títulos: %s
@@ -282,6 +294,7 @@ Stream: working...	Transmisión: trabajando...
 Swap TV and GamePad screens	Intercambiar las pantallas TV y GamePad
 Swap examples: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick	Ejemplos de intercambio: Gamepad:View+Y, Keyboard:Escape, Pointer:RightClick
 System	sistema
+That folder has no exported shader caches	Esa carpeta no tiene cachés de shaders exportadas
 TV	TV
 TV channels	Canales de TV
 TV device	Dispositivo de la TV
@@ -319,6 +332,7 @@ Vertical pointer sensitivity	Sensibilidad vertical del puntero
 Video	Vídeo
 Video backgrounds use more storage and bandwidth.	Los fondos de vídeo consumen más almacenamiento y ancho de banda.
 Virtual touch / IR pointer	Toque virtual / puntero IR
+VSync turned off: every second refresh limits the game to 30 FPS	VSync desactivado: cada 2 refrescos limita el juego a 30 FPS
 Who's playing?	¿Quién juega?
 Wii Remote extension	Extensión del Wii Remote
 World	Mundo
@@ -349,3 +363,15 @@ Experimental	Experimental
 GPU upload for compressed texture arrays	Subida por GPU de arrays de texturas comprimidas
 Faster first load of large texture arrays such as BOTW terrain (avoids multi-second freezes). If terrain or other textures look wrong, turn it off. Takes effect when a game starts.	Primera carga más rápida de arrays de texturas grandes como el terreno de BOTW (evita congelamientos de varios segundos). Si el terreno u otras texturas se ven mal, desactivalo. Se aplica al iniciar un juego.
 Threaded draw recording (experimental, restart Cemu)	Grabación de draws en otro hilo (experimental, reiniciar Cemu)
+Virtual gyro	Giroscopio virtual
+Tilt (right stick)	Inclinar (stick derecho)
+Virtual gyro off	Giroscopio virtual desactivado
+Virtual gyro on: the right stick tilts the GamePad	Giroscopio virtual activado: el stick derecho inclina el GamePad
+For games that need GamePad motion: while on, the right stick tilts the GamePad instead of moving the camera. It is always available from the quick menu.	Para juegos que necesitan el movimiento del GamePad: activado, el stick derecho inclina el GamePad en vez de mover la cámara. Siempre se puede activar desde el menú rápido.
+Toggle the virtual gyro with a button combo	Activar el giroscopio virtual con una combinación de botones
+Hold the buttons of the combo, then release them all (%d s)	Mantené los botones de la combinación y después soltalos todos (%d s)
+Release all buttons...	Soltá todos los botones...
+Combo: %s	Combinación: %s
+none	ninguna
+Record combo	Grabar combinación
+The game also receives these buttons, so pick a combo that does nothing harmful in it. Up/Down/Left/Right also react to the left stick.	El juego también recibe estos botones: elegí una combinación que no haga nada molesto en él. Up/Down/Left/Right también responden al stick izquierdo.

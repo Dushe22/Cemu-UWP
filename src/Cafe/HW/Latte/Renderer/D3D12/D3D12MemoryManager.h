@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <utility>
 #include <vector>
@@ -117,6 +118,9 @@ public:
 	RingReservation AllocateUpload(uint32_t size, uint32_t alignment, uint64_t fenceValue);
 	RingReservation AllocateReadback(uint32_t size, uint32_t alignment, uint64_t fenceValue);
 	void Cleanup(uint64_t completedFence);
+	// held while the CPU copies a finished readback out of the ring: allocation (which reuses retired ranges) and
+	// cleanup (which frees idle ring buffers) wait for it, so the copy can run beside the recorder thread
+	std::unique_lock<std::mutex> LockReadbackRing() { return std::unique_lock<std::mutex>(m_readbackRingMutex); }
 
 	void* AcquireTextureUploadBuffer(uint32_t size);
 	void ReleaseTextureUploadBuffer(uint8_t* mem);
@@ -131,6 +135,7 @@ private:
 	Microsoft::WRL::ComPtr<D3D12MA::Allocator> m_allocator;
 	std::unique_ptr<SynchronizedRingAllocator> m_uploadRing;
 	std::unique_ptr<SynchronizedRingAllocator> m_readbackRing;
+	std::mutex m_readbackRingMutex;
 	std::vector<uint8_t> m_textureUploadBuffer; // keeps its size between uses so growing it never zero-fills again
 	bool m_textureUploadBufferInUse{};
 	uint64_t m_createdDefaultResources{};

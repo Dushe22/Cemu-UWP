@@ -150,6 +150,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	d3d12_threaded_recording = graphic.get("D3D12ThreadedRecording", d3d12_threaded_recording);
+	d3d12_prioritized_pipeline_cache = graphic.get("D3D12PrioritizedPipelineCache", d3d12_prioritized_pipeline_cache);
 	// D3D12GpuArrayUpload is not read: on Xbox the texture-to-texture copy misplaces array slices like the buffer copy does
 	skip_resolution_rules_of_packs_with_skipped_shaders = graphic.get("SkipResolutionRulesOfPacksWithSkippedShaders", false);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
@@ -362,6 +363,8 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	uwp_display.swap_screens = uwpDisplay.get("SwapScreens", uwp_display.swap_screens);
 	uwp_display.touch_cursor = uwpDisplay.get("TouchCursor", uwp_display.touch_cursor);
 	uwp_display.toggle_swap_binding = uwpDisplay.get("ToggleSwapBinding", uwp_display.toggle_swap_binding);
+	uwp_display.virtual_gyro_binding = uwpDisplay.get("VirtualGyroBinding", uwp_display.virtual_gyro_binding);
+	uwp_display.virtual_gyro_combo_enabled = uwpDisplay.get("VirtualGyroComboEnabled", !uwp_display.virtual_gyro_binding.GetValue().empty());
 	uwp_display.quick_menu_binding = uwpDisplay.get("QuickMenuBinding", uwp_display.quick_menu_binding);
 	uwp_display.quick_menu_binding = UwpQuickMenuBinding::Normalize(uwp_display.quick_menu_binding.GetValue());
 	uwp_display.game_layouts.clear();
@@ -510,6 +513,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("D3D12ThreadedRecording", d3d12_threaded_recording.GetValue());
+	graphic.set("D3D12PrioritizedPipelineCache", d3d12_prioritized_pipeline_cache.GetValue());
 	graphic.set("D3D12GpuArrayUpload", d3d12_gpu_array_upload.GetValue());
 	graphic.set("SkipResolutionRulesOfPacksWithSkippedShaders", skip_resolution_rules_of_packs_with_skipped_shaders.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);
@@ -619,6 +623,8 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	uwpDisplay.set("SwapScreens", uwp_display.swap_screens.GetValue());
 	uwpDisplay.set("TouchCursor", uwp_display.touch_cursor.GetValue());
 	uwpDisplay.set("ToggleSwapBinding", uwp_display.toggle_swap_binding.GetValue().c_str());
+	uwpDisplay.set("VirtualGyroBinding", uwp_display.virtual_gyro_binding.GetValue().c_str());
+	uwpDisplay.set("VirtualGyroComboEnabled", uwp_display.virtual_gyro_combo_enabled.GetValue());
 	uwpDisplay.set("QuickMenuBinding", UwpQuickMenuBinding::Normalize(uwp_display.quick_menu_binding.GetValue()).c_str());
 	auto uwpGameLayouts = uwpDisplay.set("GameLayouts");
 	for (const auto& [titleId, entry] : uwp_display.game_layouts)

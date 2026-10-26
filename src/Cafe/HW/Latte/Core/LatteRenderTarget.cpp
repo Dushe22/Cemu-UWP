@@ -935,10 +935,26 @@ void LatteRenderTarget_getScreenImageArea(sint32* x, sint32* y, sint32* width, s
 		*fullHeight = h;
 }
 
+// render thread time spent on the output path (UWP only); the D3D12 SwapBuffers logs and resets it
+uint64 g_uwpOutputCopyNs = 0;
+uint64 g_uwpOutputOverlayNs = 0;
+uint64 g_uwpOutputCopies = 0;
+
+#if defined(CEMU_UWP)
+struct UwpOutputTimer
+{
+	uint64& total;
+	std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+	~UwpOutputTimer() { total += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - start).count(); }
+};
+#endif
+
 void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPadView)
 {
 #if defined(CEMU_UWP)
 	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
+	++g_uwpOutputCopies;
+	UwpOutputTimer copyTimer{ g_uwpOutputCopyNs };
 #endif
 	// make sure texture is updated to latest data in cache
 	LatteTexture_UpdateDataToLatest(textureView->baseTexture);
@@ -1053,6 +1069,9 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	cemu_assert(shader);
 	g_renderer->DrawBackbufferQuad(textureView, shader, filter==LatteTextureView::MagFilter::kLinear, imageX, imageY, imageWidth, imageHeight, isPadView, clearBackground);
 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
+#if defined(CEMU_UWP)
+	UwpOutputTimer overlayTimer{ g_uwpOutputOverlayNs };
+#endif
 	if (!g_renderer->ImguiBegin(!isPadView))
 		return;
 	swkbd_render(!isPadView);

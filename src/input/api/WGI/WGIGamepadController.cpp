@@ -257,14 +257,86 @@ void WGIGamepadController::use_gamepad_for_session(std::string_view nonRoamableI
 	m_nextReconnectAttempt = {};
 }
 
+namespace
+{
+	std::atomic<uint32> s_virtualMotionMode{ 0 };
+}
+
+WGIGamepadController::VirtualMotionMode WGIGamepadController::GetVirtualMotionMode()
+{
+	return (VirtualMotionMode)s_virtualMotionMode.load(std::memory_order_relaxed);
+}
+
+void WGIGamepadController::SetVirtualMotionMode(VirtualMotionMode mode)
+{
+	s_virtualMotionMode.store((uint32)mode, std::memory_order_relaxed);
+	cemuLog_log(LogType::Force, "UWP virtual motion: {}", mode == VirtualMotionMode::Tilt ? "tilt (right stick)" : "off");
+}
+
 bool WGIGamepadController::has_motion()
 {
-	return false;
+	return GetVirtualMotionMode() != VirtualMotionMode::Off;
+}
+
+bool WGIGamepadController::forces_motion()
+{
+	return has_motion();
 }
 
 MotionSample WGIGamepadController::get_motion_sample()
 {
-	return {};
+	if (GetVirtualMotionMode() == VirtualMotionMode::Off)
+		return {};
+	std::scoped_lock lock(m_virtualMotionMutex);
+	const auto now = std::chrono::steady_clock::now();
+	float dt = 1.0f / 60.0f;
+	if (m_lastVirtualMotionUpdate.time_since_epoch().count() != 0)
+		dt = std::clamp(std::chrono::duration<float>(now - m_lastVirtualMotionUpdate).count(), 0.001f, 0.05f);
+	m_lastVirtualMotionUpdate = now;
+
+	// stick up tilts the top edge down (pitch), stick right tilts the right edge down (roll); flat = level
+	constexpr float kMaxTilt = 60.0f * 3.14159265f / 180.0f;
+	glm::vec2 stick = m_virtualMotionStick;
+	const float length = glm::length(stick);
+	constexpr float kDeadzone = 0.12f;
+	stick = length <= kDeadzone ? glm::vec2{} : stick * (std::min(1.0f, (length - kDeadzone) / (1.0f - kDeadzone)) / length);
+	const glm::vec2 target{ stick.y * kMaxTilt, stick.x * kMaxTilt };
+	const float follow = 1.0f - std::exp(-dt * 12.0f);
+	m_virtualMotionTilt += (target - m_virtualMotionTilt) * follow;
+
+	// orientation = the motion filter's neutral pose (GamePad held in the hands, buttons facing up: 90 degrees
+	// around x) times the tilt: pitch around x, roll around z (the forward axis in that pose); w x y z
+	const auto mul = [](const float a[4], const float b[4], float out[4]) {
+		out[0] = a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3];
+		out[1] = a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2];
+		out[2] = a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1];
+		out[3] = a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0];
+	};
+	const float hp = m_virtualMotionTilt.x * 0.5f, hr = m_virtualMotionTilt.y * 0.5f;
+	const float pitchQ[4]{ std::cos(hp), std::sin(hp), 0.0f, 0.0f };
+	const float rollQ[4]{ std::cos(hr), 0.0f, 0.0f, std::sin(hr) };
+	const float neutralQ[4]{ 0.70710678f, 0.70710678f, 0.0f, 0.0f };
+	float tiltQ[4], q[4];
+	mul(pitchQ, rollQ, tiltQ);
+	mul(neutralQ, tiltQ, q);
+	// body angular velocity from the previous orientation: dq = conj(prev) * q, w = 2 * dq.xyz / dt
+	const float* p = m_virtualMotionQuat;
+	float dq[4]{
+		p[0] * q[0] + p[1] * q[1] + p[2] * q[2] + p[3] * q[3],
+		p[0] * q[1] - p[1] * q[0] - p[2] * q[3] + p[3] * q[2],
+		p[0] * q[2] + p[1] * q[3] - p[2] * q[0] - p[3] * q[1],
+		p[0] * q[3] - p[1] * q[2] + p[2] * q[1] - p[3] * q[0],
+	};
+	if (dq[0] < 0.0f)
+		for (float& v : dq)
+			v = -v;
+	std::copy(std::begin(q), std::end(q), m_virtualMotionQuat);
+	// gravity seen by the device: the z axis of the orientation, as the motion filter expects it at rest
+	const float accX = 2.0f * (q[1] * q[3] - q[0] * q[2]);
+	const float accY = 2.0f * (q[2] * q[3] + q[0] * q[1]);
+	const float accZ = 2.0f * (q[0] * q[0] + q[3] * q[3]) - 1.0f;
+	m_virtualMotionHandler.processMotionSample(dt, 2.0f * dq[1] / dt, 2.0f * dq[2] / dt, 2.0f * dq[3] / dt, accX, accY, accZ);
+	return m_virtualMotionHandler.getMotionSample();
 }
 
 bool WGIGamepadController::has_position()
@@ -565,6 +637,14 @@ ControllerState WGIGamepadController::raw_state()
 	if (!connected)
 	{
 		DeactivateVirtualPosition();
+	}
+
+	// virtual gyro (quick menu): while on, the right stick tilts the GamePad instead of moving the camera
+	if (GetVirtualMotionMode() == VirtualMotionMode::Tilt)
+	{
+		std::scoped_lock lock(m_virtualMotionMutex);
+		m_virtualMotionStick = result.rotation;
+		result.rotation = {};
 	}
 
 	if (virtualPositionActive)

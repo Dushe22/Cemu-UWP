@@ -16,6 +16,56 @@ enum class H264DEC_STATUS : uint32
 
 namespace H264
 {
+#if defined(CEMU_UWP)
+	H264UwpStats g_h264UwpStats;
+
+	static void H264UwpReportStats()
+	{
+		static auto s_lastReport = std::chrono::steady_clock::now();
+		const auto now = std::chrono::steady_clock::now();
+		if (now - s_lastReport < std::chrono::seconds(5))
+			return;
+		s_lastReport = now;
+		auto& s = g_h264UwpStats;
+		const uint32 submitted = s.submitted.exchange(0);
+		const uint32 decoded = s.decodedFrames.exchange(0);
+		const uint64 decodeUs = s.decodeUs.exchange(0);
+		const uint32 decodeMax = s.decodeUsMax.exchange(0);
+		const uint32 slow = s.slowDecodes.exchange(0);
+		const uint32 outputs = s.outputFrames.exchange(0);
+		const uint64 copyUs = s.copyUs.exchange(0);
+		const uint32 waits = s.gameWaits.exchange(0);
+		const uint64 waitUs = s.gameWaitUs.exchange(0);
+		const uint32 waitMax = s.gameWaitUsMax.exchange(0);
+		const uint32 queuedMax = s.queuedMax.exchange(0);
+		cemuLog_log(LogType::Force, "UWP video: {}x{} {} mode, {} submitted, {} decoded (avg {:.1f} ms, max {:.1f} ms, {} over 33 ms), {} output (copy avg {:.2f} ms), game waited {} times ({:.0f} ms total, max {:.1f} ms), decoder queue max {}; begin {} end {}, refused {} while waiting for an IDR frame, recovered {}, longest gap between frames {:.0f} ms, timestamps going backwards {}",
+			s.width.load(), s.height.load(), s.buffered.load() ? "buffered" : "per-frame", submitted, decoded,
+			decoded ? decodeUs / 1000.0 / decoded : 0.0, decodeMax / 1000.0, slow, outputs, outputs ? copyUs / 1000.0 / outputs : 0.0,
+			waits, waitUs / 1000.0, waitMax / 1000.0, queuedMax,
+			s.begins.exchange(0), s.ends.exchange(0), s.rejectedRecovering.exchange(0), s.recoveredAtIdr.exchange(0),
+			s.executeGapUsMax.exchange(0) / 1000.0, s.backwardTimestamps.exchange(0));
+	}
+#endif
+
+#if defined(CEMU_UWP)
+	// call-by-call trace of the video API: 400 lines per burst, a new burst after 2 s without a decode call
+	static uint32 s_h264TraceLines = 0;
+	static std::chrono::steady_clock::time_point s_h264TraceLastCall{};
+	template<typename... Args>
+	static void H264UwpTrace(fmt::format_string<Args...> format, Args&&... args)
+	{
+		const auto now = std::chrono::steady_clock::now();
+		if (now - s_h264TraceLastCall > std::chrono::seconds(2))
+			s_h264TraceLines = 0;
+		s_h264TraceLastCall = now;
+		if (s_h264TraceLines >= 400)
+			return;
+		if (++s_h264TraceLines == 400)
+			cemuLog_log(LogType::Force, "UWP video trace: limit reached until the next pause in decode calls");
+		cemuLog_log(LogType::Force, "UWP video trace: {}", fmt::format(format, std::forward<Args>(args)...));
+	}
+#endif
+
 	bool H264_IsBotW()
 	{
 		// Cemuhook has a hack where it always returns a small size for H264DECMemoryRequirement (256 bytes)
@@ -477,6 +527,12 @@ namespace H264
 			cemuLog_log(LogType::Force, "H264DECBegin(): Invalid session");
 			return 0;
 		}
+#if defined(CEMU_UWP)
+		g_h264UwpStats.begins++;
+#endif
+#if defined(CEMU_UWP)
+		H264UwpTrace("begin first={} inflight={} outputPerFrame={}", ctx->decoderState.isFirstBegin ? 1 : 0, ctx->decoderState.numFramesInFlight, (uint32)ctx->Param.outputPerFrame);
+#endif
 		if (ctx->decoderState.isFirstBegin)
 		{
 			session->Init(ctx->Param.outputPerFrame == 0);
@@ -500,6 +556,9 @@ namespace H264
 			cemuLog_log(LogType::Force, "H264DECEnd(): Invalid session");
 			return H264DEC_STATUS::SUCCESS;
 		}
+#if defined(CEMU_UWP)
+		g_h264UwpStats.ends++;
+#endif
 		coreinit::OSEvent* flushEvt = &session->GetFlushEvent();
 		coreinit::OSResetEvent(flushEvt);
 		session->QueueFlush();
@@ -513,6 +572,9 @@ namespace H264
 			H264DoFrameOutputCallback(ctx, decodeResult);
 			ctx->decoderState.numFramesInFlight--;
 		}
+#if defined(CEMU_UWP)
+		H264UwpTrace("end inflight after flush={}", (sint32)ctx->decoderState.numFramesInFlight);
+#endif
 		cemu_assert_debug(ctx->decoderState.numFramesInFlight == 0); // no frames should be in flight anymore. Exact behavior is not well understood but we may have to output dummy frames if necessary
 		_ReleaseDecoderSession(session);
 		// does not destroy decoder session, keeps it mostly intact so playback can resume after the next H264DECBegin call (potentially at a different location in the stream)
@@ -630,6 +692,14 @@ namespace H264
 		frameOutput->imagePtr = (uint8*)decodeResult.imageOutput;
 		frameOutput->result = 100;
 		frameOutput->timestamp = decodeResult.timestamp;
+#if defined(CEMU_UWP)
+		{
+			static double s_lastOutputTimestamp = -1.0;
+			if (decodeResult.timestamp < s_lastOutputTimestamp)
+				g_h264UwpStats.backwardTimestamps++;
+			s_lastOutputTimestamp = decodeResult.timestamp;
+		}
+#endif
 		frameOutput->frameWidth = decodeResult.frameWidth;
 		frameOutput->frameHeight = decodeResult.frameHeight;
 		frameOutput->bytesPerRow = decodeResult.bytesPerRow;
@@ -678,6 +748,32 @@ namespace H264
 		return false;
 	}
 
+#if defined(CEMU_UWP)
+	// slice NAL count and first_mb_in_slice of the first slice: CheckDecunitLength assumes one slice per frame,
+	// so an input with first_mb != 0 is a partial picture
+	static std::string H264UwpDescribeSlices(uint8* streamData, sint32 length)
+	{
+		NALInputBitstream nalStream(streamData, length);
+		RBSPInputBitstream rbspStream;
+		uint32 slices = 0;
+		sint64 firstMb = -1;
+		std::string types;
+		while (nalStream.getNextRBSP(rbspStream))
+		{
+			const uint8 header = rbspStream.readU8();
+			const uint8 type = header & 0x1f;
+			if (types.size() < 24)
+				types += fmt::format("{}{}", types.empty() ? "" : ",", type);
+			if (type == 1 || type == 5)
+			{
+				if (slices++ == 0)
+					firstMb = rbspStream.readUV_E();
+			}
+		}
+		return fmt::format("nal=[{}] slices={} firstMb={}", types, slices, firstMb);
+	}
+#endif
+
 	uint32 H264DECExecute(void* workMemory, void* imageOutput)
 	{
 		cemuLog_log(LogType::H264, "H264DECExecute(): [BEGIN]");
@@ -690,6 +786,15 @@ namespace H264
 			cemuLog_log(LogType::Force, "H264DECExecute(): Invalid session");
 			return 0;
 		}
+#if defined(CEMU_UWP)
+		{
+			static std::chrono::steady_clock::time_point s_lastExecute{};
+			const auto now = std::chrono::steady_clock::now();
+			if (s_lastExecute.time_since_epoch().count() != 0)
+				H264UwpStatsMax(g_h264UwpStats.executeGapUsMax, (uint32)std::min<sint64>(std::chrono::duration_cast<std::chrono::microseconds>(now - s_lastExecute).count(), 0xFFFFFFFF));
+			s_lastExecute = now;
+		}
+#endif
 		// if in recovery mode then return an error until we reach a IDR frame
 		if (ctx->decoderState.isTryingToRecover)
 		{
@@ -697,9 +802,18 @@ namespace H264
 			if (isIDR)
 			{
 				ctx->decoderState.isTryingToRecover = false;
+#if defined(CEMU_UWP)
+				g_h264UwpStats.recoveredAtIdr++;
+#endif
 			}
 			else
 			{
+#if defined(CEMU_UWP)
+				g_h264UwpStats.rejectedRecovering++;
+				H264UwpTrace("execute ts={:.3f} len={} {} refused (waiting for IDR) inflight={}", (double)ctx->BitStream.timestamp, (uint32)ctx->BitStream.length,
+					H264UwpDescribeSlices((uint8*)ctx->BitStream.ptr.GetPtr(), ctx->BitStream.length), ctx->decoderState.numFramesInFlight);
+				H264UwpReportStats();
+#endif
 				return 0x400; // error (figure out exact error code. Bit 0x80 indicates presence of frame?)
 			}
 		}
@@ -709,9 +823,17 @@ namespace H264
 		// H264DECExecute is synchronous and will return a frame after either every call (non-buffered) or after 6 calls (buffered)
 		// normally frame decoding happens only during H264DECExecute, but in order to hide the latency of our CPU decoder we will decode asynchronously in buffered mode
 		uint32 numFramesToBuffer = (ctx->Param.outputPerFrame == 0) ? 5 : 0;
+#if defined(CEMU_UWP)
+		g_h264UwpStats.submitted++;
+		uint32 waitedUs = 0;
+		bool tracedExecute = false;
+#endif
 		if(ctx->decoderState.numFramesInFlight > numFramesToBuffer)
 		{
 			ctx->decoderState.numFramesInFlight--;
+#if defined(CEMU_UWP)
+			const auto waitStarted = std::chrono::steady_clock::now();
+#endif
 			while(true)
 			{
 				coreinit::OSEvent& evt = session->GetFrameOutputEvent();
@@ -719,10 +841,40 @@ namespace H264
 				H264DecoderBackend::DecodeResult decodeResult;
 				if( !session->GetFrameOutputIfReady(decodeResult) )
 					continue;
+#if defined(CEMU_UWP)
+				// time to get the frame, before the game's output callback runs
+				waitedUs = (uint32)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - waitStarted).count();
+				const auto callbackStarted = std::chrono::steady_clock::now();
+				const double outputTs = decodeResult.timestamp;
+				const bool outputHasFrame = decodeResult.hasFrame;
+#endif
 				H264DoFrameOutputCallback(ctx, decodeResult);
+#if defined(CEMU_UWP)
+				H264UwpTrace("execute ts={:.3f} len={} {} queued, inflight={}, output ts={:.3f} frame={} after {:.1f} ms wait, game callback {:.1f} ms",
+					(double)ctx->BitStream.timestamp, (uint32)ctx->BitStream.length, H264UwpDescribeSlices((uint8*)ctx->BitStream.ptr.GetPtr(), ctx->BitStream.length),
+					ctx->decoderState.numFramesInFlight, outputTs, outputHasFrame ? 1 : 0, waitedUs / 1000.0,
+					std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - callbackStarted).count() / 1000.0);
+				tracedExecute = true;
+#endif
 				break;
 			}
+#if defined(CEMU_UWP)
+			// under 2 ms the frame was already decoded
+			if (waitedUs >= 2000)
+			{
+				const uint32 us = waitedUs;
+				g_h264UwpStats.gameWaits++;
+				g_h264UwpStats.gameWaitUs += us;
+				H264UwpStatsMax(g_h264UwpStats.gameWaitUsMax, us);
+			}
+#endif
 		}
+#if defined(CEMU_UWP)
+		if (!tracedExecute)
+			H264UwpTrace("execute ts={:.3f} len={} {} queued, inflight={}, no output yet", (double)ctx->BitStream.timestamp, (uint32)ctx->BitStream.length,
+				H264UwpDescribeSlices((uint8*)ctx->BitStream.ptr.GetPtr(), ctx->BitStream.length), ctx->decoderState.numFramesInFlight);
+		H264UwpReportStats();
+#endif
 		_ReleaseDecoderSession(session);
 		bt.Stop();
 		double callTime = bt.GetElapsedMilliseconds();

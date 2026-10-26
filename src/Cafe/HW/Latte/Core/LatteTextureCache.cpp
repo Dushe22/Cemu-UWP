@@ -339,8 +339,22 @@ static void LatteTexture_DestroyView(LatteTextureView* view)
 		delete view;
 }
 
+#if defined(CEMU_UWP)
+void LatteTexture_Delete(LatteTexture* texture, std::source_location caller)
+{
+	if (texture->uwpDiagSerial != 0)
+	{
+		const char* file = caller.file_name();
+		for (const char* p = file; *p; ++p)
+			if (*p == '\\' || *p == '/')
+				file = p + 1;
+		cemuLog_log(LogType::Force, "UWP large array diag: tex#{} deleted after {} s, reloads={}, addr=0x{:08x}, by {}:{}",
+			texture->uwpDiagSerial, (LatteTexture_UwpDiagNowMs() - texture->uwpDiagCreatedMs) / 1000, texture->reloadCount, texture->physAddress, file, caller.line());
+	}
+#else
 void LatteTexture_Delete(LatteTexture* texture)
 {
+#endif
 	LatteTC_UnregisterTexture(texture);
 	LatteMRT::NotifyTextureDeletion(texture);
 	if (g_renderer)

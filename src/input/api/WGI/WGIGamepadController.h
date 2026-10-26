@@ -4,6 +4,7 @@
 
 #include "input/api/Controller.h"
 #include "input/api/WGI/WGIGamepadControllerProvider.h"
+#include "input/motion/MotionHandler.h"
 
 #include <chrono>
 #include <mutex>
@@ -29,7 +30,19 @@ public:
 	bool connect() override;
 	bool is_connected() override;
 	bool has_motion() override;
+	bool forces_motion() override;
 	MotionSample get_motion_sample() override;
+
+	// virtual gyro for games that need GamePad motion (accessibility), shared by all Xbox controllers:
+	// Off, or Tilt (the right stick tilts the GamePad up to 60 degrees and it levels out when released).
+	// Toggled from the quick menu
+	enum class VirtualMotionMode : uint32
+	{
+		Off = 0,
+		Tilt = 1,
+	};
+	static VirtualMotionMode GetVirtualMotionMode();
+	static void SetVirtualMotionMode(VirtualMotionMode mode);
 	bool has_position() override;
 	glm::vec2 get_position() override;
 	glm::vec2 get_prev_position() override;
@@ -97,6 +110,13 @@ private:
 	std::chrono::steady_clock::time_point m_nextReconnectAttempt{};
 	bool m_hasLoggedConnectionState{};
 	bool m_lastLoggedConnected{};
+
+	std::mutex m_virtualMotionMutex;
+	glm::vec2 m_virtualMotionStick{};
+	glm::vec2 m_virtualMotionTilt{}; // smoothed pitch, roll in radians
+	float m_virtualMotionQuat[4]{ 0.70710678f, 0.70710678f, 0.0f, 0.0f }; // w x y z of the last generated orientation
+	std::chrono::steady_clock::time_point m_lastVirtualMotionUpdate{};
+	WiiUMotionHandler m_virtualMotionHandler;
 
 	mutable std::mutex m_virtualPositionMutex;
 	glm::vec2 m_virtualPosition{ 0.5f, 0.5f };

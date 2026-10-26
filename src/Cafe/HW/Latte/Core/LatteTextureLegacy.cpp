@@ -45,6 +45,33 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 	LatteUwpHitchScope textureReloadScope(LatteUwpHitchOp::TextureReload);
 	const auto reloadStarted = std::chrono::steady_clock::now();
 	const LatteUwpTextureUploadStats statsBefore = g_uwpTextureUploadStats;
+	static uint32 s_diagSerial = 0;
+	if (tex->reloadCount == 0 && tex->uwpDiagSerial == 0 && LatteTexture_UwpIsDiagArray(tex))
+	{
+		tex->uwpDiagSerial = ++s_diagSerial;
+		tex->uwpDiagCreatedMs = LatteTexture_UwpDiagNowMs();
+	}
+	if (tex->uwpDiagSerial != 0)
+	{
+		auto& stats = g_uwpTextureUploadStats;
+		stats.diagSlices = stats.diagChanged = stats.diagKnown = stats.diagKnownOtherTexture = 0;
+		stats.diagSignature = 0;
+		stats.diagChangedList.clear();
+	}
+	stdx::scope_exit logLargeArray([&]()
+	{
+		static uint32 s_largeArrayLogs = 0;
+		if (tex->uwpDiagSerial == 0 || s_largeArrayLogs >= 1000)
+			return;
+		++s_largeArrayLogs;
+		const auto& stats = g_uwpTextureUploadStats;
+		const uint64 elapsedMs = (uint64)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - reloadStarted).count();
+		cemuLog_log(LogType::Force, "UWP large array diag: tex#{} {} {}x{}x{} mips={} format=0x{:04x} addr=0x{:08x} age={} s gpuWritten={}: {} ms (decode {}, upload {}), mip0 slices changed {}/{} [{}{}], already seen this session {} (from other textures {}), signature {:016x}",
+			tex->uwpDiagSerial, tex->reloadCount <= 1 ? "created" : fmt::format("reload {}", tex->reloadCount - 1), tex->width, tex->height, tex->depth, tex->mipLevels, (uint32)tex->format, tex->physAddress,
+			(LatteTexture_UwpDiagNowMs() - tex->uwpDiagCreatedMs) / 1000, tex->isUpdatedOnGPU ? 1 : 0, elapsedMs,
+			(stats.decodeUs - statsBefore.decodeUs) / 1000, (stats.uploadUs - statsBefore.uploadUs) / 1000,
+			stats.diagChanged, stats.diagSlices, stats.diagChangedList, stats.diagChanged > 24 ? ",..." : "", stats.diagKnown, stats.diagKnownOtherTexture, stats.diagSignature);
+	});
 	stdx::scope_exit logSlowReload([&]()
 	{
 		static uint32 s_slowReloadLogs = 0;
@@ -130,12 +157,35 @@ Latte::E_GX2SURFFMT LatteTexture_ReconstructGX2Format(const Latte::LATTE_SQ_TEX_
 	return gx2Format;
 }
 
+extern uint64 g_latteTextureViewLookupGeneration;
+#if defined(CEMU_UWP)
+#include <intrin.h>
+// UWP: per texture unit, the view the lookup returned for the same resource words 0-5 and depth-sampler flag, valid
+// while no lookup entry was added or removed. Skips the bucket scan for units that did not change between sequences
+// (Kakariko: ~255k sequences every 5 s). The change check, reload and bookkeeping below still run every time
+struct LatteUwpTextureUnitMemo
+{
+	uint32 words[6];
+	bool isDepthSampler;
+	uint64 generation;
+	LatteTextureView* view;
+};
+LatteUwpTextureUnitMemo s_uwpTextureUnitMemo[LATTE_CEMU_GS_TEX_UNIT_BASE + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE]{};
+uint64 g_uwpTextureLookupTicks = 0;
+uint64 g_uwpTextureChangeTicks = 0;
+uint64 g_uwpTextureLookupMemoHits = 0;
+uint64 g_uwpTextureLookupMemoMisses = 0;
+#endif
+
 void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, uint32 glBackendBaseTexUnit, _LatteRegisterSetTextureUnit* texRegBase)
 {
 	for (sint32 z = 0; z < shaderContext->textureUnitListCount; z++)
 	{
 		sint32 textureIndex = shaderContext->textureUnitList[z];
 		const auto& texRegister = texRegBase[textureIndex];
+#if defined(CEMU_UWP)
+		const uint64 lookupStarted = __rdtsc();
+#endif
 
 		// get physical address of texture data
 		MPTR physAddr = (texRegister.word2.get_BASE_ADDRESS() << 8);
@@ -202,11 +252,38 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 
 		bool isDepthSampler = shaderContext->textureUsesDepthCompare[textureIndex];
 		// look for already existing texture
-		LatteTextureView* textureView;
-		if (!isDepthSampler)
-			textureView = LatteTextureViewLookupCache::lookup(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim);
+		LatteTextureView* textureView = nullptr;
+#if defined(CEMU_UWP)
+		const uint32 memoSlot = glBackendBaseTexUnit + (uint32)textureIndex;
+		LatteUwpTextureUnitMemo* memo = memoSlot < std::size(s_uwpTextureUnitMemo) ? &s_uwpTextureUnitMemo[memoSlot] : nullptr;
+		if (memo && memo->view && memo->generation == g_latteTextureViewLookupGeneration &&
+			memo->isDepthSampler == isDepthSampler && memcmp(memo->words, &texRegister, sizeof(memo->words)) == 0)
+		{
+			textureView = memo->view;
+			++g_uwpTextureLookupMemoHits;
+		}
 		else
-			textureView = LatteTextureViewLookupCache::lookupWithColorOrDepthType(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, true);
+#endif
+		{
+			if (!isDepthSampler)
+				textureView = LatteTextureViewLookupCache::lookup(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim);
+			else
+				textureView = LatteTextureViewLookupCache::lookupWithColorOrDepthType(physAddr, width, height, depth, pitch, viewFirstMip, viewNumMips, viewFirstSlice, viewNumSlices, format, dim, true);
+#if defined(CEMU_UWP)
+			++g_uwpTextureLookupMemoMisses;
+			if (memo)
+			{
+				memcpy(memo->words, &texRegister, sizeof(memo->words));
+				memo->isDepthSampler = isDepthSampler;
+				memo->generation = g_latteTextureViewLookupGeneration;
+				memo->view = textureView;
+			}
+#endif
+		}
+#if defined(CEMU_UWP)
+		const uint64 lookupDone = __rdtsc();
+		g_uwpTextureLookupTicks += lookupDone - lookupStarted;
+#endif
 		if (!textureView)
 		{
 			// view not found, create a new mapping which will also create a new texture if necessary
@@ -265,6 +342,10 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 			cemu_assert_debug(physMipAddr != MPTR_NULL);
 		}
 		// check for changes
+#if defined(CEMU_UWP)
+		const uint64 changeStarted = __rdtsc();
+		struct ChangeTimer { uint64 start; ~ChangeTimer() { g_uwpTextureChangeTicks += __rdtsc() - start; } } changeTimer{ changeStarted };
+#endif
 		if (LatteTC_HasTextureChanged(textureView->baseTexture) || swizzleChanged)
 		{
 			debug_printf("Reload texture 0x%08x res %dx%d memRange %08x-%08x SwizzleChange: %s\n", textureView->baseTexture->physAddress, textureView->baseTexture->width, textureView->baseTexture->height, textureView->baseTexture->texDataPtrLow, textureView->baseTexture->texDataPtrHigh, swizzleChanged ? "yes" : "no");

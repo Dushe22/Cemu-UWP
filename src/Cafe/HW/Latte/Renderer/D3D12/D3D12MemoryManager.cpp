@@ -511,6 +511,7 @@ D3D12MemoryManager::RingReservation D3D12MemoryManager::AllocateUpload(uint32_t 
 
 D3D12MemoryManager::RingReservation D3D12MemoryManager::AllocateReadback(uint32_t size, uint32_t alignment, uint64_t fenceValue)
 {
+	std::lock_guard lock(m_readbackRingMutex);
 	if (!m_readbackRing)
 		return {};
 	return m_readbackRing->Allocate(size, alignment, fenceValue);
@@ -520,6 +521,7 @@ void D3D12MemoryManager::Cleanup(uint64_t completedFence)
 {
 	if (m_uploadRing)
 		m_uploadRing->Cleanup(completedFence);
+	std::lock_guard lock(m_readbackRingMutex);
 	if (m_readbackRing)
 		m_readbackRing->Cleanup(completedFence);
 }

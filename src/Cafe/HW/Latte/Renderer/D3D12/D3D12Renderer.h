@@ -371,6 +371,8 @@ private:
 		uint32 rangeSize{};
 	};
 
+public:
+	// public so the index allocation pool in the .cpp can name it
 	struct D3D12IndexAllocation
 	{
 		std::array<uint8, 96> previewData{};
@@ -380,16 +382,20 @@ private:
 			std::array<uint8, 32> bytes;
 		};
 		static_assert(alignof(DecodedIndexBlock) >= 32);
-		std::vector<DecodedIndexBlock> decodedData;
-		uint8* GetDecodedData() { return reinterpret_cast<uint8*>(decodedData.data()); }
-		const uint8* GetDecodedData() const { return reinterpret_cast<const uint8*>(decodedData.data()); }
-		size_t GetDecodedCapacity() const { return decodedData.size() * sizeof(DecodedIndexBlock); }
+		// left uninitialized: the decoder writes it before anything reads it (allocations are pooled, see
+		// indexData_reserveIndexMemory)
+		std::unique_ptr<DecodedIndexBlock[]> decodedData;
+		size_t decodedBlocks{};
+		uint8* GetDecodedData() { return reinterpret_cast<uint8*>(decodedData.get()); }
+		const uint8* GetDecodedData() const { return reinterpret_cast<const uint8*>(decodedData.get()); }
+		size_t GetDecodedCapacity() const { return decodedBlocks * sizeof(DecodedIndexBlock); }
 		ID3D12Resource* residentResource{};
 		uint64 residentOffset{};
 		uint64 residentFence{};
 		uint32 residentSize{};
 		uint32 size{};
 	};
+private:
 
 	struct ImGuiTextureResource
 	{
@@ -753,7 +759,7 @@ private:
 		uint32 textures{};
 		uint64 bytes{};
 	};
-	UwpTextureEvictionResult EvictUwpTextureCache(uint32 maxTextures, uint32 minAgeFrames, uint64 targetBytes);
+	UwpTextureEvictionResult EvictUwpTextureCache(uint32 maxTextures, uint32 minAgeFrames, uint64 targetBytes, bool keepExpensiveReloads = false);
 	void ProcessUwpMemoryPressure();
 	// periodic breakdown of where the app's memory goes
 	void LogUwpMemoryBreakdown();
@@ -1111,8 +1117,9 @@ private:
 	};
 	std::unordered_map<uint64, GamePipelineEntry> m_gamePipelineCache;
 	// memory pressure: drop PSOs unused for minAgeFrames; they come back through async creation
-	size_t EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipelines);
+	size_t EvictColdGamePipelines(uint32 minAgeFrames, size_t maxPipelines, bool highPressure);
 	uint64 m_gamePipelinesEvicted{};
+	uint64 m_uwpExpensiveTexturesKept{}; // soft memory trims that skipped a large array (terrain) instead of deleting it
 	struct PendingGamePipelineRecipe
 	{
 		Microsoft::WRL::ComPtr<ID3D12PipelineState> pipeline;
@@ -1124,7 +1131,7 @@ private:
 	// async results no draw asked for again within this many frames are released
 	void ReleaseStaleAsyncGamePipelines();
 	// memory pressure: drop prewarmed PSOs no draw adopted for minAgeFrames (their recipes rebuild them on demand)
-	size_t ReleaseUnusedPrewarmedPipelines(uint32 minAgeFrames, size_t maxPipelines);
+	size_t ReleaseUnusedPrewarmedPipelines(uint32 minAgeFrames, size_t maxPipelines, bool highPressure);
 	uint64 m_asyncPipelinesReleasedUnused{};
 	// key without depth bias values -> a ready pipeline that differs at most in depth bias; drawn with
 	// while the exact variant is built in the background, so the object does not vanish for a few frames

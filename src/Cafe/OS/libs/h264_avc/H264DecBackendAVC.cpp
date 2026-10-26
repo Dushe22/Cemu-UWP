@@ -62,6 +62,9 @@ namespace H264
 
 		void Init(bool isBufferedMode)
 		{
+#if defined(CEMU_UWP)
+			g_h264UwpStats.buffered = isBufferedMode ? 1 : 0;
+#endif
 			ih264d_create_ip_t s_create_ip{ 0 };
 			ih264d_create_op_t s_create_op{ 0 };
 
@@ -109,7 +112,16 @@ namespace H264
 		void PushDecodedFrame(ivd_video_decode_op_t& s_dec_op)
 		{
 			// copy image data outside of lock since its an expensive operation
+#if defined(CEMU_UWP)
+			const auto copyStarted = std::chrono::steady_clock::now();
+#endif
 			CopyImageToResultBuffer((uint8*)s_dec_op.s_disp_frm_buf.pv_y_buf, (uint8*)s_dec_op.s_disp_frm_buf.pv_u_buf, (uint8*)m_decodedSliceArray[s_dec_op.u4_ts].result.imageOutput, s_dec_op);
+#if defined(CEMU_UWP)
+			g_h264UwpStats.copyUs += (uint64)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - copyStarted).count();
+			g_h264UwpStats.outputFrames++;
+			g_h264UwpStats.width = s_dec_op.u4_pic_wd;
+			g_h264UwpStats.height = s_dec_op.u4_pic_ht;
+#endif
 
 			std::unique_lock _l(m_decodeQueueMtx);
 			cemu_assert(s_dec_op.u4_ts < m_decodedSliceArray.size());
@@ -152,6 +164,18 @@ namespace H264
 			constexpr uint32 maximumResolutionChanges = 2;
 			uint32 resolutionChanges = 0;
 			bool frameDecoded = false;
+			const auto decodeStarted = std::chrono::steady_clock::now();
+			stdx::scope_exit recordDecode([&]()
+			{
+				if (!frameDecoded)
+					return;
+				const uint32 us = (uint32)std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - decodeStarted).count();
+				g_h264UwpStats.decodedFrames++;
+				g_h264UwpStats.decodeUs += us;
+				H264UwpStatsMax(g_h264UwpStats.decodeUsMax, us);
+				if (us >= 33000)
+					g_h264UwpStats.slowDecodes++;
+			});
 
 			while (decodedSlice.dataToDecode.m_length != 0)
 			{
@@ -605,11 +629,9 @@ namespace H264
 
 			ps_ctl_ip->u4_disp_wd = 0;
 			ps_ctl_ip->e_frm_skip_mode = IVD_SKIP_NONE;
-#if defined(CEMU_UWP)
-			ps_ctl_ip->e_frm_out_mode = IVD_DECODE_FRAME_OUT;
-#else
+			// buffered mode needs display order: with B-frames, decode order handed BOTW frames as 0, 233, 100, 34 ms...
+			// and its player restarted the decoder thousands of times (only a few frames of each video shown)
 			ps_ctl_ip->e_frm_out_mode = m_isBufferedMode ? IVD_DISPLAY_FRAME_OUT : IVD_DECODE_FRAME_OUT;
-#endif
 			ps_ctl_ip->e_vid_dec_mode = headerDecodeOnly ? IVD_DECODE_HEADER : IVD_DECODE_FRAME;
 			ps_ctl_ip->e_cmd = IVD_CMD_VIDEO_CTL;
 			ps_ctl_ip->e_sub_cmd = IVD_CMD_CTL_SETPARAMS;

@@ -60,6 +60,17 @@ fs::path NormalizePath(const fs::path& path)
 	return ec ? path.lexically_normal() : normalized.lexically_normal();
 }
 
+// Windows refuses paths past MAX_PATH unless they use the extended-length form; Mario Kart 8's update has ghost files
+// whose path under LocalState reaches about 270 characters. Expects an absolute, normalized path.
+fs::path ExtendedLengthPath(const fs::path& path)
+{
+	std::wstring text = path.wstring();
+	if (text.size() < 3 || text[1] != L':' || text.starts_with(L"\\\\?\\"))
+		return path;
+	std::replace(text.begin(), text.end(), L'/', L'\\');
+	return fs::path(L"\\\\?\\" + text);
+}
+
 fs::path NormalizeSourceRoot(const fs::path& selectedFolder)
 {
 	fs::path sourceRoot = NormalizePath(selectedFolder);
@@ -426,6 +437,9 @@ void RestoreBackupAfterFailure(const fs::path& targetPath, const fs::path& backu
 
 void RunInstall(InstallPlan plan)
 {
+	// every path below derives from these two, so long content paths work for copy, validation and cleanup
+	plan.sourceRoot = ExtendedLengthPath(plan.sourceRoot);
+	plan.targetPath = ExtendedLengthPath(plan.targetPath);
 	const fs::path stagingPath = AddSuffix(plan.targetPath, L".installing");
 	const fs::path backupPath = AddSuffix(plan.targetPath, L".backup");
 	bool targetWasMoved = false;

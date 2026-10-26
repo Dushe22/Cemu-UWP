@@ -53,4 +53,34 @@ inline bool CanStoreRecipe(std::size_t entryCount, std::uint64_t totalBytes,
         return false;
     return newBytes <= kMaxRecipeCacheBytes - (totalBytes - previousBytes);
 }
+
+// recipes a draw used stay until unused this many days. Launches used to count instead: BOTW reached session 37 after a
+// few days of short test launches and deleted 639 recipes, the rain pass among them
+inline constexpr std::uint32_t kPruneAfterDays = 30;
+// never used by a draw (an async build whose depth bias drifted away): gone after this many sessions
+inline constexpr std::uint32_t kPruneNeverUsedAfterSessions = 2;
+
+// pipelines from draws that cannot be skipped are never pruned: rebuilding one stalls the render thread
+inline bool ShouldPruneRecipe(bool neverUsed, bool mustBeReady, std::uint32_t sessionsSinceUse, std::uint32_t daysSinceUse) noexcept
+{
+    if (mustBeReady)
+        return false;
+    if (neverUsed)
+        return sessionsSinceUse >= kPruneNeverUsedAfterSessions;
+    return daysSinceUse >= kPruneAfterDays;
+}
+
+// importance tiers from usage history. The emulator cannot tell what a pipeline draws, so "used in at least half of the
+// game's sessions" stands in for core gameplay (Link, abilities, common enemies, UI). A fixed count did not work: BOTW at
+// session 41 put 993 of 1853 recipes in core with 10 sessions, while MK8 at session 7 had none
+enum class Tier { Core = 1, Frequent = 2, Occasional = 3 };
+inline constexpr std::uint32_t kFrequentTierSessions = 3;
+
+inline Tier ClassifyRecipe(bool mustBeReady, std::uint32_t sessionsUsed, std::uint32_t gameSessions) noexcept
+{
+    const std::uint32_t coreSessions = gameSessions / 2 > kFrequentTierSessions ? gameSessions / 2 : kFrequentTierSessions;
+    if (mustBeReady || sessionsUsed >= coreSessions)
+        return Tier::Core;
+    return sessionsUsed >= kFrequentTierSessions ? Tier::Frequent : Tier::Occasional;
+}
 }

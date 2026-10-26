@@ -28,6 +28,13 @@ struct LatteUwpTextureUploadStats
 	uint64 uploadUs{};
 	uint32 uploaded{};
 	uint32 skipped{};
+	// large array diagnostics (terrain): mip 0 slices hashed, changed, and already seen this session in any texture
+	uint32 diagSlices{};
+	uint32 diagChanged{};
+	uint32 diagKnown{};
+	uint32 diagKnownOtherTexture{};
+	uint64 diagSignature{};
+	std::string diagChangedList;
 };
 extern thread_local LatteUwpTextureUploadStats g_uwpTextureUploadStats;
 #endif
@@ -178,6 +185,9 @@ public:
 #if defined(CEMU_UWP)
 	// hash of the last decoded upload per slice/mip of array textures; unchanged data is not uploaded again
 	std::vector<uint64> uwpUploadHashes;
+	// large array diagnostics: serial (0 = not tracked) and creation time
+	uint32 uwpDiagSerial{};
+	uint64 uwpDiagCreatedMs{};
 #endif
 	// last update (from RAM data)
 	uint32 lastDataUpdateFrameCounter{};
@@ -349,7 +359,14 @@ std::vector<LatteTextureInformation> LatteTexture_QueryCacheInfo();
 float* LatteTexture_getEffectiveTextureScale(LatteConst::ShaderType shaderType, sint32 texUnit);
 
 LatteTextureView* LatteTexture_CreateTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth);
+#if defined(CEMU_UWP)
+#include <source_location>
+void LatteTexture_Delete(LatteTexture* texture, std::source_location caller = std::source_location::current());
+bool LatteTexture_UwpIsDiagArray(const LatteTexture* texture);
+uint64 LatteTexture_UwpDiagNowMs();
+#else
 void LatteTexture_Delete(LatteTexture* texture);
+#endif
 
 void LatteTextureLoader_writeReadbackTextureToMemory(LatteTextureDefinition* textureData, uint32 sliceIndex, uint32 mipIndex, uint8* linearPixelData, uint32 sourceRowPitch);
 

@@ -115,12 +115,14 @@ public:
 	bool use_motion()
 	{
 #if defined(CEMU_UWP)
-		return has_motion() && get_settings().motion;
+		return has_motion() && (get_settings().motion || forces_motion());
 #else
 		return has_motion() && m_settings.motion;
 #endif
 	}
 	virtual bool has_motion() { return false; }
+	// motion the controller generates itself (UWP virtual gyro): used without the per-device motion setting
+	virtual bool forces_motion() { return false; }
 	virtual MotionSample get_motion_sample() { return {}; }
 
 	virtual bool has_position() { return false; }

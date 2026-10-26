@@ -27,11 +27,16 @@ winrt::Windows::Gaming::Input::Gamepad WGIGamepadControllerProvider::GetGamepad(
 {
 	if (!nonRoamableId.empty())
 	{
-		for (const auto& gamepad : winrt::Windows::Gaming::Input::Gamepad::Gamepads())
+		const auto gamepads = winrt::Windows::Gaming::Input::Gamepad::Gamepads();
+		for (const auto& gamepad : gamepads)
 		{
 			if (GetNonRoamableId(gamepad) == nonRoamableId)
 				return gamepad;
 		}
+		// the saved identity can stop matching (BOTW's profile lost all input after the pad came back with another
+		// id); with a single pad connected there is no other player it could belong to
+		if (gamepads.Size() == 1)
+			return gamepads.GetAt(0);
 		return nullptr;
 	}
 	return GetGamepad(fallbackIndex);
