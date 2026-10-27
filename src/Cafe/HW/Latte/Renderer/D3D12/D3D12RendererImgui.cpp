@@ -1,5 +1,6 @@
-// Part of D3D12Renderer.cpp (included there, same translation unit): ImGui frames and textures.
-// Not a standalone file: it relies on the includes and file-local helpers of D3D12Renderer.cpp.
+// D3D12Renderer: ImGui frames and textures.
+#define D3D12_RENDERER_SEPARATE_PART
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12RendererInternal.h"
 
 // ImGui state is built on the calling thread; the command list part goes to RecordImguiFrame in ImguiEnd
 bool D3D12Renderer::ImguiBegin(bool mainWindow)

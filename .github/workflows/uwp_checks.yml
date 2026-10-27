@@ -1,12 +1,15 @@
 name: UWP checks
 # Xbox/UWP fork: isolated tests and a format check on every push to experimental; the full UWP build
-# (vcpkg x64-uwp-static dependencies take hours on a cold cache) only on demand.
+# (vcpkg x64-uwp-static dependencies take hours on a cold cache) nightly, on release tags and on demand.
 on:
   push:
     branches: [experimental]
+    tags: ["v*"]
     paths-ignore: ["*.md", "docs/**"]
   pull_request:
     branches: [experimental]
+  schedule:
+    - cron: "0 5 * * *"
   workflow_dispatch:
     inputs:
       build:
@@ -16,6 +19,7 @@ on:
 
 jobs:
   tests:
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -27,36 +31,42 @@ jobs:
         run: tools\tests\run_all.bat
 
   format:
+    if: ${{ github.event_name != 'schedule' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: clang-format on changed lines of the UWP/D3D12 sources
+      - name: clang-format (fails on new files, warns on changed lines of existing ones)
         run: |
           sudo apt-get install -y clang-format
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
           if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then base=HEAD~1; fi
-          out=$(git clang-format --diff "$base" -- 'src/uwp/*' 'src/Cafe/HW/Latte/Renderer/D3D12/*' || true)
+          paths=('src/uwp/*' 'src/Cafe/HW/Latte/Renderer/D3D12/*')
+          new=$(git diff --name-only --diff-filter=A "$base" HEAD -- "${paths[@]}" | grep -E '\.(cpp|h|inl)$' || true)
+          if [ -n "$new" ]; then clang-format --dry-run --Werror $new; fi
+          out=$(git clang-format --diff "$base" -- "${paths[@]}" || true)
           if [ -n "$out" ] && [ "$out" != "no modified files to format" ] && ! echo "$out" | grep -q "did not modify any files"; then
             echo "$out"
-            echo "::warning::changed lines do not follow .clang-format"
+            echo "::warning::changed lines in existing files do not follow .clang-format"
           fi
 
   build:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build }}
+    if: ${{ github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.build) }}
     runs-on: windows-2025
-    timeout-minutes: 360
+    timeout-minutes: 350
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
+      CACHE_KEY: vcpkg-x64-uwp-static-${{ hashFiles('vcpkg.json', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_win/**', 'cmake/triplets/**') }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: actions/cache@v4
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
         with:
           path: vcpkg-binary-cache
-          key: vcpkg-x64-uwp-static-${{ hashFiles('vcpkg.json', 'dependencies/vcpkg_overlay_ports/**') }}
+          key: ${{ env.CACHE_KEY }}
           restore-keys: vcpkg-x64-uwp-static-
       - run: mkdir vcpkg-binary-cache -Force
         shell: pwsh
@@ -64,9 +74,17 @@ jobs:
         with:
           arch: x64
           uwp: true
-      - name: Configure
+      - name: Configure (builds the vcpkg dependencies on a cold cache)
+        id: configure
         shell: cmd
         run: cmake -S . -B out\uwp -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_UWP=ON -DCMAKE_VS_PLATFORM_NAME=x64 -DCMAKE_SYSTEM_PROCESSOR=AMD64 -DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=10.0.26100.0
+      # saved even if a later step fails or the job times out, so a cold cache warms up over several runs
+      - name: Save vcpkg binary cache
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-binary-cache
+          key: ${{ env.CACHE_KEY }}-${{ github.run_id }}
       - name: Build
         shell: cmd
         run: cmake --build out\uwp

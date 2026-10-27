@@ -586,11 +586,12 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/D3D12RendererDiagnostics.inl
     HW/Latte/Renderer/D3D12/D3D12RendererQueriesAndProfiling.inl
     HW/Latte/Renderer/D3D12/D3D12RendererOutput.inl
-    HW/Latte/Renderer/D3D12/D3D12RendererImgui.inl
-    HW/Latte/Renderer/D3D12/D3D12RendererRecorder.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererImgui.cpp
+    HW/Latte/Renderer/D3D12/D3D12RendererRecorder.cpp
     HW/Latte/Renderer/D3D12/D3D12RendererTextures.inl
     HW/Latte/Renderer/D3D12/D3D12RendererDraw.inl
     HW/Latte/Renderer/D3D12/D3D12Renderer.h
+    HW/Latte/Renderer/D3D12/D3D12RendererInternal.h
     HW/Latte/Renderer/D3D12/LatteTextureD3D12.cpp
     HW/Latte/Renderer/D3D12/LatteTextureD3D12.h
     HW/Latte/Renderer/D3D12/LatteTextureViewD3D12.cpp

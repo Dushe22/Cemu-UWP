@@ -1,5 +1,6 @@
-// Part of D3D12Renderer.cpp (included there, same translation unit): render target state, two-phase destroys and the draw recording threads.
-// Not a standalone file: it relies on the includes and file-local helpers of D3D12Renderer.cpp.
+// D3D12Renderer: render target state, two-phase destroys and the draw recording threads.
+#define D3D12_RENDERER_SEPARATE_PART
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12RendererInternal.h"
 
 void D3D12Renderer::renderTarget_setViewport(float x, float y, float width, float height, float nearZ, float farZ, bool halfZ)
 {

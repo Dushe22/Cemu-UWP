@@ -51,9 +51,11 @@ namespace H264
 	// call-by-call trace of the video API: 400 lines per burst, a new burst after 2 s without a decode call
 	static uint32 s_h264TraceLines = 0;
 	static std::chrono::steady_clock::time_point s_h264TraceLastCall{};
+	static std::mutex s_h264TraceMutex; // two emulated cores can decode at once
 	template<typename... Args>
 	static void H264UwpTrace(fmt::format_string<Args...> format, Args&&... args)
 	{
+		std::scoped_lock lock(s_h264TraceMutex);
 		const auto now = std::chrono::steady_clock::now();
 		if (now - s_h264TraceLastCall > std::chrono::seconds(2))
 			s_h264TraceLines = 0;

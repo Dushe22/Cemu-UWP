@@ -20,7 +20,7 @@ Rules that keep the threads correct:
 
 ## Files
 
-`D3D12Renderer.cpp` holds the includes, file-local helpers, device creation, initialization, shutdown and the swap chain. The rest of the class is in parts that it includes at the end (same translation unit, so file-local helpers stay shared):
+`D3D12Renderer.cpp` holds the includes, file-local helpers, device creation, initialization, shutdown and the swap chain. The rest of the class is in parts that it includes at the end (same translation unit, so file-local helpers stay shared). `D3D12RendererInternal.h` holds the shared includes and recording macros; the parts that need no file-local state compile on their own:
 
 | Part | Contents |
 |---|---|
@@ -32,8 +32,8 @@ Rules that keep the threads correct:
 | `D3D12RendererDiagnostics.inl` | Texture/FBO/binding traces (diagnostic builds) |
 | `D3D12RendererQueriesAndProfiling.inl` | Occlusion queries, device-removed checks, checked view creation, clears, UWP performance logs |
 | `D3D12RendererOutput.inl` | Swap, backbuffer output, screenshots, stream capture, cached outputs for the UWP shell |
-| `D3D12RendererImgui.inl` | ImGui frames and textures |
-| `D3D12RendererRecorder.inl` | Render target state, two-phase destroys, recorder threads |
+| `D3D12RendererImgui.cpp` (own translation unit) | ImGui frames and textures |
+| `D3D12RendererRecorder.cpp` (own translation unit) | Render target state, two-phase destroys, recorder threads |
 | `D3D12RendererTextures.inl` | Texture uploads, clears, copies, readbacks, surface copies |
 | `D3D12RendererDraw.inl` | Buffer cache, streamout, draw sequences, `draw_execute`, index data, query objects |
 
