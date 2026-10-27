@@ -41,39 +41,6 @@ struct UwpFramePacing
 // thread_local so prewarm workers do not race the render thread's bookkeeping
 thread_local UwpFramePacing s_uwpFramePacing;
 
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-thread_local LatteUwpTimingDiagnostics s_uwpTimingDiagnostics;
-
-void LogUwpTimingDiagnostics()
-{
-	auto& diagnostics = s_uwpTimingDiagnostics;
-	const auto& w = diagnostics.window;
-	const auto& wait = w.longestGuestWait;
-	cemuLog_log(LogType::Force,
-		"UWP timing diagnostic: phase={} mask={} measuring={} mixedPhase={} frames={} "
-		"vblanks/flips={} / {} vblanksPerFrame_min/max={}/{} swapInterval_latest/min/max={}/{}/{} "
-		"flipRequest/execute={}/{} timerServices={} waitingServices={} overdueServices={} skippedPeriods={} "
-		"period_us={} lateness_total/max_ms={:.3f}/{:.3f} "
-		"batches={} batch_total/max_ms={:.3f}/{:.3f} maxBatch_vblanks/guestWait_ms={}/{:.3f} "
-		"guestWaits/stalled={}/{} guestWait_total/max_ms={:.3f}/{:.3f} "
-		"maxGuestWait_vblanks={} address=0x{:08x} mask=0x{:08x} op={} reference=0x{:08x} initial=0x{:08x} final=0x{:08x} "
-		"(CPU durations inclusive; diagnostic only).",
-		diagnostics.phase, diagnostics.mask, diagnostics.measuring, w.mixedPhase, w.frames,
-		w.vblanks, w.flips, w.frames ? w.minFrameVblanks : 0, w.maxFrameVblanks,
-		w.swapInterval, w.vblanks ? w.minSwapInterval : 0, w.maxSwapInterval,
-		w.flipRequests, w.flipExecuted, w.services, w.waitServices, w.overdueServices, w.skippedPeriods,
-		w.periodUs, (double)w.latenessUs / 1000.0, (double)w.maxLatenessUs / 1000.0,
-		w.batches, (double)w.batchUs / 1000.0, (double)w.maxBatchUs / 1000.0,
-		w.maxBatchVblanks, (double)w.maxBatchGuestWaitUs / 1000.0,
-		w.guestWaits, w.stalledGuestWaits, (double)w.guestWaitUs / 1000.0, (double)wait.durationUs / 1000.0,
-		wait.vblanks, wait.address, wait.mask, wait.compareOp, wait.reference, wait.initial, wait.finalValue);
-#if defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
-	cemuLog_log(LogType::Force, "UWP vblank boundary experiment: checks={} deliveredVblanks={} (completed generic packets only; unchanged deadline-gated timer).",
-		w.boundaryTimerChecks, w.boundaryVblanks);
-#endif
-	diagnostics.ResetWindow();
-}
-#endif
 
 std::string FormatHitchOperations(const UwpHitchOperationTimings& timings)
 {
@@ -101,15 +68,8 @@ void LogUwpFramePacing()
 		pacing.lastFrameClockUs = now;
 		pacing.frameOperations = {};
 		pacing.windowOperations = {};
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-		s_uwpTimingDiagnostics.ResetWindow();
-		s_uwpTimingDiagnostics.frameVblanks = 0;
-#endif
 		return;
 	}
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-	s_uwpTimingDiagnostics.FinishFrame();
-#endif
 	const uint64 frameUs = now - pacing.lastFrameClockUs;
 	pacing.lastFrameClockUs = now;
 	++pacing.frameCount;
@@ -146,9 +106,6 @@ void LogUwpFramePacing()
 		cemuLog_log(LogType::Force,
 			"UWP hitch work: count/total_ms/max_ms [{}] (inclusive CPU durations; nested work may overlap).",
 			FormatHitchOperations(pacing.windowOperations));
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-		LogUwpTimingDiagnostics();
-#endif
 		pacing.frameCount = 0;
 		pacing.elapsedUs = 0;
 		pacing.maxFrameUs = 0;
@@ -161,57 +118,6 @@ void LogUwpFramePacing()
 }
 }
 
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-void LatteUwpSetPerformanceExperimentPhase(uint32 phase, uint32 mask, bool measuring)
-{
-	s_uwpTimingDiagnostics.SetPhase(phase, mask, measuring);
-}
-
-void LatteUwpRecordVblank(uint32 interval, bool flipped, uint32 requests, uint32 executed)
-{
-	s_uwpTimingDiagnostics.RecordVblank(interval, flipped, requests, executed);
-}
-
-void LatteUwpRecordVblankService(uint64 latenessUs, uint64 missed, uint64 skipped, uint64 periodUs, bool waiting)
-{
-	s_uwpTimingDiagnostics.RecordService(latenessUs, missed, skipped, periodUs, waiting);
-}
-
-uint64 LatteUwpGetDiagnosticVblankCount()
-{
-	return s_uwpTimingDiagnostics.totalVblanks;
-}
-#if defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
-bool LatteUwpIsVblankBoundaryExperimentEnabled()
-{
-	return s_uwpTimingDiagnostics.IsBoundaryExperimentEnabled();
-}
-void LatteUwpRecordBoundaryTimerCheck(uint64 vblanks)
-{
-	++s_uwpTimingDiagnostics.window.boundaryTimerChecks;
-	s_uwpTimingDiagnostics.window.boundaryVblanks += vblanks;
-}
-#endif
-
-void LatteUwpRecordGuestWait(const LatteUwpTimingDiagnostics::GuestWait& wait, bool stalled)
-{
-	s_uwpTimingDiagnostics.RecordGuestWait(wait, stalled);
-}
-
-LatteUwpCommandBatchScope::LatteUwpCommandBatchScope()
-	: m_startedTicks(PPCTimer_getRawTsc()),
-	  m_startedVblanks(s_uwpTimingDiagnostics.totalVblanks),
-	  m_startedGuestWaitUs(s_uwpTimingDiagnostics.totalGuestWaitUs)
-{
-}
-
-LatteUwpCommandBatchScope::~LatteUwpCommandBatchScope()
-{
-	s_uwpTimingDiagnostics.RecordBatch(PPCTimer_tscToMicroseconds(PPCTimer_getRawTsc() - m_startedTicks),
-		s_uwpTimingDiagnostics.totalVblanks - m_startedVblanks,
-		s_uwpTimingDiagnostics.totalGuestWaitUs - m_startedGuestWaitUs);
-}
-#endif
 
 void LatteUwpRecordHitchOperation(LatteUwpHitchOp operation, uint64 elapsedUs)
 {

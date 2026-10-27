@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Core/LatteConst.h"
+#include "Common/UwpProfiling.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
@@ -116,10 +117,10 @@ namespace LatteIndicesUwpStats
 
 	struct Lap
 	{
-		uint64 last = __rdtsc();
+		uint64 last = UwpProfTick();
 		void operator()(uint32 part, uint32 count)
 		{
-			const uint64 now = __rdtsc();
+			const uint64 now = UwpProfTick();
 			ticks[part] += now - last;
 			++calls[part];
 			indices[part] += count;
@@ -140,7 +141,8 @@ void LatteIndices_UwpLogStats()
 			continue;
 		parts += fmt::format(" {} {:.1f} ms ({}x, {}k idx)", kNames[i], (double)PPCTimer_tscToMicroseconds(ticks[i]) / 1000.0, calls[i], indices[i] / 1000);
 	}
-	cemuLog_log(LogType::Force, "UWP index decode split: {} calls, cache lookup {:.1f} ms;{}", decodeCalls,
+	if (g_uwpDetailedProfiling)
+		cemuLog_log(LogType::Force, "UWP index decode split: {} calls, cache lookup {:.1f} ms;{}", decodeCalls,
 		(double)PPCTimer_tscToMicroseconds(lookupTicks) / 1000.0, parts);
 	std::fill(std::begin(ticks), std::end(ticks), 0);
 	std::fill(std::begin(calls), std::end(calls), 0);

@@ -1,0 +1,75 @@
+name: UWP checks
+# Xbox/UWP fork: isolated tests and a format check on every push to experimental; the full UWP build
+# (vcpkg x64-uwp-static dependencies take hours on a cold cache) only on demand.
+on:
+  push:
+    branches: [experimental]
+    paths-ignore: ["*.md", "docs/**"]
+  pull_request:
+    branches: [experimental]
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Also build CemuUwp.exe (Release, x64-uwp-static)"
+        type: boolean
+        default: false
+
+jobs:
+  tests:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - name: Isolated tests (record ring, prewarm policy, HLSL pruner)
+        shell: cmd
+        run: tools\tests\run_all.bat
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: clang-format on changed lines of the UWP/D3D12 sources
+        run: |
+          sudo apt-get install -y clang-format
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then base=HEAD~1; fi
+          out=$(git clang-format --diff "$base" -- 'src/uwp/*' 'src/Cafe/HW/Latte/Renderer/D3D12/*' || true)
+          if [ -n "$out" ] && [ "$out" != "no modified files to format" ] && ! echo "$out" | grep -q "did not modify any files"; then
+            echo "$out"
+            echo "::warning::changed lines do not follow .clang-format"
+          fi
+
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.build }}
+    runs-on: windows-2025
+    timeout-minutes: 360
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/vcpkg-binary-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-binary-cache
+          key: vcpkg-x64-uwp-static-${{ hashFiles('vcpkg.json', 'dependencies/vcpkg_overlay_ports/**') }}
+          restore-keys: vcpkg-x64-uwp-static-
+      - run: mkdir vcpkg-binary-cache -Force
+        shell: pwsh
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          uwp: true
+      - name: Configure
+        shell: cmd
+        run: cmake -S . -B out\uwp -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_UWP=ON -DCMAKE_VS_PLATFORM_NAME=x64 -DCMAKE_SYSTEM_PROCESSOR=AMD64 -DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=10.0.26100.0
+      - name: Build
+        shell: cmd
+        run: cmake --build out\uwp
+      - name: Check the store runtime is linked
+        shell: cmd
+        run: dumpbin /dependents bin\uwp\CemuUwp.exe | findstr /i VCRUNTIME140_APP.dll

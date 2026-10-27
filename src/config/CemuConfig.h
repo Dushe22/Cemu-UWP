@@ -508,6 +508,8 @@ struct CemuConfig
 	ConfigValue<bool> async_compile{ true };
 	// D3D12: record draws on a second thread (Phase 4, experimental; read when the renderer starts)
 	ConfigValue<bool> d3d12_threaded_recording{ false };
+	ConfigValue<bool> uwp_detailed_profiling{ false }; // per-call CPU-time splits in log.txt (costs a few % of CPU)
+	ConfigValue<bool> d3d12_two_stage_recording{ false }; // phase 5 S2d: second recorder thread (needs threaded recording)
 	ConfigValue<bool> d3d12_prioritized_pipeline_cache{ false };
 	// D3D12 on Xbox: upload block-compressed texture arrays through a GPU copy instead of CPU writes. Never loaded or
 	// shown: the copy misplaces slices on Xbox (tested 22/10/2026); kept for the next upload approach

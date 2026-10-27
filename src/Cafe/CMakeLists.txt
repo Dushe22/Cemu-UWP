@@ -356,7 +356,6 @@ add_library(CemuCafe
   OS/libs/nfc/TLV.cpp
   OS/libs/nfc/TLV.h
   OS/libs/nlibcurl/nlibcurl.cpp
-  OS/libs/nlibcurl/nlibcurlDebug.hpp
   OS/libs/nlibcurl/nlibcurl.h
   OS/libs/nlibnss/nlibnss.cpp
   OS/libs/nlibnss/nlibnss.h
@@ -578,6 +577,19 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/D3D12Query.cpp
     HW/Latte/Renderer/D3D12/D3D12Query.h
     HW/Latte/Renderer/D3D12/D3D12Renderer.cpp
+    # parts of D3D12Renderer.cpp (included there, not compiled on their own)
+    HW/Latte/Renderer/D3D12/D3D12RendererDescriptors.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererPipelines.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererCommands.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererMemory.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererFeedback.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererDiagnostics.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererQueriesAndProfiling.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererOutput.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererImgui.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererRecorder.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererTextures.inl
+    HW/Latte/Renderer/D3D12/D3D12RendererDraw.inl
     HW/Latte/Renderer/D3D12/D3D12Renderer.h
     HW/Latte/Renderer/D3D12/LatteTextureD3D12.cpp
     HW/Latte/Renderer/D3D12/LatteTextureD3D12.h
@@ -588,6 +600,14 @@ if (ENABLE_D3D12)
     HW/Latte/Renderer/D3D12/TextureReadbackD3D12.cpp
     HW/Latte/Renderer/D3D12/TextureReadbackD3D12.h
   )
+  # MSVC code analysis on the D3D12 backend (slow; for CI or local audits)
+  option(CEMU_UWP_STATIC_ANALYSIS "Run MSVC /analyze on the D3D12 backend sources" OFF)
+  if (CEMU_UWP_STATIC_ANALYSIS AND MSVC)
+    file(GLOB CEMU_D3D12_ANALYZE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/HW/Latte/Renderer/D3D12/*.cpp)
+    # /analyze cannot use the shared precompiled header: compile these without it, force-including its source
+    set_source_files_properties(${CEMU_D3D12_ANALYZE_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+      COMPILE_OPTIONS "/analyze;/analyze:external-;/FI${CMAKE_SOURCE_DIR}/src/Common/precompiled.h")
+  endif()
 endif()
 
 if(APPLE)

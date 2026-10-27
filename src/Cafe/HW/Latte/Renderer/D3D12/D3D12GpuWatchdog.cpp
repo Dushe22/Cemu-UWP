@@ -123,11 +123,12 @@ void D3D12GpuWatchdog::RecordGamePipeline(uint64 pipelineHash, uint64 vertexHash
 	auto& pipelines = m_current.pipelines;
 	if (!pipelines.empty() && pipelines.back().pipelineHash == pipelineHash && pipelines.back().pixelHash == pixelHash)
 		return;
-	if (pipelines.size() >= kMaxPipelinesPerList)
+	if (pipelines.size() >= kMaxPipelinesPerList + 16)
 	{
-		// keep the latest binds; the ones closest to where the GPU stopped matter most
-		pipelines.erase(pipelines.begin());
-		m_current.droppedPipelines++;
+		// keep the latest binds; the ones closest to where the GPU stopped matter most. Dropped 16 at a time: erasing
+		// the front on every bind moved the whole list on each pipeline change in dense scenes
+		pipelines.erase(pipelines.begin(), pipelines.begin() + 16);
+		m_current.droppedPipelines += 16;
 	}
 	pipelines.push_back({ pipelineHash, vertexHash, geometryHash, pixelHash });
 }
@@ -151,6 +152,26 @@ void D3D12GpuWatchdog::Submit(uint64 fenceValue, uint32 drawCount)
 	}
 	m_current = {};
 	m_lastSubmittedFence.store(fenceValue, std::memory_order_release);
+}
+
+void D3D12GpuWatchdog::LogOpenList(const char* reason)
+{
+	std::string calls;
+	const uint32 count = std::min<uint32>(m_recentCallIndex, (uint32)m_recentCalls.size());
+	for (uint32 i = 0; i < count; i++)
+	{
+		const char* name = m_recentCalls[(m_recentCallIndex - count + i) % m_recentCalls.size()];
+		if (!calls.empty())
+			calls += ", ";
+		calls += name ? name : "?";
+	}
+	std::string pipelines;
+	const size_t first = m_current.pipelines.size() > 6 ? m_current.pipelines.size() - 6 : 0;
+	for (size_t i = first; i < m_current.pipelines.size(); i++)
+		pipelines += fmt::format(" {:016x}[ps {:016x}]", m_current.pipelines[i].pipelineHash, m_current.pipelines[i].pixelHash);
+	const auto& ops = m_current.operations;
+	cemuLog_log(LogType::Force, "D3D12 watchdog: {}: open list ops output/snapshot/overlay/surfaceCopy/readback {}/{}/{}/{}/{}, last pipelines{}; last calls (oldest first): {}",
+		reason, ops[0], ops[1], ops[2], ops[3], ops[4], pipelines, calls);
 }
 
 void D3D12GpuWatchdog::NotifyGameFrame()

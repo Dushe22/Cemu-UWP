@@ -7,6 +7,7 @@
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12GpuWatchdog.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12MemoryManager.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PipelineCompiler.h"
+#include "Cafe/HW/Latte/Renderer/D3D12/D3D12RecordRing.h"
 #include "gui/interface/WindowSystem.h"
 #include "Cafe/HW/Latte/Renderer/D3D12/D3D12PerformanceExperiment.h"
 
@@ -223,7 +224,36 @@ public:
 	// thread. Calls from the Latte side either queue (ShouldQueueRecording) or take exclusive access (RecordingExclusiveScope)
 	void DrainRecording() override;
 	bool ShouldQueueRecording() const { return !t_recordContext && m_recordThreadRunning.load(std::memory_order_relaxed); }
-	void QueueRecording(std::function<void()> op);
+	// phase 5 S2c: what a queued op touches, for a later split of the recorder into a preparation and an emission thread.
+	// State: only bindings the preparation reads; Command: only the command list and GPU resources; Both: needs a state
+	// half and a command half; Sync: frees or retires objects both halves may still use (both must have passed it)
+	enum class RecordOpKind : uint8 { State, Command, Both, Sync, Count };
+	std::array<std::atomic<uint64>, (size_t)RecordOpKind::Count> m_recordOpKinds{};
+	// queues op() for the recording thread (op runs in place in a ring: no allocation per op)
+	template<typename F>
+	void QueueRecording(F&& op, RecordOpKind kind = RecordOpKind::Both)
+	{
+		QueueRecordingWithData(0, [](uint8_t*) {}, [op = std::forward<F>(op)](const uint8_t*) mutable { op(); }, kind);
+	}
+	// queues op(data) where fill(data) writes dataBytes bytes now (on the calling thread); data lives until op returns
+	template<typename Fill, typename F>
+	void QueueRecordingWithData(size_t dataBytes, Fill&& fill, F&& op, RecordOpKind kind = RecordOpKind::Both)
+	{
+		m_recordOpKinds[(size_t)kind].fetch_add(1, std::memory_order_relaxed);
+		if (std::this_thread::get_id() != m_recordProducerThread)
+		{
+			// not the ring's producer: run it now with exclusive access, ordered against queued work by the drain
+			std::vector<uint8_t> data(dataBytes);
+			if (dataBytes)
+				fill(data.data());
+			RecordingExclusiveScope exclusive(this);
+			op(dataBytes ? data.data() : nullptr);
+			return;
+		}
+		PrepareRecordingPush(D3D12RecordRing::EntryBytes<std::decay_t<F>>(dataBytes));
+		m_recordRing->Push(dataBytes, std::forward<Fill>(fill), std::forward<F>(op));
+		FinishRecordingPush();
+	}
 	// logs (capped) when the command list is opened or submitted outside the recorder or an exclusive scope
 	void CheckRecordingContext(const char* operation);
 	// waits for queued recording work, then lets the caller's scope use the recording state directly
@@ -245,7 +275,6 @@ private:
 	// recorder load for the 5 s log: time spent running ops, ops run, and Latte-side waits on a full queue (queue mutex)
 	std::atomic<uint64> m_recordBusyNs{};
 	std::atomic<uint64> m_recordOps{};
-	bool m_recordWaiting{}; // recorder sleeps on m_recordWorkCv (queue mutex)
 	uint64 m_recordFullWaits{};
 	uint64 m_recordFullWaitNs{};
 	// Latte-side cost of the split for the 5 s log (queue mutex): exclusive scopes that drained the queue, by caller,
@@ -267,8 +296,36 @@ private:
 	std::mutex m_recordQueueMutex;
 	std::condition_variable m_recordWorkCv;
 	std::condition_variable m_recordStateCv;
-	std::vector<std::function<void()>> m_recordQueue;
-	bool m_recordBusy{};
+	std::unique_ptr<D3D12RecordRing> m_recordRing;
+	// phase 5 S2d: with two-stage recording Latte fills m_recordRing, a preparation thread moves each op into
+	// m_emitRing and the recording thread runs them from there (S2d-1: the preparation stage only forwards)
+	bool m_twoStageWanted{};
+	std::unique_ptr<D3D12RecordRing> m_emitRing;
+	std::thread m_prepareThread;
+	std::condition_variable m_prepareWorkCv;
+	std::atomic<bool> m_prepareSleeping{};
+	std::atomic<uint64> m_prepareBusyNs{};
+	std::atomic<uint64> m_prepareMoved{};
+	void PrepareThreadMain();
+	// Latte wakes the preparation thread only every kPrepareWakeBytes of queued work or when it waits for the rings:
+	// that thread empties its ring at once and sleeps, so a wake per op doubled Latte's cost per op (0.17 -> 0.36 us)
+	size_t m_prepareUnwokenBytes = 0;
+	size_t m_lastPushBytes = 0;
+	void WakePrepareStage();
+	D3D12RecordRing& EmitRing() { return m_emitRing ? *m_emitRing : *m_recordRing; }
+	bool RecordingIdle() const { return m_recordRing->IsEmpty() && (!m_emitRing || m_emitRing->IsEmpty()); }
+	std::thread::id m_recordProducerThread;
+	std::atomic<bool> m_recordSleeping{}; // recorder waits on m_recordWorkCv
+	std::atomic<uint32> m_recordWaiters{}; // threads waiting on m_recordStateCv for space or an empty ring
+	std::atomic<bool> m_recordHasError{};
+	// output and present are queued too; Latte keeps at most one frame ahead of the recorder
+	uint64 m_queuedSwaps{}; // Latte side
+	std::atomic<uint64> m_recordedSwaps{}; // set by the queued swap to its sequence number
+	void WaitForQueuedSwaps();
+	bool m_recordPushSampled{};
+	std::chrono::steady_clock::time_point m_recordPushSampleStart;
+	void PrepareRecordingPush(size_t entryBytes);
+	void FinishRecordingPush();
 	bool m_recordStop{};
 	std::exception_ptr m_recordError;
 	// held by whoever runs recording work: the recording thread or an exclusive scope
@@ -280,9 +337,10 @@ private:
 	struct LatteUniformSource
 	{
 		LatteDecompilerShader* shader{};
-		uint64 sourceKey{};
+		std::vector<uint8> sentBytes; // last bytes sent; empty for a stage without a uniform buffer
 		bool sent{};
 	};
+	std::vector<uint8> m_latteUniformScratch; // bytes built for the current draw, compared with sentBytes
 	std::array<LatteUniformSource, (size_t)LatteConst::ShaderType::TotalCount> m_latteUniformSources{};
 	// per-draw uniform bytes for the recorder; send=false keeps the bytes it has
 	struct UniformUpdate
@@ -629,6 +687,16 @@ private:
 	};
 	PreparedSurfaceCopy m_preparedSurfaceCopy;
 	void BindGameDescriptorTables(LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader, uint32 baseVertex, uint32 baseInstance, uint32 vertexIdRemapMode, uint64 pipelineHash);
+	// phase 5 S2b: the preparation half only writes descriptors; the emission half records into the command list
+	struct GameDescriptorTables
+	{
+		D3D12DescriptorManager::Allocation resource[3]; // vs, ps, gs
+		D3D12DescriptorManager::Allocation uav[3];
+		D3D12DescriptorManager::Allocation sampler[3];
+	};
+	GameDescriptorTables BuildGameDescriptorTables(LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader, uint64 pipelineHash);
+	void EmitGameDescriptorTables(const GameDescriptorTables& tables, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader, uint32 baseVertex, uint32 baseInstance, uint32 vertexIdRemapMode, uint64 pipelineHash);
+	bool UsesStreamoutUavTable(LatteDecompilerShader* shader) const;
 	void PrepareGameUniformVars(LatteDecompilerShader* shader, uint64 drawId, uint64 pipelineHash, UniformUpdate& update);
 	void ApplyGameUniformUpdate(UniformUpdate& update);
 	D3D12_GPU_VIRTUAL_ADDRESS CommitGameUniformVars(LatteDecompilerShader* shader, uint64 drawId, uint64 pipelineHash);
@@ -658,7 +726,6 @@ private:
 										 LatteDecompilerShader* shader, uint32 descriptorGeneration);
 	bool HasCachedGameResourceTable(LatteDecompilerShader* shader, uint32 descriptorGeneration);
 	bool HasCachedGameSamplerTable(LatteDecompilerShader* shader, uint32 descriptorGeneration);
-	uint64 BuildGameUniformVarsSourceKey(LatteDecompilerShader* shader) const;
 	uint64 BuildGameUavTableCacheKey(LatteDecompilerShader* shader, uint32 descriptorGeneration) const;
 	void InvalidateGameRootParameterCache(bool descriptorTablesOnly = false);
 	bool EnsureGamePipelineLibrary(uint64 titleId);
@@ -722,6 +789,18 @@ private:
 	void TransitionTextureSubresource(class LatteTextureD3D12* texture, uint32 subresource, D3D12_RESOURCE_STATES newState);
 	void TransitionTextureView(class LatteTextureViewD3D12* view, D3D12_RESOURCE_STATES newState, bool includeStencilPlane = false);
 	void TransitionTextureSubresources(class LatteTextureD3D12* texture, const std::vector<TextureTransition>& transitions);
+	// phase 5 S2b: feedback detection (preparation) is split from its barriers and copies (emission)
+	struct FeedbackPlan
+	{
+		enum : uint8 { Transition = 0, ProxyTransition, ColorCopy, DepthCopy };
+		uint32 count = 0;
+		bool anyCopy = false;
+		uint8 action[kMaxTextureBindings];
+		uint8 unit[kMaxTextureBindings];
+		LatteTextureViewD3D12* view[kMaxTextureBindings];
+	};
+	void PlanFeedbackForDraw(LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader, bool renderTargetsBound, FeedbackPlan& plan);
+	void EmitFeedbackForDraw(const FeedbackPlan& plan);
 	void ResolveFeedbackLoopsForDraw(LatteDecompilerShader* vertexShader,
 		LatteDecompilerShader* geometryShader, LatteDecompilerShader* pixelShader, bool renderTargetsBound);
 	enum class UwpCpuDrawStage : uint32
@@ -768,17 +847,9 @@ private:
 	bool RecoverFromTextureAllocationFailure(const D3D12_RESOURCE_DESC& desc, const char* context);
 	void RecoverFromPipelineAllocationFailure();
 	void LogUwpCpuPerformanceSummary();
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-	void InitializePerformanceExperiment();
-	void AdvancePerformanceExperiment();
-#endif
 	bool PerformanceExperimentEnabled(D3D12PerformanceExperiment::Feature feature) const
 	{
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-		return D3D12PerformanceExperiment::Enabled(m_performanceExperiment.FeatureMask(), feature);
-#else
 		return D3D12PerformanceExperiment::Enabled(D3D12PerformanceExperiment::kDefaultMask, feature);
-#endif
 	}
 	void LogUwpCommandSubmitPerformanceSummary();
 	// reuseWhileSourceUnchanged: keep the copy for later draws, valid while the copied subresources were not written
@@ -887,32 +958,6 @@ private:
 	uint64 m_uwpPresentCount{};
 	uint64 m_uwpPresentTimeUs{};
 	uint64 m_uwpCpuProfileIntervalStartedMs{};
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-	enum class ExperimentDetailStage : uint32 { Prepare, Feedback, Descriptors, RenderState, IndexResidency, Count };
-	static constexpr size_t kExperimentDetailStageCount = (size_t)ExperimentDetailStage::Count;
-	struct PerformanceExperimentWindow
-	{
-		uint64 frames{}, elapsedNs{}, maxFrameNs{}, over100ms{}, draws{}, minDraws{ UINT64_MAX }, maxDraws{};
-		uint64 feedbackCopies{}, psoCreates{}, ineligibleFrames{}, fenceWaitUs{}, resourceCacheHits{}, resourceCacheMisses{};
-		uint64 stageCacheEligible{}, satisfiedTransitionOpportunities{}, satisfiedTransitionHits{};
-		uint64 transitionAllocationOpportunities{}, transitionAllocationsAvoided{}, retainedGrowthAllocations{};
-		uint64 detailClockReads{};
-		uint64 logicInitialCopies{}, logicRefreshCopies{}, logicRefreshPayloadBytes{}, logicFullRefreshPayloadBytes{}, logicEmptyRefreshSkips{};
-		uint64 uniformOrEligible{}, uniformOrBatched{}, nativeDraws{};
-		std::array<uint64, kExperimentDetailStageCount> detailTimeNs{}, detailSamples{};
-		std::array<uint64, kUwpCpuDrawStageCount> broadTimeNs{}, broadSamples{};
-	};
-	D3D12PerformanceExperiment::Schedule m_performanceExperiment;
-	PerformanceExperimentWindow m_performanceExperimentWindow;
-	std::chrono::steady_clock::time_point m_performanceExperimentLastPresent{};
-	uint64 m_performanceExperimentLastPresentCount{};
-	uint64 m_performanceExperimentRuntimePsoCreates{};
-	uint64 m_performanceExperimentWaitElapsedNs{}, m_performanceExperimentWaitFrames{}, m_performanceExperimentWaitPsoCreates{};
-	uint64 m_performanceExperimentWaitMinDraws{ UINT64_MAX }, m_performanceExperimentWaitMaxDraws{};
-	uint64 m_performanceExperimentLastDraws{}, m_performanceExperimentLastCopies{}, m_performanceExperimentLastPsoCreates{};
-	uint64 m_performanceExperimentLastLogicCopies{};
-	uint64 m_performanceExperimentLastFenceWaitUs{}, m_performanceExperimentLastResourceHits{}, m_performanceExperimentLastResourceMisses{};
-#endif
 	uint64 m_uwpCpuProfileDraws{};
 	// sampled draws: descriptor stage split into feedback copies / uniform upload / table building
 	bool m_uwpProfileThisDraw{};
@@ -1360,6 +1405,7 @@ private:
 	std::deque<RetiredImguiDescriptor> m_retiredImguiDescriptors;
 	bool m_imguiInitialized{};
 	SwapchainState* m_imguiActiveSwapchain{};
+	void RecordImguiFrame(SwapchainState* chain, struct ImDrawData* drawData, void* imguiBackend, bool titleRunning);
 	std::unordered_map<uint64, ImGuiTextureResource> m_imguiTextures;
 
 	std::array<LatteTextureViewD3D12*, kMaxTextureBindings> m_boundTextures{};

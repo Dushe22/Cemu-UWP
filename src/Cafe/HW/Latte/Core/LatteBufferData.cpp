@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "Common/UwpProfiling.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
@@ -156,6 +157,17 @@ bool LatteBufferCache_LoadRemappedUniforms(LatteDecompilerShader* shader, float*
 	return hasChange;
 }
 
+#if defined(CEMU_UWP)
+#include <intrin.h>
+// UWP: where LatteBufferCache_Sync spends the Latte thread's time (Kakariko: ~0.6 us per draw). Logged by the D3D12 renderer
+uint64 g_uwpBufSyncTicks[6]{}; // queues, vertex retrieve, vertex bind, uniform retrieve, uniform bind, total
+uint64 g_uwpBufSyncCounts[3]{}; // calls, vertex buffers retrieved, uniform buffers retrieved
+uint64 g_uwpBufSyncBytes[2]{}; // vertex, uniform
+#define UWP_BUFSYNC_TIME(slot, expr) do { const uint64 uwpT0 = UwpProfTick(); expr; g_uwpBufSyncTicks[slot] += UwpProfTick() - uwpT0; } while (0)
+#else
+#define UWP_BUFSYNC_TIME(slot, expr) do { expr; } while (0)
+#endif
+
 bool LatteBufferCache_syncGPUUniformBuffers(LatteDecompilerShader* shader, const uint32 uniformBufferRegOffset, LatteConst::ShaderType shaderType, uint32 bufferDirtyMask)
 {
 	cemu_assert_debug(shader->uniformMode == LATTE_DECOMPILER_UNIFORM_MODE_FULL_CBANK);
@@ -174,8 +186,13 @@ bool LatteBufferCache_syncGPUUniformBuffers(LatteDecompilerShader* shader, const
 			continue;
 		}
 		uniformSize = std::min<uint32>(uniformSize, buf.size);
-		uint32 bindOffset = LatteBufferCache_retrieveDataInCache(physicalAddr, uniformSize);
-		g_renderer->buffer_bindUniformBuffer(shaderType, i, bindOffset, uniformSize);
+		uint32 bindOffset;
+		UWP_BUFSYNC_TIME(3, bindOffset = LatteBufferCache_retrieveDataInCache(physicalAddr, uniformSize));
+#if defined(CEMU_UWP)
+		g_uwpBufSyncCounts[2]++;
+		g_uwpBufSyncBytes[1] += uniformSize;
+#endif
+		UWP_BUFSYNC_TIME(4, g_renderer->buffer_bindUniformBuffer(shaderType, i, bindOffset, uniformSize));
 	}
 	return hasChange;
 }
@@ -202,6 +219,10 @@ void LatteBufferCache_ProcessQueues()
 // upload vertex and uniform buffers and update bindings
 void LatteBufferCache_Sync(uint32 maxVtxIndex, uint32 baseInstance, uint32 instanceCount, uint32 attribBufferDirtyMask, uint32 vsUniformBufferDirtyMask, uint32 psUniformBufferDirtyMask, uint32 gsUniformBufferDirtyMask, uint8& stageUniformModifiedMask, bool isIncremental)
 {
+#if defined(CEMU_UWP)
+	g_uwpBufSyncCounts[0]++;
+	struct TotalTimer { uint64 start = UwpProfTick(); ~TotalTimer() { g_uwpBufSyncTicks[5] += UwpProfTick() - start; } } uwpTotalTimer;
+#endif
 	LatteFetchShader* parsedFetchShader = LatteSHRC_GetActiveFetchShader();
 	cemu_assert_debug(parsedFetchShader);
 	uint32 maxInstance = baseInstance + instanceCount - 1;
@@ -230,7 +251,7 @@ void LatteBufferCache_Sync(uint32 maxVtxIndex, uint32 baseInstance, uint32 insta
 	}
 	else
 	{
-		LatteBufferCache_ProcessQueues();
+		UWP_BUFSYNC_TIME(0, LatteBufferCache_ProcessQueues());
 		s_vtxStateMaxIndex = maxVtxIndex;
 		s_vtxStateMaxInstance = maxInstance;
 	}
@@ -292,14 +313,19 @@ void LatteBufferCache_Sync(uint32 maxVtxIndex, uint32 baseInstance, uint32 insta
 			}
 #endif
 
-			uint32 bindOffset = LatteBufferCache_retrieveDataInCache(bufferAddress, lookupRangeSize);
+			uint32 bindOffset;
+			UWP_BUFSYNC_TIME(1, bindOffset = LatteBufferCache_retrieveDataInCache(bufferAddress, lookupRangeSize));
+#if defined(CEMU_UWP)
+			g_uwpBufSyncCounts[1]++;
+			g_uwpBufSyncBytes[0] += lookupRangeSize;
+#endif
 			bindBufferArray[bindBufferArraySize].index = bufferIndex;
 			bindBufferArray[bindBufferArraySize].bindOffset = bindOffset;
 			bindBufferArray[bindBufferArraySize].bindSize = fixedBufferSize;
 			bindBufferArraySize++;
 		}
 		// update vertex buffer bindings
-		g_renderer->buffer_bindVertexBuffers({bindBufferArray, bindBufferArraySize});
+		UWP_BUFSYNC_TIME(2, g_renderer->buffer_bindVertexBuffers({bindBufferArray, bindBufferArraySize}));
 	}
 	// sync uniform buffers
 	LatteDecompilerShader* vertexShader = LatteSHRC_GetActiveVertexShader();

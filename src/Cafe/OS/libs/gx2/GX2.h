@@ -12,8 +12,11 @@
 
 // general
 
+class COSStaticData;
+
 namespace GX2
 {
+	extern COSStaticData s_gx2StaticData;
 	COSModule* GetModule();
 }
 
@@ -40,6 +43,7 @@ void gx2Export_GX2GetContextStateDisplayList(PPCInterpreter_t* hCPU);
 // misc
 void gx2Export_GX2AllocateTilingApertureEx(PPCInterpreter_t* hCPU);
 void gx2Export_GX2FreeTilingAperture(PPCInterpreter_t* hCPU);
+void GX2ResetTilingAperture();
 
 void gx2Export_GX2SetSwapInterval(PPCInterpreter_t* hCPU);
 void gx2Export_GX2GetSwapInterval(PPCInterpreter_t* hCPU);

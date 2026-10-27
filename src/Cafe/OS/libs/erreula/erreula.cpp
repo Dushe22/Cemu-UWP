@@ -1,4 +1,4 @@
-﻿#include "Cafe/OS/common/OSCommon.h"
+#include "Cafe/OS/common/OSCommon.h"
 #include "erreula.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "util/helpers/helpers.h"
@@ -19,6 +19,7 @@ namespace nn
 {
 namespace erreula
 {
+	constinit COSStaticData s_erreulaStaticData;
 
 	enum class ErrorDialogType : uint32
 	{
@@ -226,7 +227,7 @@ namespace erreula
 
 	struct ErrEula_t
 	{
-		SysAllocator<coreinit::OSMutex> mutex;
+		CafeStaticVar<coreinit::OSMutex> mutex{s_erreulaStaticData};
 		uint32 regionType{0};
 		uint32 langType{0};
 		MEMPTR<coreinit::FSClient_t> fsClient;
@@ -555,8 +556,14 @@ namespace erreula
 			return "erreula";
 		}
 
+		void RPLUnmapped() override
+		{
+			s_erreulaStaticData.Deallocate();
+		}
+
 		void RPLMapped() override
 		{
+			s_erreulaStaticData.Allocate();
 			cafeExportRegisterFunc(ErrEulaCreate, "erreula", "ErrEulaCreate__3RplFPUcQ3_2nn7erreula10RegionTypeQ3_2nn7erreula8LangTypeP8FSClient", LogType::Placeholder);
 			cafeExportRegisterFunc(ErrEulaDestroy, "erreula", "ErrEulaDestroy__3RplFv", LogType::Placeholder);
 

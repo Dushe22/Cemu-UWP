@@ -59,6 +59,9 @@ public:
 	void RecordGamePipeline(uint64 pipelineHash, uint64 vertexHash, uint64 geometryHash, uint64 pixelHash);
 	void RecordOperation(Operation operation);
 	void Submit(uint64 fenceValue, uint32 drawCount);
+	// last calls recorded into the open command list (static names), logged when closing it fails
+	void NoteCall(const char* name) { m_recentCalls[m_recentCallIndex++ % m_recentCalls.size()] = name; }
+	void LogOpenList(const char* reason);
 
 	void NotifyGameFrame();
 
@@ -85,6 +88,8 @@ private:
 	};
 
 	static constexpr size_t kMaxPipelinesPerList = 48;
+	std::array<const char*, 32> m_recentCalls{};
+	uint32 m_recentCallIndex = 0;
 	static constexpr size_t kMaxTrackedLists = 64;
 
 	void Run();

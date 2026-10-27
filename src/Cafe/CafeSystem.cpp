@@ -1,6 +1,6 @@
 #include "Cafe/OS/common/OSCommon.h"
+#include "Common/UwpProfiling.h"
 #include "WindowSystem.h"
-#include "Cafe/OS/libs/gx2/GX2.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
@@ -19,6 +19,7 @@
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/GameInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
+#include "Cafe/OS/libs/coreinit/coreinit_IPC.h"
 #include "Cafe/OS/libs/snd_core/ax.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -32,6 +33,7 @@
 #include <new>
 #include <string_view>
 
+#include "Common/CafeStaticVar.h"
 #include "Cafe/IOSU/legacy/iosu_ioctl.h"
 #include "Cafe/IOSU/legacy/iosu_act.h"
 #include "Cafe/IOSU/legacy/iosu_fpd.h"
@@ -705,9 +707,6 @@ namespace CafeSystem
 		cemuLog_log(LogType::Force, "Used CPU extensions: {}", g_CPUFeatures.GetCommaSeparatedExtensionList());
 		// misc systems
 		rplSymbolStorage_init();
-		// allocate memory for all SysAllocators
-		// must happen before COS module init, but also before iosu::kernel::Initialize()
-		SysAllocatorContainer::GetInstance().Initialize();
 		// init IOSU modules
 		for(auto& module : s_iosuModules)
 			module->SystemLaunch();
@@ -745,6 +744,7 @@ namespace CafeSystem
 		// shutdown IOSU modules
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->SystemExit();
+		cemu_assert_debug(!IOSUStaticData::HasAnyAllocations()); // check for leak
         s_initialized = false;
     }
 
@@ -1033,6 +1033,7 @@ namespace CafeSystem
 		sSystemRunning = true;
 		WindowSystem::NotifyGameLoaded();
 #if defined(CEMU_UWP)
+		g_uwpDetailedProfiling = GetConfig().uwp_detailed_profiling.GetValue();
 		WaitForLaunchTitleThread();
 		{
 			std::scoped_lock errorLock(sLaunchErrorMutex);
@@ -1193,6 +1194,7 @@ namespace CafeSystem
 #endif
 		coreinit::OSSchedulerEnd();
 		Latte_Stop();
+		coreinit::IPCCloseAllHandles();
 		// reset Cafe OS userspace modules
 		snd_core::reset();
 		coreinit::OSAlarm_Shutdown();

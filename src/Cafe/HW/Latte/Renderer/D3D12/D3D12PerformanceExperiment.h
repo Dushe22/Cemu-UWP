@@ -29,11 +29,7 @@ enum Feature : std::uint32_t
 constexpr std::uint32_t kAllFeatures = kCpuFeatures;
 constexpr bool Enabled(std::uint32_t mask, Feature feature) noexcept { return (mask & feature) != 0; }
 enum class Suite { Cpu, Boundary, Descriptor, LogicCopy };
-#if defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
-constexpr bool kBoundarySuiteAvailable = true;
-#else
 constexpr bool kBoundarySuiteAvailable = false;
-#endif
 
 struct Config
 {

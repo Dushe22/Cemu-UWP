@@ -252,3 +252,22 @@ void PPCCore_init();
 // LLE scheduler
 
 void PPCCoreLLE_startSingleCoreScheduler(uint32 entrypoint);
+
+#if defined(CEMU_UWP)
+// UWP measurement of the emulated CPU cores: time per core by category, per HLE function and per guest thread,
+// logged every 5 s next to the Latte thread split. HLE time is inclusive (callbacks into guest code count as HLE)
+namespace UwpCpuProfile
+{
+	enum Category : uint32 { Guest, Hle, Idle, SystemEvents, Scheduler, CategoryCount };
+	struct State { uint32 category; sint32 hleId; };
+	void SetCore(sint32 core);
+	State Enter(uint32 category, sint32 hleId = -1); // returns the state to restore
+	void Restore(State state);
+	void NoteHleCall(sint32 hleId);
+	// waiting = the thread blocks (not a yield); hleId = the HLE call it blocks in
+	void NoteThreadSwitchOut(const void* osThread, const char* name, bool waiting, sint32 hleId);
+	void NoteThreadSwitchIn(const void* osThread);
+	void NoteWakeup(const void* osThread, const void* waker, const char* wakerName);
+	void Log();
+}
+#endif

@@ -5,7 +5,7 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   IgnorableNamespaces="uap mp rescap">
-  <Identity Name="Cemu.Libretro.Uwp" Publisher="CN=DanP142" Version="0.3.4.8" />
+  <Identity Name="Cemu.Libretro.Uwp" Publisher="CN=DanP142" Version="0.3.5.22" />
   <mp:PhoneIdentity PhoneProductId="d24d337f-624b-46ac-bd56-98f009302dc0" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
     <DisplayName>Cemu</DisplayName>

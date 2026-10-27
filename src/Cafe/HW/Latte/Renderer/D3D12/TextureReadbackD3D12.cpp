@@ -52,7 +52,7 @@ void LatteTextureReadbackInfoD3D12::StartTransfer()
 	if (m_renderer && m_renderer->ShouldQueueRecording())
 	{
 		m_transferRecorded.store(false, std::memory_order_relaxed);
-		m_renderer->QueueRecording([this]() { RecordTransfer(); });
+		m_renderer->QueueRecording([this]() { RecordTransfer(); }, D3D12Renderer::RecordOpKind::Command);
 		return;
 	}
 	D3D12Renderer::RecordingExclusiveScope recordingScope(m_renderer);

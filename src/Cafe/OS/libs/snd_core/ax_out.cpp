@@ -1,9 +1,8 @@
 #include "Cafe/OS/libs/snd_core/ax.h"
 #include "Cafe/OS/libs/snd_core/ax_internal.h"
-#include "Cafe/HW/MMU/MMU.h"
 #include "audio/IAudioAPI.h"
-//#include "ax.h"
 #include "config/CemuConfig.h"
+#include "Common/CafeStaticVar.h"
 #if defined(CEMU_UWP)
 #include "uwp/UwpMediaStreamer.h"
 #endif
@@ -143,8 +142,8 @@ namespace snd_core
 		_AXOutInitDeviceModes();
 	}
 
-	extern SysAllocator<sint32, AX_SAMPLES_MAX * AX_TV_CHANNEL_COUNT> __AXTVBuffer48;
-	extern SysAllocator<sint32, AX_SAMPLES_MAX* AX_DRC_CHANNEL_COUNT * 2> __AXDRCBuffer48;
+	extern CafeStaticVar<sint32, AX_SAMPLES_MAX * AX_TV_CHANNEL_COUNT> __AXTVBuffer48;
+	extern CafeStaticVar<sint32, AX_SAMPLES_MAX* AX_DRC_CHANNEL_COUNT * 2> __AXDRCBuffer48;
 
 	sint16 __buf_AXTVDMABuffers_0[AX_SAMPLES_MAX * AX_TV_CHANNEL_COUNT];
 	sint16 __buf_AXTVDMABuffers_1[AX_SAMPLES_MAX * AX_TV_CHANNEL_COUNT];
@@ -436,6 +435,8 @@ namespace snd_core
 	void AXOut_reset()
 	{
 		std::unique_lock lock(g_audioMutex);
+		tempAudioBlockCounter = 0;
+		tempDRCAudioBlockCounter = 0;
 		if (g_tvAudio)
 		{
 			g_tvAudio->Stop();
@@ -489,6 +490,15 @@ namespace snd_core
 		constexpr static auto kWaitDurationFast = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::microseconds(2900));
 		constexpr static auto kWaitDurationMinimum = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::microseconds(1700));
 
+		// the shorter of the two waits is kWaitDurationFast: before it has passed nothing below can fire, so skip the audio
+		// lock and the backend query. The main core runs this on every scheduler pass (~0.75 s of every 5 s in BOTW)
+		static auto s_ax_interval_timer = now_cached() - kWaitDuration;
+		static auto s_last_check = now_cached();
+		const auto now = now_cached();
+		static_assert(kWaitDuration > kWaitDurationFast);
+		if ((now - s_ax_interval_timer) < kWaitDurationFast)
+			return;
+
 		// if we haven't buffered any blocks, we will wait less time than usual
 		bool additional_blocks_required = false;
 		{
@@ -504,10 +514,6 @@ namespace snd_core
 		// s_last_check is always set to the timestamp at the time of firing
 		// it's used to enforce the minimum wait delay (we want to avoid calling AX update in quick succession because other threads may need to do work first) 
 
-		static auto s_ax_interval_timer = now_cached() - kWaitDuration;
-		static auto s_last_check = now_cached();
-
-		const auto now = now_cached();
 		const auto diff = (now - s_ax_interval_timer);
 
 		if (diff < wait_duration)

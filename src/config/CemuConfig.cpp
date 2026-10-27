@@ -150,6 +150,8 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	d3d12_threaded_recording = graphic.get("D3D12ThreadedRecording", d3d12_threaded_recording);
+	d3d12_two_stage_recording = graphic.get("D3D12TwoStageRecording", d3d12_two_stage_recording);
+	uwp_detailed_profiling = graphic.get("UwpDetailedProfiling", uwp_detailed_profiling);
 	d3d12_prioritized_pipeline_cache = graphic.get("D3D12PrioritizedPipelineCache", d3d12_prioritized_pipeline_cache);
 	// D3D12GpuArrayUpload is not read: on Xbox the texture-to-texture copy misplaces array slices like the buffer copy does
 	skip_resolution_rules_of_packs_with_skipped_shaders = graphic.get("SkipResolutionRulesOfPacksWithSkippedShaders", false);
@@ -513,6 +515,8 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("FullscreenScaling", fullscreen_scaling);
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("D3D12ThreadedRecording", d3d12_threaded_recording.GetValue());
+	graphic.set("D3D12TwoStageRecording", d3d12_two_stage_recording.GetValue());
+	graphic.set("UwpDetailedProfiling", uwp_detailed_profiling.GetValue());
 	graphic.set("D3D12PrioritizedPipelineCache", d3d12_prioritized_pipeline_cache.GetValue());
 	graphic.set("D3D12GpuArrayUpload", d3d12_gpu_array_upload.GetValue());
 	graphic.set("SkipResolutionRulesOfPacksWithSkippedShaders", skip_resolution_rules_of_packs_with_skipped_shaders.GetValue());

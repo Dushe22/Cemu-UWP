@@ -1,4 +1,5 @@
 #include "Cafe/HW/Espresso/PPCState.h"
+#include "Common/UwpProfiling.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterHelper.h"
 #include "../PPCRecompiler.h"
@@ -171,7 +172,19 @@ void* ATTR_MS_ABI PPCRecompiler_virtualHLE(PPCInterpreter_t* hCPU, uint32 hleFun
 	{
 		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
 		cemu_assert(hleCall != nullptr);
+#if defined(CEMU_UWP)
+		if (g_uwpDetailedProfiling)
+		{
+			UwpCpuProfile::NoteHleCall((sint32)hleFuncId);
+			const auto previous = UwpCpuProfile::Enter(UwpCpuProfile::Hle, (sint32)hleFuncId);
+			hleCall(hCPU);
+			UwpCpuProfile::Restore(previous);
+		}
+		else
+			hleCall(hCPU);
+#else
 		hleCall(hCPU);
+#endif
 	}
 	hCPU->rspTemp = prevRSPTemp;
 	return PPCInterpreter_getCurrentInstance();

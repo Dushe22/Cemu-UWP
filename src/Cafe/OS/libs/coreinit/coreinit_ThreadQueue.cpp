@@ -140,6 +140,12 @@ namespace coreinit
 			thread->state = OSThread_t::THREAD_STATE::STATE_READY;
 			thread->currentWaitQueue = nullptr;
 			coreinit::__OSAddReadyThreadToRunQueue(thread);
+#if defined(CEMU_UWP)
+			{
+				OSThread_t* waker = PPCInterpreter_getCurrentInstance() ? coreinit::OSGetCurrentThread() : nullptr;
+				UwpCpuProfile::NoteWakeup(thread, waker, waker ? waker->threadName.GetPtr() : "host/alarm");
+			}
+#endif
 			if (reschedule && thread->suspendCounter == 0 && PPCInterpreter_getCurrentInstance() && __OSCoreShouldSwitchToThread(coreinit::OSGetCurrentThread(), thread, sharedPriorityAndAffinityWorkaround))
 				shouldReschedule = true;
 		}
@@ -160,6 +166,12 @@ namespace coreinit
 			thread->state = OSThread_t::THREAD_STATE::STATE_READY;
 			thread->currentWaitQueue = nullptr;
 			coreinit::__OSAddReadyThreadToRunQueue(thread);
+#if defined(CEMU_UWP)
+			{
+				OSThread_t* waker = PPCInterpreter_getCurrentInstance() ? coreinit::OSGetCurrentThread() : nullptr;
+				UwpCpuProfile::NoteWakeup(thread, waker, waker ? waker->threadName.GetPtr() : "host/alarm");
+			}
+#endif
 			if (reschedule && thread->suspendCounter == 0 && PPCInterpreter_getCurrentInstance() && __OSCoreShouldSwitchToThread(coreinit::OSGetCurrentThread(), thread, sharedPriorityAndAffinityWorkaround))
 				shouldReschedule = true;
 		}

@@ -76,8 +76,12 @@ struct ImGui_ImplDX12_Data
 
 // Backend data stored in io.BackendRendererUserData to allow support for multiple Dear ImGui contexts
 // It is STRONGLY preferred that you use docking branch with multi-viewports (== single Dear ImGui context + multiple windows) instead of multiple Dear ImGui contexts.
+// set while a recording thread renders draw data captured from a context it does not own
+static thread_local ImGui_ImplDX12_Data* t_backendDataOverride = nullptr;
 static ImGui_ImplDX12_Data* ImGui_ImplDX12_GetBackendData()
 {
+    if (t_backendDataOverride)
+        return t_backendDataOverride;
     return ImGui::GetCurrentContext() ? (ImGui_ImplDX12_Data*)ImGui::GetIO().BackendRendererUserData : nullptr;
 }
 
@@ -863,3 +867,14 @@ void ImGui_ImplDX12_NewFrame()
         ImGui_ImplDX12_CreateDeviceObjects();
 }
 
+void* ImGui_ImplDX12_GetCurrentBackendData()
+{
+    return ImGui_ImplDX12_GetBackendData();
+}
+
+void ImGui_ImplDX12_RenderDrawDataWithBackend(void* backend_data, ImDrawData* draw_data, ID3D12GraphicsCommandList* graphics_command_list)
+{
+    t_backendDataOverride = (ImGui_ImplDX12_Data*)backend_data;
+    ImGui_ImplDX12_RenderDrawData(draw_data, graphics_command_list);
+    t_backendDataOverride = nullptr;
+}

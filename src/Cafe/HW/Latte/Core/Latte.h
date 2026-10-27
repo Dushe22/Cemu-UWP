@@ -14,6 +14,11 @@ struct gx2GPUSharedArea_t
 	volatile uint32 swapInterval; // vsync swap interval (0 means vsync is deactivated)
 };
 
+// registers are tracked for the renderer's copy in chunks of 16 (a texture/buffer resource is 7 registers: with 64-register
+// chunks every resource change dragged 64 registers along)
+constexpr uint32 LATTE_REGISTER_CHUNK_SHIFT = 4;
+constexpr uint32 LATTE_REGISTER_CHUNK_WORDS = 1u << LATTE_REGISTER_CHUNK_SHIFT;
+
 struct LatteGPUState_t
 {
 	union
@@ -61,7 +66,7 @@ struct LatteGPUState_t
 	bool repeatTextureInitialization; // if set during rendertarget or texture initialization, repeat the process (textures likely have been invalidated)
 	bool requiresTextureBarrier; // set if glTextureBarrier should be called
 	// one bit per 64 registers written since a renderer last copied them (see LatteGPUState_markRegistersDirty)
-	uint64 registerChunkDirty[LATTE_MAX_REGISTER / 64 / 64]{};
+	uint64 registerChunkDirty[LATTE_MAX_REGISTER / LATTE_REGISTER_CHUNK_WORDS / 64]{};
 	// OSScreen
 	struct  
 	{
@@ -83,8 +88,8 @@ inline void LatteGPUState_markRegistersDirty(uint32 firstRegister, uint32 count)
 {
 	if (count == 0 || firstRegister >= LATTE_MAX_REGISTER)
 		return;
-	const uint32 lastChunk = (std::min<uint32>(firstRegister + count, LATTE_MAX_REGISTER) - 1) >> 6;
-	for (uint32 chunk = firstRegister >> 6; chunk <= lastChunk; chunk++)
+	const uint32 lastChunk = (std::min<uint32>(firstRegister + count, LATTE_MAX_REGISTER) - 1) >> LATTE_REGISTER_CHUNK_SHIFT;
+	for (uint32 chunk = firstRegister >> LATTE_REGISTER_CHUNK_SHIFT; chunk <= lastChunk; chunk++)
 		LatteGPUState.registerChunkDirty[chunk >> 6] |= 1ull << (chunk & 63);
 }
 

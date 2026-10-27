@@ -36,6 +36,9 @@ IMGUI_IMPL_API bool     ImGui_ImplDX12_Init(ID3D12Device* device, int num_frames
 IMGUI_IMPL_API void     ImGui_ImplDX12_Shutdown();
 IMGUI_IMPL_API void     ImGui_ImplDX12_NewFrame();
 IMGUI_IMPL_API void     ImGui_ImplDX12_RenderDrawData(ImDrawData* draw_data, ID3D12GraphicsCommandList* graphics_command_list);
+// for rendering on another thread: capture the backend of the current context, then render with it (no ImGui context use)
+IMGUI_IMPL_API void*    ImGui_ImplDX12_GetCurrentBackendData();
+IMGUI_IMPL_API void     ImGui_ImplDX12_RenderDrawDataWithBackend(void* backend_data, ImDrawData* draw_data, ID3D12GraphicsCommandList* graphics_command_list);
 
 // Use if you want to reset your rendering device without losing Dear ImGui state.
 IMGUI_IMPL_API void     ImGui_ImplDX12_InvalidateDeviceObjects();

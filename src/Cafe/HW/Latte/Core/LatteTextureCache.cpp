@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Common/UwpProfiling.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
 #if defined(CEMU_UWP)
@@ -223,6 +224,24 @@ uint32 LatteTexture_CalculateTextureDataHash(LatteTexture* hostTexture)
 
 uint64 _botwLargeTexHax = 0;
 
+#if defined(CEMU_UWP)
+// detailed profiling: once-per-frame change hashes by path (light = compressed or GPU-written, 37 samples)
+uint64 g_uwpTexHashTicks[6]{};
+uint64 g_uwpTexHashCount[6]{};
+uint64 g_uwpTexHashBytes[6]{};
+
+static uint32 UwpTexHashPath(LatteTexture* t)
+{
+	const uint32 memRange = t->texDataPtrHigh - t->texDataPtrLow;
+	if (t->texDataPtrHigh == t->texDataPtrLow || t->format == Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT)
+		return 5;
+	if (t->IsCompressedFormat() || t->useLightHash)
+		return memRange < 256 ? 1 : 0;
+	const uint32 pixels = t->width * t->height;
+	return pixels <= 700 * 700 ? 2 : (pixels <= 1200 * 1200 ? 3 : 4);
+}
+#endif
+
 bool LatteTC_HasTextureChanged(LatteTexture* hostTexture, bool force)
 {
 	if (hostTexture->forceInvalidate)
@@ -237,14 +256,27 @@ bool LatteTC_HasTextureChanged(LatteTexture* hostTexture, bool force)
 		return false;
 	hostTexture->lastDataUpdateFrameCounter = LatteGPUState.frameCounter;
 	// we assume that certain texture properties indicate that the texture will never be written by the CPU
-	if (hostTexture->width == 1280 && hostTexture->format != Latte::E_GX2SURFFMT::R8_UNORM && hostTexture->format != Latte::E_GX2SURFFMT::BC3_UNORM && force == false)
+	bool isCPUMirroredLinear = hostTexture->tileMode == Latte::E_HWTILEMODE::TM_LINEAR_ALIGNED && hostTexture->enableReadback;
+	if (hostTexture->width == 1280 && !isCPUMirroredLinear && hostTexture->format != Latte::E_GX2SURFFMT::R8_UNORM && hostTexture->format != Latte::E_GX2SURFFMT::BC3_UNORM && force == false)
 	{
 		// todo - remove this or find a better way to handle excluded texture invalidation checks (maybe via game profile?)
 		return false;
 	}
 	// workaround for corrupted terrain texture in BotW after video playback
 	// probably would be fixed if we added support for invalidating individual slices/mips of a texture
+#if defined(CEMU_UWP)
+	const uint64 hashStarted = UwpProfTick();
+#endif
 	uint32 texDataHash = LatteTexture_CalculateTextureDataHash(hostTexture);
+#if defined(CEMU_UWP)
+	if (hashStarted)
+	{
+		const uint32 path = UwpTexHashPath(hostTexture);
+		g_uwpTexHashTicks[path] += UwpProfTick() - hashStarted;
+		g_uwpTexHashCount[path]++;
+		g_uwpTexHashBytes[path] += hostTexture->texDataPtrHigh - hostTexture->texDataPtrLow;
+	}
+#endif
 	if( texDataHash != hostTexture->texDataHash2 )
 	{
 		hostTexture->texDataHash2 = texDataHash;

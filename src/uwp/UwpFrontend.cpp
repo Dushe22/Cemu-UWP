@@ -4626,9 +4626,13 @@ void DrawGraphicsSettings()
 	}
 	CheckboxConfig(Tr("Async shader compile"), config.async_compile);
 	CheckboxConfig(Tr("Threaded draw recording (experimental, restart Cemu)"), config.d3d12_threaded_recording);
+	if (config.d3d12_threaded_recording.GetValue())
+		CheckboxConfig(Tr("Two-stage recording (experimental, restart Cemu)"), config.d3d12_two_stage_recording);
 	CheckboxConfig(Tr("Prioritized pipeline caching (experimental, applies when a game starts)"), config.d3d12_prioritized_pipeline_cache);
 	ImGui::TextDisabled("%s", Tr("Loads every cached pipeline that fits in memory at game start, most used first, and keeps the most used ones under memory pressure. Longer loading, less pop-in."));
 	CheckboxConfig(Tr("Full sync at GX2DrawDone()"), config.gx2drawdone_sync);
+	CheckboxConfig(Tr("Detailed performance logs (applies when a game starts)"), config.uwp_detailed_profiling);
+	ImGui::TextDisabled("%s", Tr("Writes CPU-time splits to log.txt every 5 s. Costs some performance; leave off unless measuring."));
 	CheckboxConfig(Tr("Render upside down"), config.render_upside_down);
 
 	// console storage is tight; per-title removal lives in the title menu

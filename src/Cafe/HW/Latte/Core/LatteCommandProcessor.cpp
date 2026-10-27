@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "Common/UwpProfiling.h"
 #include "Cafe/OS/libs/gx2/GX2.h" // for write gatherer and special state. Get rid of dependency
 #include "Cafe/OS/libs/gx2/GX2_Event.h" // for notification callbacks
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
@@ -50,6 +51,8 @@ namespace LatteCpProfile
 
 	inline void Switch(uint32 cat)
 	{
+		if (!g_uwpDetailedProfiling)
+			return;
 		const uint64 now = __rdtsc();
 		if (s_last != 0)
 			s_ticks[s_cur] += now - s_last;
@@ -59,6 +62,8 @@ namespace LatteCpProfile
 
 	void LogIfDue()
 	{
+		if (!g_uwpDetailedProfiling)
+			return;
 		const uint64 now = __rdtsc();
 		if (s_logStartTick == 0)
 		{
@@ -82,6 +87,7 @@ namespace LatteCpProfile
 		}
 		cemuLog_log(LogType::Force, "UWP Latte thread split over {:.0f} ms: busy (not idle) {:.0f} ms;{}", (double)elapsedUs / 1000.0,
 			(double)PPCTimer_tscToMicroseconds(busyTicks) / 1000.0, parts);
+		UwpCpuProfile::Log();
 		std::fill(std::begin(s_ticks), std::end(s_ticks), 0);
 		std::fill(std::begin(s_counts), std::end(s_counts), 0);
 		s_logStartTick = now;
@@ -409,8 +415,9 @@ LatteCMDPtr LatteCP_itStreamoutBufferUpdate(LatteCMDPtr cmd, uint32 nWords)
 		// reset pointer
 		MPTR virtualAddress = memory_physicalToVirtual(physicalAddressRead);
 		uint32 bufferOffset = 0;
+		if (LatteGPUState.contextRegister[mmVGT_STRMOUT_BUFFER_OFFSET_0 + 4 * soIndex] != bufferOffset)
+			LatteGPUState_markRegistersDirty(mmVGT_STRMOUT_BUFFER_OFFSET_0 + 4 * soIndex, 1);
 		LatteGPUState.contextRegister[mmVGT_STRMOUT_BUFFER_OFFSET_0 + 4 * soIndex] = bufferOffset;
-		LatteGPUState_markRegistersDirty(mmVGT_STRMOUT_BUFFER_OFFSET_0 + 4 * soIndex, 1);
 	}
 	else if (mode == 3)
 	{
@@ -433,11 +440,14 @@ void LatteCP_itSetRegistersGeneric_handleSpecialRanges(uint32 registerStartIndex
 	{
 		if (registerStartIndex <= mmSQ_VTX_SEMANTIC_CLEAR && registerEndIndex >= mmSQ_VTX_SEMANTIC_CLEAR)
 		{
+			bool changed = false;
 			for (uint32 i = 0; i < 32; i++)
 			{
+				changed |= LatteGPUState.contextRegister[mmSQ_VTX_SEMANTIC_0 + i] != 0xFF;
 				LatteGPUState.contextRegister[mmSQ_VTX_SEMANTIC_0 + i] = 0xFF;
 			}
-			LatteGPUState_markRegistersDirty(mmSQ_VTX_SEMANTIC_0, 32);
+			if (changed)
+				LatteGPUState_markRegistersDirty(mmSQ_VTX_SEMANTIC_0, 32);
 		}
 	}
 }
@@ -466,7 +476,8 @@ LatteCMDPtr LatteCP_itSetRegistersGeneric(LatteCMDPtr cmd, uint32 nWords)
 	uint32 registerEndIndex = registerStartIndex + nWords;
 	if (!LatteCP_isRegisterWriteInRange(TRegisterBase, registerOffset, nWords, cmd))
 		return cmd + nWords;
-	LatteGPUState_markRegistersDirty(registerIndex, nWords);
+	// only registers whose value changes are marked: games rewrite most state with the same values before every draw,
+	// and each marked 64-register chunk is copied to the recorder (Kakariko: 8.3 chunks per draw, no draw without any)
 	uint32* __restrict outputReg = (uint32*)(LatteGPUState.contextRegister + registerIndex);
 	if (LatteGPUState.contextControl0 == 0x80000077)
 	{
@@ -479,6 +490,8 @@ LatteCMDPtr LatteCP_itSetRegistersGeneric(LatteCMDPtr cmd, uint32 nWords)
 			MPTR regShadowAddr = shadowAddrs[indexCounter];
 			if (regShadowAddr)
 				*(uint32*)(memory_base + regShadowAddr) = _swapEndianU32(dataWord);
+			if (outputReg[indexCounter] != dataWord)
+				LatteGPUState_markRegistersDirty(registerIndex + indexCounter, 1);
 			outputReg[indexCounter] = dataWord;
 			indexCounter++;
 		}
@@ -488,13 +501,18 @@ LatteCMDPtr LatteCP_itSetRegistersGeneric(LatteCMDPtr cmd, uint32 nWords)
 		// state shadowing disabled
 		if (nWords == 1) // common case
 		{
-			*outputReg = LatteReadCMD();
+			const uint32 v = LatteReadCMD();
+			if (*outputReg != v)
+				LatteGPUState_markRegistersDirty(registerIndex, 1);
+			*outputReg = v;
 		}
 		else
 		{
 			sint32 i = 0;
 			while (i < nWords)
 			{
+				if (outputReg[i] != cmd[i])
+					LatteGPUState_markRegistersDirty(registerIndex + i, 1);
 				outputReg[i] = cmd[i];
 				i++;
 			}
@@ -517,7 +535,6 @@ bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, TRegRangeCal
 	const uint32 registerEndIndex = registerStartIndex + nWords - 1;
 	if (!LatteCP_isRegisterWriteInRange(TRegisterBase, registerOffset, nWords, cmd))
 		return false;
-	LatteGPUState_markRegistersDirty(registerIndex, nWords);
 
 	uint32* outputReg = (uint32*)(LatteGPUState.contextRegister + registerIndex);
 	bool hasRegChange = false;
@@ -532,7 +549,11 @@ bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, TRegRangeCal
 			MPTR regShadowAddr = shadowAddrs[indexCounter];
 			if (regShadowAddr)
 				*(uint32*)(memory_base + regShadowAddr) = _swapEndianU32(dataWord);
-			hasRegChange |= (outputReg[indexCounter] != dataWord);
+			if (outputReg[indexCounter] != dataWord)
+			{
+				hasRegChange = true;
+				LatteGPUState_markRegistersDirty(registerIndex + indexCounter, 1);
+			}
 			outputReg[indexCounter] = dataWord;
 			indexCounter++;
 		}
@@ -543,7 +564,11 @@ bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, TRegRangeCal
 		if (nWords == 1) // common case
 		{
 			uint32 v = LatteReadCMD();
-			hasRegChange |= (*outputReg != v);
+			if (*outputReg != v)
+			{
+				hasRegChange = true;
+				LatteGPUState_markRegistersDirty(registerIndex, 1);
+			}
 			*outputReg = v;
 		}
 		else
@@ -552,7 +577,11 @@ bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, TRegRangeCal
 			while (i < nWords)
 			{
 				uint32 v = cmd[i];
-				hasRegChange |= (outputReg[i] != v);
+				if (outputReg[i] != v)
+				{
+					hasRegChange = true;
+					LatteGPUState_markRegistersDirty(registerIndex + i, 1);
+				}
 				outputReg[i] = v;
 				i++;
 			}
@@ -569,8 +598,10 @@ bool LatteCP_itSetRegistersGeneric2(LatteCMDPtr cmd, uint32 nWords, TRegRangeCal
 LatteCMDPtr LatteCP_itIndexType(LatteCMDPtr cmd, uint32 nWords)
 {
 	cemu_assert_debug(nWords == 1);
+	const uint32 previous = LatteGPUState.contextRegister[Latte::REGADDR::VGT_DMA_INDEX_TYPE];
 	LatteGPUState.contextNew.VGT_DMA_INDEX_TYPE.set_INDEX_TYPE((Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE)LatteReadCMD());
-	LatteGPUState_markRegistersDirty(Latte::REGADDR::VGT_DMA_INDEX_TYPE, 1);
+	if (LatteGPUState.contextRegister[Latte::REGADDR::VGT_DMA_INDEX_TYPE] != previous)
+		LatteGPUState_markRegistersDirty(Latte::REGADDR::VGT_DMA_INDEX_TYPE, 1);
 	return cmd;
 }
 
@@ -580,8 +611,10 @@ LatteCMDPtr LatteCP_itNumInstances(LatteCMDPtr cmd, uint32 nWords)
 	uint32 numInstances = LatteReadCMD();
 	if (numInstances == 0)
 		numInstances = 1;
+	const uint32 previous = LatteGPUState.contextRegister[Latte::REGADDR::VGT_DMA_NUM_INSTANCES];
 	LatteGPUState.contextNew.VGT_DMA_NUM_INSTANCES.set_NUM_INSTANCES(numInstances);
-	LatteGPUState_markRegistersDirty(Latte::REGADDR::VGT_DMA_NUM_INSTANCES, 1);
+	if (LatteGPUState.contextRegister[Latte::REGADDR::VGT_DMA_NUM_INSTANCES] != previous)
+		LatteGPUState_markRegistersDirty(Latte::REGADDR::VGT_DMA_NUM_INSTANCES, 1);
 	return cmd;
 }
 
@@ -619,11 +652,6 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 	if ((word0 & 0x10) != 0)
 	{
 		// wait for memory address
-#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-		const uint64 diagnosticWaitTicksBefore = performanceMonitor.gpuTime_fenceTime.getCurrentSumForDiagnostics();
-		const uint64 diagnosticVblanksBefore = LatteUwpGetDiagnosticVblankCount();
-		const uint32 diagnosticInitial = _swapEndianU32(*fencePtr) & fenceMask;
-#endif
 		performanceMonitor.gpuTime_fenceTime.beginMeasuring();
 		while (true)
 		{
@@ -689,19 +717,6 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 		if (stalls)
 			LatteCP_setWait(LatteCPWait::None);
 		performanceMonitor.gpuTime_fenceTime.endMeasuring();
-#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-		LatteUwpTimingDiagnostics::GuestWait diagnosticWait;
-		diagnosticWait.durationUs = PPCTimer_tscToMicroseconds(
-			performanceMonitor.gpuTime_fenceTime.getCurrentSumForDiagnostics() - diagnosticWaitTicksBefore);
-		diagnosticWait.vblanks = LatteUwpGetDiagnosticVblankCount() - diagnosticVblanksBefore;
-		diagnosticWait.address = physAddr;
-		diagnosticWait.mask = fenceMask;
-		diagnosticWait.compareOp = compareOp;
-		diagnosticWait.reference = fenceValue;
-		diagnosticWait.initial = diagnosticInitial;
-		diagnosticWait.finalValue = _swapEndianU32(*fencePtr) & fenceMask;
-		LatteUwpRecordGuestWait(diagnosticWait, stalls);
-#endif
 	}
 	else
 	{
@@ -932,12 +947,12 @@ MPTR _tempIndexArrayMPTR = MPTR_NULL;
 
 LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassContext& drawPassCtx)
 {
+	cemu_assert(nWords >= 2);
 	uint32 count = LatteReadCMD();
 	uint32 ukn1 = LatteReadCMD();
 	// reserve array for index data	
 	if (_tempIndexArrayMPTR == MPTR_NULL)
 		_tempIndexArrayMPTR = coreinit_allocFromSysArea(0x4000 * sizeof(uint32), 0x4);
-
 	LatteGPUState.currentDrawCallTick = GetTickCount();
 	// calculate size of index data in packet and read indices
 	uint32 numIndexU32s;
@@ -946,6 +961,7 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 	{
 		// 16bit indices
 		numIndexU32s = (count + 1) / 2;
+		cemu_assert(count < 0x4000*2-1 && numIndexU32s <= nWords-2);
 		memcpy(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), cmd, numIndexU32s * sizeof(uint32));
 		LatteSkipCMD(numIndexU32s);
 		// swap pairs
@@ -961,6 +977,7 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 		// 32bit indices
 		cemu_assert_debug(false); // testing needed
 		numIndexU32s = count;
+		cemu_assert(numIndexU32s < 0x4000 && numIndexU32s <= nWords-2);
 		memcpy(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), cmd, numIndexU32s * sizeof(uint32));
 		LatteSkipCMD(numIndexU32s);
 		LatteIndices_invalidate(memory_getPointerFromVirtualOffset(_tempIndexArrayMPTR), numIndexU32s * sizeof(uint32));
@@ -970,8 +987,6 @@ LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 		cemuLog_log(LogType::Force, "itDrawImmediate - Unsupported index type");
 		return cmd;
 	}
-	cemu_assert_debug(nWords == (2 + numIndexU32s)); // verify packet size
-
 	drawPassCtx.executeDraw(count, false, _tempIndexArrayMPTR);
 	return cmd;
 }
@@ -1381,14 +1396,8 @@ void LatteCP_processCommandBuffer_continuousDrawPass(DrawPassContext& drawPassCt
 
 void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 {
-#if defined(CEMU_UWP) && defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
-	LatteUwpVblankBoundaryCadence vblankBoundaryCadence;
-#endif
 #if defined(CEMU_UWP)
 	std::unique_lock<std::recursive_mutex> rendererLock(g_rendererMutex);
-#endif
-#if defined(CEMU_UWP) && defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-	LatteUwpCommandBatchScope diagnosticBatch;
 #endif
 	while (true)
 	{
@@ -1667,22 +1676,6 @@ void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 				LatteCP_dumpCommandBufferError(cmdStart, cmdEnd, cmd);
 				cemu_assert_debug(false);
 			}
-#if defined(CEMU_UWP) && defined(CEMU_UWP_VBLANK_BOUNDARY_EXPERIMENT)
-			if (vblankBoundaryCadence.ShouldCheckTimer())
-			{
-				cemu_assert_debug(!drawPassCtx.isWithinDrawPass());
-				if (!drawPassCtx.isWithinDrawPass() && LatteUwpIsVblankBoundaryExperimentEnabled())
-				{
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-					const uint64 vblanksBeforeBoundaryCheck = LatteUwpGetDiagnosticVblankCount();
-#endif
-					LatteTiming_HandleTimedVsync(false);
-#if defined(CEMU_UWP_PERFORMANCE_EXPERIMENT)
-					LatteUwpRecordBoundaryTimerCheck(LatteUwpGetDiagnosticVblankCount() - vblanksBeforeBoundaryCheck);
-#endif
-				}
-			}
-#endif
 		}
 		cemu_assert_debug(cmd == cmdEnd);
 	}

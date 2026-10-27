@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "Common/UwpProfiling.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
 #if defined(CEMU_UWP)
@@ -173,6 +174,8 @@ struct LatteUwpTextureUnitMemo
 LatteUwpTextureUnitMemo s_uwpTextureUnitMemo[LATTE_CEMU_GS_TEX_UNIT_BASE + Latte::GPU_LIMITS::NUM_TEXTURES_PER_STAGE]{};
 uint64 g_uwpTextureLookupTicks = 0;
 uint64 g_uwpTextureChangeTicks = 0;
+uint64 g_uwpTextureReloadTicks = 0;
+uint64 g_uwpTextureReloadCount = 0;
 uint64 g_uwpTextureLookupMemoHits = 0;
 uint64 g_uwpTextureLookupMemoMisses = 0;
 #endif
@@ -184,7 +187,7 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 		sint32 textureIndex = shaderContext->textureUnitList[z];
 		const auto& texRegister = texRegBase[textureIndex];
 #if defined(CEMU_UWP)
-		const uint64 lookupStarted = __rdtsc();
+		const uint64 lookupStarted = UwpProfTick();
 #endif
 
 		// get physical address of texture data
@@ -281,7 +284,7 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 #endif
 		}
 #if defined(CEMU_UWP)
-		const uint64 lookupDone = __rdtsc();
+		const uint64 lookupDone = UwpProfTick();
 		g_uwpTextureLookupTicks += lookupDone - lookupStarted;
 #endif
 		if (!textureView)
@@ -343,8 +346,8 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 		}
 		// check for changes
 #if defined(CEMU_UWP)
-		const uint64 changeStarted = __rdtsc();
-		struct ChangeTimer { uint64 start; ~ChangeTimer() { g_uwpTextureChangeTicks += __rdtsc() - start; } } changeTimer{ changeStarted };
+		const uint64 changeStarted = UwpProfTick();
+		struct ChangeTimer { uint64 start; ~ChangeTimer() { g_uwpTextureChangeTicks += UwpProfTick() - start; } } changeTimer{ changeStarted };
 #endif
 		if (LatteTC_HasTextureChanged(textureView->baseTexture) || swizzleChanged)
 		{
@@ -359,7 +362,14 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 				}
 			}
 			debug_printf("Reload reason: Data-change when bound as texture (new hash 0x%08x)\n", textureView->baseTexture->texDataHash2);
+#if defined(CEMU_UWP)
+			const uint64 reloadStarted = UwpProfTick();
+#endif
 			LatteTexture_ReloadData(textureView->baseTexture);
+#if defined(CEMU_UWP)
+			g_uwpTextureReloadTicks += UwpProfTick() - reloadStarted;
+			++g_uwpTextureReloadCount;
+#endif
 		}
 		LatteTexture* baseTexture = textureView->baseTexture;
 		if (baseTexture->reloadFromDynamicTextures)
