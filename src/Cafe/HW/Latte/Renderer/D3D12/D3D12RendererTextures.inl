@@ -5,7 +5,7 @@ void D3D12Renderer::rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo)
 {
 	if (!t_recordContext)
 		m_latteActiveFBO = static_cast<CachedFBOD3D12*>(cfbo);
-	D3D12_QUEUE_RECORDING(rendertarget_bindFramebufferObject(cfbo));
+	D3D12_QUEUE_RECORDING_AND_RETURN(rendertarget_bindFramebufferObject(cfbo));
 #if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
 	if (m_activeFBO && m_activeFBO != cfbo && D3D12ShouldTraceGpu())
 		TraceFboAttachments("fbo_attachment_unbind", "before_unbind", 0, 0,
@@ -54,7 +54,7 @@ void D3D12Renderer::NotifyTextureDeletion(LatteTexture* texture)
 {
 	if (!t_isRecorderThread)
 		m_latteBoundTextures.fill(nullptr);
-	D3D12_QUEUE_RECORDING_KIND(Sync, NotifyTextureDeletion(texture));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Sync, NotifyTextureDeletion(texture));
 	if (!texture)
 		return;
 	DropRetainedFeedbackCopies();
@@ -681,7 +681,7 @@ void D3D12Renderer::texture_setLatteTexture(LatteTextureView* textureView, uint3
 			return;
 		m_latteBoundTextures[textureUnit] = textureView;
 	}
-	D3D12_QUEUE_RECORDING_KIND(State, texture_setLatteTexture(textureView, textureUnit));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(State, texture_setLatteTexture(textureView, textureUnit));
 	if (textureUnit >= m_boundTextures.size())
 		return;
 	if (m_boundTextures[textureUnit] != textureView)
@@ -726,7 +726,9 @@ void D3D12Renderer::texture_setLatteTexture(LatteTextureView* textureView, uint3
 
 void D3D12Renderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth)
 {
-	if (ShouldQueueRecording())
+	// Copy traces create core-registered views. Keep the entire traced copy on Latte under the
+	// exclusive scope below: a queued copy could recreate a view after Latte detached its texture.
+	if (ShouldQueueRecording() && !D3D12ShouldTrace())
 	{
 		// only incompatible formats and depth/multisampled copies can fall back to the surface-copy draw, which
 		// creates views and tracks GPU writes in core state; every other copy is recording work only

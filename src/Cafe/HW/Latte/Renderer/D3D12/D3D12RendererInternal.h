@@ -95,10 +95,11 @@
 #include <utility>
 #include <vector>
 
-// queue the call for the recording thread when the Latte side makes it; arguments are captured by value
-#define D3D12_QUEUE_RECORDING(...) \
+// Queue the call with value-captured arguments, then return from the caller when queued.
+// Keep AND_RETURN in these names: code below the macro only runs on the inline path.
+#define D3D12_QUEUE_RECORDING_AND_RETURN(...) \
 	do { if (ShouldQueueRecording()) { QueueRecording([=, this, opName_ = __func__]() { m_gpuWatchdog.NoteCall(opName_); __VA_ARGS__; }); return; } } while (false)
-#define D3D12_QUEUE_RECORDING_KIND(kind, ...) do { if (ShouldQueueRecording()) { QueueRecording([=, this, opName_ = __func__]() { m_gpuWatchdog.NoteCall(opName_); __VA_ARGS__; }, RecordOpKind::kind); return; } } while (false)
+#define D3D12_QUEUE_RECORDING_KIND_AND_RETURN(kind, ...) do { if (ShouldQueueRecording()) { QueueRecording([=, this, opName_ = __func__]() { m_gpuWatchdog.NoteCall(opName_); __VA_ARGS__; }, RecordOpKind::kind); return; } } while (false)
 // the rest of the function uses recording state directly: wait for queued work and keep the recorder out
 #define D3D12_EXCLUSIVE_RECORDING() RecordingExclusiveScope recordingExclusiveScope(this)
 

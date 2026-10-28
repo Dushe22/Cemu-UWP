@@ -15,6 +15,7 @@ The Xbox/UWP fork renders with Direct3D 12 (`src/Cafe/HW/Latte/Renderer/D3D12/`)
 Rules that keep the threads correct:
 - Anything that reads or changes Latte core state (texture cache, views, FBO cache, registers) runs on Latte. Only the D3D12 recording goes to the recorder.
 - An entry point either queues an operation (`QueueRecording`, with a copy of the data it needs) or takes `RecordingExclusiveScope`, which drains the queue and runs inline.
+- `D3D12_QUEUE_RECORDING_AND_RETURN` and `D3D12_QUEUE_RECORDING_KIND_AND_RETURN` return from the calling function when they queue the operation. Their names must keep `AND_RETURN`; statements below them run only on the inline path. `QueueRecording` itself does not return from its caller.
 - Objects freed by the core are queued and released in order on the recorder side (`texture_destroyView`, `texture_destroy`, `FlushPendingDestroys`).
 - `SwapBuffers` keeps Latte at most one frame ahead (`WaitForQueuedSwaps`).
 
@@ -46,3 +47,62 @@ Settings > Graphics > "Detailed performance logs" (applies when a game starts) w
 ## Tests and CI
 
 `tools\tests\run_all.bat` builds and runs the isolated tests (record ring with one and two stages, pipeline prewarm policy, HLSL pruner byte-identical DXIL). `.github/workflows/uwp_checks.yml` runs them and a clang-format check of changed lines on pushes to `experimental`; the full UWP build is a manual run. `-DCEMU_UWP_STATIC_ANALYSIS=ON` adds MSVC `/analyze` to the D3D12 sources.
+
+## Draw extraction (0.3.5.24)
+
+`draw_execute` delegates to `PrepareDrawHead`, which keeps the existing draw accounting, device check,
+profile, exclusive logic-op scope and stream-out finalizer alive through queuing and Latte bookkeeping.
+`DecodeDrawIndices` decodes the guest indices before buffer synchronization. The head resolves the
+shaders, pipeline identity, stencil policy, uniforms and register snapshot at the same points as before.
+
+`DrawTailPacket` explicitly stores every former value capture of `recordDraw`: draw arguments,
+decoded-index handle/range, shaders, pipeline identity, topology, cull/polygon state, target mask,
+logic-op/stencil/stream-out decisions, uniform updates and the conditional profile/diagnostic flags.
+The head initializes it at the old closure boundary. Register bytes still travel in the ring entry,
+and shader/index pointers keep the existing queued lifetime; the packet does not own those objects.
+Do not replace a frozen packet value with a later read from Latte or a renderer member.
+
+`RecordDrawTail` applies the register delta and uniform updates, then runs `PrepareDrawTail`,
+`EmitDrawTail` and `RetireDrawTail` on the same recorder thread (or inline under the same original rules).
+`DrawTailState` holds only the temporary results shared by these helpers. Failed preparation or emission
+returns to `RecordDrawTail`, whose finalizers still retire scratch and finish profiling.
+`PrepareDrawTailTables` is also called by emission after feedback copies when those are required;
+preparing tables earlier on that path would use the wrong SRVs. `FinishDrawOnLatte` tracks target writes
+and queues the readback submit after the draw. Stream-out finish remains last on leaving the head.
+
+## Memory translation-unit assessment (27 October 2026)
+
+`D3D12RendererMemory.inl` can become a separate `.cpp`, but remains included for this change.
+Its entire body is under `CEMU_UWP`; moving it must retain that guard, including scratch/copy methods.
+The exact file-local dependencies outside the class are:
+
+| Dependency in `D3D12Renderer.cpp` | Required treatment before moving |
+|---|---|
+| `kD3D12ScratchTexturePoolMaxEntries` (32), `kD3D12ScratchTexturePoolMaxBytes` (256 MiB) | Share one definition with scratch users; do not create independent budgets |
+| `D3D12ScratchTextureDescMatches` | Share this pure full-resource-description comparison |
+| `MixGameDescriptorTableKey` | Share the exact hash mixer with descriptor/copy caches |
+| `D3D12TraceEvent` and its anonymous-namespace `D3D12TraceSink` | Preserve `game_pipeline_recipe_pressure_discard` in diagnostic builds; the current `D3D12_RENDERER_SEPARATE_PART` macro drops trace events, so using it unchanged would lose this event |
+
+The remaining shared mutable state is **class-owned**, rather than file-local:
+
+- Memory recovery shares pipeline/prewarm maps, their mutex/atomics, deferred-release queues,
+  command-list/fence state, descriptor manager and upload allocator with Pipelines and Commands.
+- Scratch pools, command scratch, feedback/retained copies, their lookup arrays and `m_activeFBO`
+  are shared with Feedback, Draw, Textures and Commands; their recording order and fence retirement stay unchanged.
+- The texture-copy cache and content generations are shared with Textures/Feedback/Draw.
+  `FeedbackSourceGeneration` is already a renderer member defined in Feedback, so it only needs normal linkage.
+- Function-local static `lastLoggedTrimPass` stays private to memory-pressure logging.
+
+`LatteGPUState`, the core texture cache, `MemoryBudgetService` and `LatteUwpHitchScope` are declared
+by existing headers; no new global state or copied texture cache is needed. A future move can use
+the private header for pure helpers/constants and a diagnostic trace bridge, add the `.cpp` to
+`src/Cafe/CMakeLists.txt`, and remove the include. This assessment adds no new synchronization or runtime behavior.
+
+## Diagnostic texture copy ownership
+
+`texture_copyImageSubData` queues copies only while `D3D12ShouldTrace()` is false. Copy traces call
+`GetOrCreateView`, which registers views in Latte-owned lookup caches. With tracing active the copy runs
+on Latte through the existing `D3D12_EXCLUSIVE_RECORDING` scope, after draining earlier commands.
+Queuing that diagnostic work can recreate a view after the core detached its texture; deferred physical
+destruction would then leave a lookup view pointing at a freed texture. Preserve this ownership rule
+when changing copy scheduling. Non-diagnostic Release keeps its existing queued copy path.

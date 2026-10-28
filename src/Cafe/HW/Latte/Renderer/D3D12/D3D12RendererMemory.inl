@@ -786,7 +786,7 @@ void D3D12Renderer::DropRetainedFeedbackCopies(LatteTexture* modifiedTexture)
 
 void D3D12Renderer::SurfaceSync(Latte::E_COHER_CNTL coher, MPTR address, uint32 size)
 {
-	D3D12_QUEUE_RECORDING_KIND(Both, SurfaceSync(coher, address, size));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Both, SurfaceSync(coher, address, size));
 	// a guest color-buffer flush makes earlier draws visible to texture reads, so feedback copies are refreshed
 	if (static_cast<uint32>(coher & (Latte::E_COHER_CNTL::CB_ACTION_ENA | Latte::E_COHER_CNTL::CB_ALL_DEST_BASE_ENA)) != 0)
 		DropRetainedFeedbackCopies();

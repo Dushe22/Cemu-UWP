@@ -620,6 +620,18 @@ private:
 		BackFlipped,
 	};
 
+	struct DrawIndices;
+	struct DrawTailPacket;
+	struct DrawTailState;
+	DrawIndices DecodeDrawIndices(MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, uint32 count, Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE primitiveMode);
+	void PrepareDrawHead(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext);
+	void RecordDrawTail(DrawTailPacket& packet, const uint8* recordDeltaData);
+	void PrepareDrawTailTables(const DrawTailPacket& packet, DrawTailState& state);
+	bool PrepareDrawTail(const DrawTailPacket& packet, DrawTailState& state);
+	bool EmitDrawTail(const DrawTailPacket& packet, DrawTailState& state);
+	void RetireDrawTail(const DrawTailPacket& packet, DrawTailState& state);
+	void FinishDrawOnLatte(bool hasPixelShader, bool noRasterizationOutput);
+
 	void CreateDevice();
 	void CreateCommandObjects();
 	void CreateRtvHeap();

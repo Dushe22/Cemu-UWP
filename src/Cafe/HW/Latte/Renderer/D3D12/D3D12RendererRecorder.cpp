@@ -4,7 +4,7 @@
 
 void D3D12Renderer::renderTarget_setViewport(float x, float y, float width, float height, float nearZ, float farZ, bool halfZ)
 {
-	D3D12_QUEUE_RECORDING(renderTarget_setViewport(x, y, width, height, nearZ, farZ, halfZ));
+	D3D12_QUEUE_RECORDING_AND_RETURN(renderTarget_setViewport(x, y, width, height, nearZ, farZ, halfZ));
 	// halfZ is applied in HLSL SET_POSITION; D3D12 clips to 0..w before the viewport
 	(void)halfZ;
 	m_currentViewport.TopLeftX = x;
@@ -23,7 +23,7 @@ void D3D12Renderer::renderTarget_setViewport(float x, float y, float width, floa
 
 void D3D12Renderer::renderTarget_setScissor(sint32 scissorX, sint32 scissorY, sint32 scissorWidth, sint32 scissorHeight)
 {
-	D3D12_QUEUE_RECORDING(renderTarget_setScissor(scissorX, scissorY, scissorWidth, scissorHeight));
+	D3D12_QUEUE_RECORDING_AND_RETURN(renderTarget_setScissor(scissorX, scissorY, scissorWidth, scissorHeight));
 	m_currentScissor.left = scissorX;
 	m_currentScissor.top = scissorY;
 	m_currentScissor.right = scissorX + scissorWidth;
@@ -66,7 +66,7 @@ void D3D12Renderer::rendertarget_destroyCachedFBO(LatteCachedFBO* cfbo)
 {
 	if (!t_recordContext && m_latteActiveFBO == cfbo)
 		m_latteActiveFBO = nullptr;
-	D3D12_QUEUE_RECORDING_KIND(Sync, rendertarget_destroyCachedFBO(cfbo));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Sync, rendertarget_destroyCachedFBO(cfbo));
 	if (m_shutdownComplete)
 	{
 		delete cfbo;
@@ -79,7 +79,7 @@ void D3D12Renderer::texture_destroyView(LatteTextureView* view)
 {
 	if (!t_isRecorderThread)
 		m_latteBoundTextures.fill(nullptr);
-	D3D12_QUEUE_RECORDING_KIND(Sync, texture_destroyView(view));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Sync, texture_destroyView(view));
 	if (m_shutdownComplete)
 	{
 		delete view;
@@ -92,7 +92,7 @@ void D3D12Renderer::texture_destroy(LatteTexture* texture)
 {
 	if (!t_isRecorderThread)
 		m_latteBoundTextures.fill(nullptr);
-	D3D12_QUEUE_RECORDING_KIND(Sync, texture_destroy(texture));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Sync, texture_destroy(texture));
 	if (m_shutdownComplete)
 	{
 		delete texture;

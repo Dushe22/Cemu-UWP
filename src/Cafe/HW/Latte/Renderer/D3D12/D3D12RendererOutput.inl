@@ -1130,7 +1130,7 @@ void D3D12Renderer::Flush(bool waitIdle)
 		WaitForIdle();
 		return;
 	}
-	D3D12_QUEUE_RECORDING_KIND(Command, Flush(false));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, Flush(false));
 	if (waitIdle)
 		WaitForIdle();
 	else
@@ -1139,7 +1139,7 @@ void D3D12Renderer::Flush(bool waitIdle)
 
 void D3D12Renderer::NotifyLatteCommandProcessorIdle()
 {
-	D3D12_QUEUE_RECORDING_KIND(Command, NotifyLatteCommandProcessorIdle());
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, NotifyLatteCommandProcessorIdle());
 	if (m_submitOnIdle)
 		Flush(false);
 	else
@@ -1150,7 +1150,7 @@ void D3D12Renderer::NotifyLatteCommandProcessorIdle()
 
 void D3D12Renderer::NotifyDepthBufferExpanded(MPTR depthBufferMPTR, Latte::E_GX2SURFFMT depthBufferFormat, uint32 width, uint32 height, uint32 pitch, uint32 viewMip, uint32 viewFirstSlice, uint32 viewNumSlices)
 {
-	D3D12_QUEUE_RECORDING_KIND(Command, NotifyDepthBufferExpanded(depthBufferMPTR, depthBufferFormat, width, height, pitch, viewMip, viewFirstSlice, viewNumSlices));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, NotifyDepthBufferExpanded(depthBufferMPTR, depthBufferFormat, width, height, pitch, viewMip, viewFirstSlice, viewNumSlices));
 	if (!m_commandListOpen)
 		ResetCommandList();
 

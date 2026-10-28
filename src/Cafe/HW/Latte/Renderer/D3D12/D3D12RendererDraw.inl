@@ -80,7 +80,7 @@ void D3D12Renderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 buffer
 
 void D3D12Renderer::bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size)
 {
-	D3D12_QUEUE_RECORDING_KIND(Command, bufferCache_copy(srcOffset, dstOffset, size));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, bufferCache_copy(srcOffset, dstOffset, size));
 	stdx::scope_exit deviceCheck([&]() { CheckDeviceAfterOperation("buffer copy", [&]() {
 		return fmt::format("src={} dst={} size={} bufferSize={}", srcOffset, dstOffset, size, (uint64)m_bufferCache.size); }); });
 	if (!m_bufferCache.resource || size == 0)
@@ -126,7 +126,7 @@ void D3D12Renderer::bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 
 
 void D3D12Renderer::bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size)
 {
-	D3D12_QUEUE_RECORDING_KIND(Command, bufferCache_copyStreamoutToMainBuffer(srcOffset, dstOffset, size));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, bufferCache_copyStreamoutToMainBuffer(srcOffset, dstOffset, size));
 	if (!m_streamoutBuffer.resource || !m_bufferCache.resource || size == 0)
 		return;
 	if (!m_commandListOpen)
@@ -178,7 +178,7 @@ void D3D12Renderer::buffer_bindVertexBuffer(uint32 bufferIndex, uint32 offset, u
 
 void D3D12Renderer::buffer_bindUniformBuffer(LatteConst::ShaderType shaderType, uint32 bufferIndex, uint32 offset, uint32 size)
 {
-	D3D12_QUEUE_RECORDING(buffer_bindUniformBuffer(shaderType, bufferIndex, offset, size));
+	D3D12_QUEUE_RECORDING_AND_RETURN(buffer_bindUniformBuffer(shaderType, bufferIndex, offset, size));
 	const size_t stageIndex = (size_t)shaderType;
 	if (stageIndex >= m_uniformBindings.size() || bufferIndex >= m_uniformBindings[stageIndex].size())
 		return;
@@ -215,7 +215,7 @@ void D3D12Renderer::streamout_setupXfbBuffer(uint32 bufferIndex, sint32 ringBuff
 {
 	if (!t_recordContext && bufferIndex < m_latteStreamoutRingOffsets.size())
 		m_latteStreamoutRingOffsets[bufferIndex] = ringBufferOffset;
-	D3D12_QUEUE_RECORDING(streamout_setupXfbBuffer(bufferIndex, ringBufferOffset, rangeAddr, rangeSize));
+	D3D12_QUEUE_RECORDING_AND_RETURN(streamout_setupXfbBuffer(bufferIndex, ringBufferOffset, rangeAddr, rangeSize));
 	if (bufferIndex >= m_streamoutBindings.size())
 		return;
 	m_streamoutBindings[bufferIndex] = { true, ringBufferOffset, rangeAddr, rangeSize };
@@ -230,14 +230,14 @@ void D3D12Renderer::streamout_setupXfbBuffer(uint32 bufferIndex, sint32 ringBuff
 
 void D3D12Renderer::streamout_begin()
 {
-	D3D12_QUEUE_RECORDING_KIND(Command, streamout_begin());
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, streamout_begin());
 	if (!m_commandListOpen)
 		ResetCommandList();
 }
 
 void D3D12Renderer::streamout_rendererFinishDrawcall()
 {
-	D3D12_QUEUE_RECORDING(streamout_rendererFinishDrawcall());
+	D3D12_QUEUE_RECORDING_AND_RETURN(streamout_rendererFinishDrawcall());
 	for (auto& binding : m_streamoutBindings)
 		binding.enabled = false;
 }
@@ -358,7 +358,1152 @@ void D3D12Renderer::draw_beginSequence()
 	}
 }
 
-void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
+// Values frozen at the old [=] closure boundary. Never re-read Latte state on the recorder.
+struct D3D12Renderer::DrawTailPacket
+{
+	uint32 baseVertex;
+	uint32 baseInstance;
+	uint32 instanceCount;
+	uint32 count;
+	LattePrimitiveMode primitiveMode;
+	D3D_PRIMITIVE_TOPOLOGY d3dPrimitiveTopology;
+	Latte::LATTE_PA_SU_SC_MODE_CNTL polygonControlReg;
+	D3D12EffectiveCullState cullState;
+	bool streamoutEnable;
+	bool noRasterizationOutput;
+	uint32 drawLogicOpMode;
+	bool drawDisableNativeLogicOp;
+	Renderer::INDEX_TYPE hostIndexType;
+	uint32 hostIndexCount;
+	uint32 indexMin;
+	uint32 indexMax;
+	Renderer::IndexAllocation indexAllocation;
+	uint32 vertexIdRemapMode;
+	LatteDecompilerShader* vertexShader;
+	LatteDecompilerShader* geometryShader;
+	LatteDecompilerShader* pixelShader;
+	uint32 effectiveRenderTargetMask;
+	D3D12PipelineCompiler::PipelineIdentity identity;
+	uint64 tracePipelineHash;
+	bool usesPointExpansionGS;
+	bool rasterizesPointQuads;
+	bool useStencilTwoPass;
+	bool logicOpNeedsOrderedDestination;
+	bool useOrderedPrimitiveFallback;
+	bool needsFlippedOrderedPipeline;
+	StencilFallbackPass firstStencilPass;
+	StencilFallbackPass flippedStencilPass;
+	bool queueTail;
+	std::array<UniformUpdate, (size_t)LatteConst::ShaderType::TotalCount> uniformUpdates;
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	bool profileThisDraw;
+#endif
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
+	bool priorityStencilDraw;
+#endif
+};
+
+struct D3D12Renderer::DrawIndices
+{
+	Renderer::INDEX_TYPE hostIndexType{};
+	uint32 hostIndexCount{};
+	uint32 indexMin{};
+	uint32 indexMax{};
+	Renderer::IndexAllocation indexAllocation{};
+	uint32 vertexIdRemapMode{};
+};
+
+D3D12Renderer::DrawIndices D3D12Renderer::DecodeDrawIndices(MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, uint32 count, LattePrimitiveMode primitiveMode)
+{
+	DrawIndices indices;
+	auto& hostIndexType = indices.hostIndexType;
+	auto& hostIndexCount = indices.hostIndexCount;
+	auto& indexMin = indices.indexMin;
+	auto& indexMax = indices.indexMax;
+	auto& indexAllocation = indices.indexAllocation;
+	LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMax, hostIndexType, hostIndexCount, indexAllocation);
+	if ((D3D12ShouldTrace() || D3D12ShouldChecksumOutput()) && indexAllocation.mem && hostIndexCount != 0)
+	{
+		const bool primitiveRestartEnabled = GetD3D12PrimitiveRestartEnabled(LatteGPUState.contextNew, primitiveMode, hostIndexType);
+		const uint32 hostRestartIndex = hostIndexType == Renderer::INDEX_TYPE::U16 ?
+			std::numeric_limits<uint16>::max() : std::numeric_limits<uint32>::max();
+		indexMin = std::numeric_limits<uint32>::max();
+		if (hostIndexType == Renderer::INDEX_TYPE::U16)
+		{
+			const auto* indices = static_cast<const uint16*>(indexAllocation.mem);
+			for (uint32 i = 0; i < hostIndexCount; ++i)
+			{
+				if (!primitiveRestartEnabled || indices[i] != static_cast<uint16>(hostRestartIndex))
+					indexMin = std::min<uint32>(indexMin, indices[i]);
+			}
+		}
+		else if (hostIndexType == Renderer::INDEX_TYPE::U32)
+		{
+			const auto* indices = static_cast<const uint32*>(indexAllocation.mem);
+			for (uint32 i = 0; i < hostIndexCount; ++i)
+			{
+				if (!primitiveRestartEnabled || indices[i] != hostRestartIndex)
+					indexMin = std::min(indexMin, indices[i]);
+			}
+		}
+		if (indexMin == std::numeric_limits<uint32>::max())
+			indexMin = 0;
+	}
+	return indices;
+}
+
+struct D3D12Renderer::DrawTailState
+{
+	uint64 nextDrawId{};
+	uint64 s0Mark{};
+	bool measureEmit{};
+	ID3D12PipelineState* pipeline{};
+	ID3D12PipelineState* flippedPipeline{};
+	ID3D12PipelineState* backStencilPipeline{};
+	ID3D12PipelineState* backFlippedStencilPipeline{};
+	D3D12IndexAllocation* d3dIndexAllocation{};
+	DXGI_FORMAT indexFormat{};
+	uint32 indexDataSize{};
+	FeedbackPlan feedbackPlan;
+	GameDescriptorTables drawTables{};
+	D3D12SelectedStencilState selectedStencilState{};
+	uint32 recordedNativeDraws{};
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	bool profileThisDraw{};
+	UwpCpuDrawStage profileStage = UwpCpuDrawStage::PipelineLookup;
+	std::chrono::steady_clock::time_point profileStarted{};
+#endif
+	void Lap(std::atomic<uint64>& counter)
+	{
+		const uint64 now = UwpProfTick();
+		s_uwpRecorderSplit.Add(counter, now - s0Mark);
+		s0Mark = now;
+	}
+	void FinishProfileStage(D3D12Renderer& renderer)
+	{
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+		if (!profileThisDraw)
+			return;
+		const auto now = std::chrono::steady_clock::now();
+		renderer.m_uwpCpuProfileTailTimeNs[(size_t)profileStage] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(now - profileStarted).count();
+		if (profileStage != UwpCpuDrawStage::PipelineLookup)
+			++renderer.m_uwpCpuProfileTailSamples[(size_t)profileStage];
+		profileStarted = now;
+#endif
+	}
+	void SwitchProfileStage(D3D12Renderer& renderer, UwpCpuDrawStage nextStage)
+	{
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+		FinishProfileStage(renderer);
+		profileStage = nextStage;
+#endif
+	}
+};
+
+void D3D12Renderer::PrepareDrawTailTables(const DrawTailPacket& packet, DrawTailState& state)
+{
+	const auto& streamoutEnable = packet.streamoutEnable;
+	const auto& vertexShader = packet.vertexShader;
+	const auto& geometryShader = packet.geometryShader;
+	const auto& pixelShader = packet.pixelShader;
+	const auto& tracePipelineHash = packet.tracePipelineHash;
+	const auto& useStencilTwoPass = packet.useStencilTwoPass;
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const bool profileThisDraw = packet.profileThisDraw;
+#endif
+	auto& drawTables = state.drawTables;
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const auto preTablesStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+#endif
+	++m_tableKeyMemoEpoch;
+	const uint32 resourceDescriptorGeneration = m_descriptorManager->GetShaderVisibleCbvSrvUavRollovers();
+	const uint32 samplerDescriptorGeneration = m_descriptorManager->GetShaderVisibleSamplerRollovers();
+	const bool hasReusableGameNullResourceTable =
+		m_gameNullResourceTable.IsValid() &&
+		m_gameNullResourceTableGeneration == resourceDescriptorGeneration;
+	const bool hasReusableGameNullUavTable =
+		m_gameNullUavTable.IsValid() &&
+		m_gameNullUavTableGeneration == resourceDescriptorGeneration;
+	uint32 gameResourceDescriptorCount = 0;
+	auto countResourceTableMiss = [this, hasReusableGameNullResourceTable, resourceDescriptorGeneration, &gameResourceDescriptorCount](LatteDecompilerShader* shader)
+	{
+		if (!shader)
+		{
+			if (!hasReusableGameNullResourceTable)
+				gameResourceDescriptorCount += GetGameResourceTableDescriptorCount(nullptr);
+			return;
+		}
+		if (!HasCachedGameResourceTable(shader, resourceDescriptorGeneration))
+			gameResourceDescriptorCount += GetGameResourceTableDescriptorCount(shader);
+	};
+	countResourceTableMiss(vertexShader);
+	countResourceTableMiss(pixelShader);
+	countResourceTableMiss(geometryShader);
+	uint32 gameUavDescriptorCount = 0;
+	bool needsNullUavTable = useStencilTwoPass && streamoutEnable;
+	auto countUavTable = [this, &gameUavDescriptorCount, &needsNullUavTable](LatteDecompilerShader* shader)
+	{
+		const uint32 count = GetGameUavTableDescriptorCount(shader);
+		if (count != 0 && m_streamoutBuffer.resource)
+			gameUavDescriptorCount += count;
+		else
+			needsNullUavTable = true;
+	};
+	countUavTable(vertexShader);
+	countUavTable(pixelShader);
+	countUavTable(geometryShader);
+	if (needsNullUavTable && !hasReusableGameNullUavTable)
+		gameUavDescriptorCount += kGameUavDescriptorCount;
+	uint32 gameSamplerDescriptorCount = 0;
+	auto countSamplerTableMiss = [this, samplerDescriptorGeneration, &gameSamplerDescriptorCount](LatteDecompilerShader* shader)
+	{
+		if (!HasCachedGameSamplerTable(shader, samplerDescriptorGeneration))
+			gameSamplerDescriptorCount += GetGameSamplerTableDescriptorCount(shader);
+	};
+	countSamplerTableMiss(vertexShader);
+	countSamplerTableMiss(pixelShader);
+	countSamplerTableMiss(geometryShader);
+	EnsureShaderVisibleDescriptorSpace(gameResourceDescriptorCount + gameUavDescriptorCount,
+									   gameSamplerDescriptorCount);
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const auto tablesStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+	if (profileThisDraw)
+		m_uwpDescriptorSplitNs[3] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(tablesStarted - preTablesStarted).count();
+#endif
+	state.Lap(s_uwpRecorderSplit.tablePrep);
+	t_uwpInDrawTables = true;
+	if (m_gameRootSignature)
+		drawTables = BuildGameDescriptorTables(vertexShader, geometryShader, pixelShader, tracePipelineHash);
+	t_uwpInDrawTables = false;
+	state.Lap(s_uwpRecorderSplit.tables);
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	if (profileThisDraw)
+		m_uwpDescriptorSplitNs[2] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tablesStarted).count();
+#endif
+}
+
+bool D3D12Renderer::PrepareDrawTail(const DrawTailPacket& packet, DrawTailState& state)
+{
+	const auto& count = packet.count;
+	const auto& primitiveMode = packet.primitiveMode;
+	const auto& noRasterizationOutput = packet.noRasterizationOutput;
+	const auto& hostIndexType = packet.hostIndexType;
+	const auto& hostIndexCount = packet.hostIndexCount;
+	const auto& indexAllocation = packet.indexAllocation;
+	const auto& vertexShader = packet.vertexShader;
+	const auto& geometryShader = packet.geometryShader;
+	const auto& pixelShader = packet.pixelShader;
+	const auto& identity = packet.identity;
+	const auto& useStencilTwoPass = packet.useStencilTwoPass;
+	const auto& needsFlippedOrderedPipeline = packet.needsFlippedOrderedPipeline;
+	const auto& firstStencilPass = packet.firstStencilPass;
+	const auto& flippedStencilPass = packet.flippedStencilPass;
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const bool profileThisDraw = packet.profileThisDraw;
+#endif
+	auto& nextDrawId = state.nextDrawId;
+	auto& s0Mark = state.s0Mark;
+	auto& pipeline = state.pipeline;
+	auto& flippedPipeline = state.flippedPipeline;
+	auto& backStencilPipeline = state.backStencilPipeline;
+	auto& backFlippedStencilPipeline = state.backFlippedStencilPipeline;
+	auto& d3dIndexAllocation = state.d3dIndexAllocation;
+	auto& indexFormat = state.indexFormat;
+	auto& indexDataSize = state.indexDataSize;
+	auto& feedbackPlan = state.feedbackPlan;
+	// same heuristic as Vulkan: full-viewport quads (<=6 indices) often build persistent textures and Splatoon ink uses 1600x1600 targets, so those stay synchronous
+	m_gamePipelineAsyncPending = false;
+	// bits say why a draw may not be skipped; logged with slow synchronous pipeline builds
+	m_asyncSkipBlockReasons = 0;
+	if (!GetConfig().async_compile)
+		m_asyncSkipBlockReasons |= 1u << 0;
+	if (!m_activeFBO)
+		m_asyncSkipBlockReasons |= 1u << 1;
+	else if (m_activeFBO->m_size.x == 1600 && m_activeFBO->m_size.y == 1600)
+		m_asyncSkipBlockReasons |= 1u << 2;
+	else if (!m_activeFBO->HasDepthStencilAttachment() && count <= 6)
+		m_asyncSkipBlockReasons |= 1u << 3;
+	// a skipped draw would report zero samples or leave stream-out data unwritten, and the game reads both back
+	if (std::any_of(m_activeOcclusionQueries.begin(), m_activeOcclusionQueries.end(),
+		[](const LatteQueryObjectD3D12* query) { return query && query->m_hasActiveQuery; }))
+		m_asyncSkipBlockReasons |= 1u << 4;
+	if ((vertexShader && vertexShader->hasStreamoutBufferWrite) || (geometryShader && geometryShader->hasStreamoutBufferWrite))
+		m_asyncSkipBlockReasons |= 1u << 5;
+	m_allowAsyncShaderSkip = m_asyncSkipBlockReasons == 0;
+	m_gamePipelineShaderCodeMissing = false;
+	s0Mark = UwpProfTick();
+	pipeline = GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, firstStencilPass);
+	flippedPipeline = needsFlippedOrderedPipeline ?
+		GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, flippedStencilPass) : nullptr;
+	backStencilPipeline = useStencilTwoPass ?
+		GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, StencilFallbackPass::Back) : nullptr;
+	backFlippedStencilPipeline = useStencilTwoPass && needsFlippedOrderedPipeline ?
+		GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, StencilFallbackPass::BackFlipped) : nullptr;
+	state.Lap(s_uwpRecorderSplit.pso);
+	if (!pipeline ||
+		(needsFlippedOrderedPipeline && !flippedPipeline) ||
+		(useStencilTwoPass && !backStencilPipeline) ||
+		(useStencilTwoPass && needsFlippedOrderedPipeline && !backFlippedStencilPipeline))
+	{
+		if (m_gamePipelineAsyncPending)
+		{
+			// shaders still compiling in the background; expected, counted for the 5 s log
+			++m_uwpAsyncSkips;
+			++m_uwpAsyncSkipsByTarget[m_activeFBO ? ((uint32)m_activeFBO->m_size.x << 16) | (uint32)m_activeFBO->m_size.y : 0];
+			return false;
+		}
+#if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
+		++m_correctnessDrawSkippedNoPso;
+#endif
+		++m_droppedDraws[(size_t)(m_gamePipelineShaderCodeMissing ?
+			DroppedDrawReason::MissingShaderCode : DroppedDrawReason::MissingPipeline)];
+		uint64 skipSignature = identity.valid ? identity.pipelineStateHash : 0;
+		skipSignature = std::rotl(skipSignature, 7) ^ (m_activeFBO ? 0x10001ull : 0);
+		skipSignature = std::rotl(skipSignature, 7) ^ (vertexShader ? vertexShader->baseHash : 0);
+		skipSignature = std::rotl(skipSignature, 7) ^ (geometryShader ? geometryShader->baseHash : 0);
+		skipSignature = std::rotl(skipSignature, 7) ^ (pixelShader ? pixelShader->baseHash : 0);
+		skipSignature = std::rotl(skipSignature, 7) ^ 0xD3125C1Bull;
+		if (ShouldLogDrawFailure(skipSignature))
+		{
+			cemuLog_log(LogType::Force, "D3D12: draw skipped because no valid game PSO is available yet (identity={}, fbo={}, vs={:016x}, gs={:016x}, ps={:016x}).",
+						identity.valid ? "valid" : "invalid",
+						m_activeFBO ? "yes" : "no",
+						vertexShader ? vertexShader->baseHash : 0,
+						geometryShader ? geometryShader->baseHash : 0,
+						pixelShader ? pixelShader->baseHash : 0);
+		}
+		D3D12TraceEvent("draw_skip", "reason=no_pso identity={} fbo=0x{:016x} vs=0x{:016x} gs=0x{:016x} ps=0x{:016x} stateHash=0x{:016x}",
+						identity.valid ? 1 : 0,
+						m_activeFBO ? m_activeFBO->key : 0,
+						vertexShader ? vertexShader->baseHash : 0,
+						geometryShader ? geometryShader->baseHash : 0,
+						pixelShader ? pixelShader->baseHash : 0,
+						identity.valid ? identity.pipelineStateHash : 0);
+		return false;
+	}
+
+	uint32 isolationRtAddress = 0;
+	if (m_activeFBO && !m_activeFBO->GetColorAttachments().empty())
+	{
+		const auto& rt0 = m_activeFBO->GetColorAttachments()[0];
+		if (rt0.valid && rt0.view && rt0.view->baseTexture)
+			isolationRtAddress = rt0.view->baseTexture->physAddress;
+	}
+	if (D3D12DrawIsolationMatches(nextDrawId,
+								  identity.pipelineStateHash,
+								  vertexShader ? vertexShader->baseHash : 0,
+								  geometryShader ? geometryShader->baseHash : 0,
+								  pixelShader ? pixelShader->baseHash : 0,
+								  isolationRtAddress))
+	{
+		D3D12TraceEventFlush("draw_isolation_skip",
+							 "draw={} latteDraw={} pipeline=0x{:016x} rt0=0x{:08x} fbo=0x{:016x} vs=0x{:016x} gs=0x{:016x} ps=0x{:016x} primitive={} hostIndexType={} hostIndexCount={} count={} viewport={},{}:{}x{} scissor={},{}-{},{}",
+							 (unsigned long long)nextDrawId,
+							 LatteGPUState.drawCallCounter,
+							 identity.pipelineStateHash,
+							 isolationRtAddress,
+							 m_activeFBO ? m_activeFBO->key : 0,
+							 vertexShader ? vertexShader->baseHash : 0,
+							 geometryShader ? geometryShader->baseHash : 0,
+							 pixelShader ? pixelShader->baseHash : 0,
+							 (uint32)primitiveMode,
+							 (uint32)hostIndexType,
+							 hostIndexCount,
+							 count,
+							 m_currentViewport.TopLeftX,
+							 m_currentViewport.TopLeftY,
+							 m_currentViewport.Width,
+							 m_currentViewport.Height,
+							 m_currentScissor.left,
+							 m_currentScissor.top,
+							 m_currentScissor.right,
+							 m_currentScissor.bottom);
+		cemuLog_log(LogType::Force,
+					"D3D12 isolation: skipped draw={} latteDraw={} pipeline=0x{:016x} rt0=0x{:08x} vs={:016x} gs={:016x} ps={:016x} primitive={} hostCount={}.",
+					(unsigned long long)nextDrawId,
+					LatteGPUState.drawCallCounter,
+					identity.pipelineStateHash,
+					isolationRtAddress,
+					vertexShader ? vertexShader->baseHash : 0,
+					geometryShader ? geometryShader->baseHash : 0,
+					pixelShader ? pixelShader->baseHash : 0,
+					(uint32)primitiveMode,
+					hostIndexCount);
+		m_gameDrawCallsSubmitted++;
+		return false;
+	}
+
+	d3dIndexAllocation = static_cast<D3D12IndexAllocation*>(indexAllocation.rendererInternal);
+	indexFormat = GetD3D12IndexFormat(hostIndexType);
+	const uint32 hostIndexStride = hostIndexType == Renderer::INDEX_TYPE::U16 ? sizeof(uint16) :
+		(hostIndexType == Renderer::INDEX_TYPE::U32 ? sizeof(uint32) : 0);
+	const uint64 indexDataSize64 = (uint64)hostIndexCount * hostIndexStride;
+	indexDataSize = indexDataSize64 <= std::numeric_limits<uint32>::max() ?
+		(uint32)indexDataSize64 : 0;
+	bool indexAllocationValid = d3dIndexAllocation != nullptr;
+	if (d3dIndexAllocation)
+		indexAllocationValid = indexDataSize != 0 &&
+			indexDataSize <= d3dIndexAllocation->size &&
+			d3dIndexAllocation->GetDecodedCapacity() >= d3dIndexAllocation->size;
+	if (hostIndexType != Renderer::INDEX_TYPE::NONE &&
+		(!indexAllocationValid || indexFormat == DXGI_FORMAT_UNKNOWN))
+	{
+#if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
+		++m_correctnessDrawSkippedInvalidIndex;
+#endif
+		++m_droppedDraws[(size_t)DroppedDrawReason::InvalidIndexBuffer];
+		static uint32 s_invalidIndexLogCount = 0;
+		if (D3D12RuntimeLogCapped(s_invalidIndexLogCount, "invalid index buffer", 32))
+		{
+			cemuLog_log(LogType::Force, "D3D12: skipping indexed draw because decoded index buffer is unavailable (hostIndexType={} hostIndexCount={} count={} primitive={}).",
+						(uint32)hostIndexType,
+						hostIndexCount,
+						count,
+						(uint32)primitiveMode);
+		}
+		return false;
+	}
+
+	state.SwitchProfileStage(*this, UwpCpuDrawStage::DescriptorAndFeedbackSetup);
+	if (!noRasterizationOutput)
+		TraceFboAttachments("draw_fbo_attachment_before", "before_draw", nextDrawId, identity.pipelineStateHash, "call=draw_execute stage=pre_state_bind");
+
+	// phase 5 S2b: preparation (feedback detection, descriptor space, tables) runs before any command is recorded;
+	// draws that copy a feedback source need the copies first, so their tables are built after the emission of those
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	m_uwpProfileThisDraw = profileThisDraw;
+#endif
+	s0Mark = UwpProfTick();
+	PlanFeedbackForDraw(vertexShader, geometryShader, noRasterizationOutput ? nullptr : pixelShader, !noRasterizationOutput, feedbackPlan);
+	if (!feedbackPlan.anyCopy)
+		PrepareDrawTailTables(packet, state);
+	return true;
+}
+
+bool D3D12Renderer::EmitDrawTail(const DrawTailPacket& packet, DrawTailState& state)
+{
+	const auto& baseVertex = packet.baseVertex;
+	const auto& baseInstance = packet.baseInstance;
+	const auto& instanceCount = packet.instanceCount;
+	const auto& count = packet.count;
+	const auto& primitiveMode = packet.primitiveMode;
+	const auto& d3dPrimitiveTopology = packet.d3dPrimitiveTopology;
+	const auto& polygonControlReg = packet.polygonControlReg;
+	const auto& cullState = packet.cullState;
+	const auto& streamoutEnable = packet.streamoutEnable;
+	const auto& noRasterizationOutput = packet.noRasterizationOutput;
+	const auto& hostIndexType = packet.hostIndexType;
+	const auto& hostIndexCount = packet.hostIndexCount;
+	const auto& indexMin = packet.indexMin;
+	const auto& indexMax = packet.indexMax;
+	const auto& vertexIdRemapMode = packet.vertexIdRemapMode;
+	const auto& vertexShader = packet.vertexShader;
+	const auto& geometryShader = packet.geometryShader;
+	const auto& pixelShader = packet.pixelShader;
+	const auto& effectiveRenderTargetMask = packet.effectiveRenderTargetMask;
+	const auto& tracePipelineHash = packet.tracePipelineHash;
+	const auto& usesPointExpansionGS = packet.usesPointExpansionGS;
+	const auto& rasterizesPointQuads = packet.rasterizesPointQuads;
+	const auto& useStencilTwoPass = packet.useStencilTwoPass;
+	const auto& logicOpNeedsOrderedDestination = packet.logicOpNeedsOrderedDestination;
+	const auto& useOrderedPrimitiveFallback = packet.useOrderedPrimitiveFallback;
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const bool profileThisDraw = packet.profileThisDraw;
+#endif
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
+	const bool priorityStencilDraw = packet.priorityStencilDraw;
+#endif
+	auto& nextDrawId = state.nextDrawId;
+	auto& s0Mark = state.s0Mark;
+	auto& pipeline = state.pipeline;
+	auto& flippedPipeline = state.flippedPipeline;
+	auto& backStencilPipeline = state.backStencilPipeline;
+	auto& backFlippedStencilPipeline = state.backFlippedStencilPipeline;
+	auto& d3dIndexAllocation = state.d3dIndexAllocation;
+	auto& indexFormat = state.indexFormat;
+	auto& indexDataSize = state.indexDataSize;
+	auto& feedbackPlan = state.feedbackPlan;
+	auto& drawTables = state.drawTables;
+	auto& selectedStencilState = state.selectedStencilState;
+	auto& recordedNativeDraws = state.recordedNativeDraws;
+	// emission
+	if (!m_commandListOpen)
+		ResetCommandList();
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const auto feedbackStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+#endif
+	s0Mark = UwpProfTick();
+	EmitFeedbackForDraw(feedbackPlan);
+	state.Lap(s_uwpRecorderSplit.feedback);
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	if (profileThisDraw)
+	{
+		m_uwpDescriptorSplitNs[0] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - feedbackStarted).count();
+		++m_uwpDescriptorSplitSamples;
+	}
+#endif
+	// Scratch-allocation recovery can submit and reopen on another command slot.
+	if (!m_commandListOpen)
+		ResetCommandList();
+	if (feedbackPlan.anyCopy)
+		PrepareDrawTailTables(packet, state);
+	auto* commandList = GetCurrentCommandSlot().commandList.Get();
+	SetD3D12PipelineState(pipeline);
+	m_gpuWatchdog.RecordGamePipeline(tracePipelineHash,
+		vertexShader ? vertexShader->baseHash : 0,
+		geometryShader ? geometryShader->baseHash : 0,
+		pixelShader ? pixelShader->baseHash : 0);
+	if (m_commandListOpen && m_gameRootSignature)
+		EmitGameDescriptorTables(drawTables, vertexShader, geometryShader, pixelShader, baseVertex, baseInstance, vertexIdRemapMode, tracePipelineHash);
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	const auto tablesFinished = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+#endif
+	state.measureEmit = true;
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	m_uwpProfileThisDraw = false;
+#endif
+	commandList = GetCurrentCommandSlot().commandList.Get();
+	D3D12DescriptorManager::Allocation stencilNullUavTable;
+	D3D12_GPU_DESCRIPTOR_HANDLE stencilVsUavTable{};
+	D3D12_GPU_DESCRIPTOR_HANDLE stencilPsUavTable{};
+	D3D12_GPU_DESCRIPTOR_HANDLE stencilGsUavTable{};
+	if (useStencilTwoPass && streamoutEnable)
+	{
+		stencilVsUavTable = m_gameRootDescriptorTables[10];
+		stencilPsUavTable = m_gameRootDescriptorTables[11];
+		stencilGsUavTable = m_gameRootDescriptorTables[12];
+		stencilNullUavTable = BuildGameUavTable(nullptr);
+	}
+	if (noRasterizationOutput)
+		SetD3D12RenderTargets(0, nullptr, nullptr);
+	else
+		BindFramebuffer(m_activeFBO);
+	SetD3D12Viewport(m_currentViewport);
+	SetD3D12Scissor(m_currentScissor);
+	const float blendConstantAlpha = RecordRegs().CB_BLEND_ALPHA.get_ALPHA();
+	const bool splatBlendConstantAlpha = !m_alphaBlendFactorSupported &&
+		D3D12BlendConstantNeedsAlphaSplat(RecordRegs(), noRasterizationOutput ? nullptr : m_activeFBO);
+	const float blendFactor[4] =
+	{
+		splatBlendConstantAlpha ? blendConstantAlpha : RecordRegs().CB_BLEND_RED.get_RED(),
+		splatBlendConstantAlpha ? blendConstantAlpha : RecordRegs().CB_BLEND_GREEN.get_GREEN(),
+		splatBlendConstantAlpha ? blendConstantAlpha : RecordRegs().CB_BLEND_BLUE.get_BLUE(),
+		blendConstantAlpha,
+	};
+	SetD3D12BlendFactor(blendFactor);
+	selectedStencilState = GetD3D12SelectedStencilState(RecordRegs(),
+		GetD3D12StencilFaceCullState(cullState, rasterizesPointQuads));
+#if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
+	auto& commandSlot = GetCurrentCommandSlot();
+#endif
+	if (useStencilTwoPass)
+	{
+		SetD3D12StencilRef(selectedStencilState.frontRef, selectedStencilState.frontRef);
+	}
+#if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
+	else if (selectedStencilState.needsIndependentFrontBackState &&
+		m_independentFrontBackStencilSupported && commandSlot.commandList8)
+	{
+		SetD3D12StencilRef(selectedStencilState.frontRef, selectedStencilState.backRef);
+	}
+	else
+#endif
+	{
+		SetD3D12StencilRef(selectedStencilState.ref, selectedStencilState.ref);
+	}
+
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
+	if (priorityStencilDraw && D3D12TraceSink::Get().IsPriorityStencilDraw(nextDrawId))
+	{
+		const auto& depth = RecordRegs().DB_DEPTH_CONTROL;
+		const bool back = depth.get_BACK_STENCIL_ENABLE();
+		bool nativeIndependentRefs = false;
+#if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
+		nativeIndependentRefs = !useStencilTwoPass && selectedStencilState.needsIndependentFrontBackState &&
+			m_independentFrontBackStencilSupported && commandSlot.commandList8;
+#endif
+		const bool nativeIndependentMasks = nativeIndependentRefs &&
+			(selectedStencilState.frontReadMask != selectedStencilState.backReadMask ||
+			 selectedStencilState.frontWriteMask != selectedStencilState.backWriteMask);
+		D3D12TraceEvent("draw_stencil_state", "draw={} pipeline=0x{:016x} phase=after_om_bind priority=stencil_enabled snapshotKind=cpu_selected_state gpuStateVerified=0 vs=0x{:016x} gs=0x{:016x} ps=0x{:016x} rawDepthControl=0x{:08x} rawStencilF=0x{:08x} rawStencilB=0x{:08x} nativeDepthEnable={} nativeDepthWrite={} nativeDepthFunc={} stencilEnable={} backEnable={} selectedBack={} selectedRef={} selectedRead=0x{:02x} selectedWrite=0x{:02x} frontRef={} frontRead=0x{:02x} frontWrite=0x{:02x} backRef={} backRead=0x{:02x} backWrite=0x{:02x} independentNeeded={} nativeIndependentRefs={} nativeIndependentMasks={} twoPass={} firstPassRef={} nativeFrontOps=func:{}/fail:{}/zfail:{}/pass:{} nativeBackOps=func:{}/fail:{}/zfail:{}/pass:{} rawColorControl=0x{:08x} rawBlend0=0x{:08x} blendFactor={:.9g},{:.9g},{:.9g},{:.9g} effectiveTargetMask=0x{:08x} dsvFormat={} stencilFormat={}",
+			nextDrawId, tracePipelineHash, vertexShader ? vertexShader->baseHash : 0,
+			geometryShader ? geometryShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0,
+			depth.getRawValue(), RecordRegs().DB_STENCILREFMASK.getRawValue(),
+			RecordRegs().DB_STENCILREFMASK_BF.getRawValue(),
+			depth.get_Z_ENABLE(), depth.get_Z_WRITE_ENABLE(), (uint32)GetD3D12CompareFunc(depth.get_Z_FUNC()),
+			depth.get_STENCIL_ENABLE(), back, selectedStencilState.usedBackFace,
+			selectedStencilState.ref, selectedStencilState.readMask, selectedStencilState.writeMask,
+			selectedStencilState.frontRef, selectedStencilState.frontReadMask, selectedStencilState.frontWriteMask,
+			selectedStencilState.backRef, selectedStencilState.backReadMask, selectedStencilState.backWriteMask,
+			selectedStencilState.needsIndependentFrontBackState, nativeIndependentRefs, nativeIndependentMasks,
+			useStencilTwoPass, useStencilTwoPass ? selectedStencilState.frontRef : selectedStencilState.ref,
+			(uint32)GetD3D12CompareFunc(depth.get_STENCIL_FUNC_F()), (uint32)GetD3D12StencilOp(depth.get_STENCIL_FAIL_F()),
+			(uint32)GetD3D12StencilOp(depth.get_STENCIL_ZFAIL_F()), (uint32)GetD3D12StencilOp(depth.get_STENCIL_ZPASS_F()),
+			(uint32)GetD3D12CompareFunc(back ? depth.get_STENCIL_FUNC_B() : depth.get_STENCIL_FUNC_F()),
+			(uint32)GetD3D12StencilOp(back ? depth.get_STENCIL_FAIL_B() : depth.get_STENCIL_FAIL_F()),
+			(uint32)GetD3D12StencilOp(back ? depth.get_STENCIL_ZFAIL_B() : depth.get_STENCIL_ZFAIL_F()),
+			(uint32)GetD3D12StencilOp(back ? depth.get_STENCIL_ZPASS_B() : depth.get_STENCIL_ZPASS_F()),
+			RecordRegs().CB_COLOR_CONTROL.getRawValue(), RecordRegs().CB_BLENDN_CONTROL[0].getRawValue(),
+			blendFactor[0], blendFactor[1], blendFactor[2], blendFactor[3], effectiveRenderTargetMask,
+			(uint32)m_activeFBO->GetDepthFormat(), (uint32)m_activeFBO->GetStencilFormat());
+	}
+#endif
+
+	if (hostIndexType != Renderer::INDEX_TYPE::NONE &&
+		!EnsureIndexResident(*d3dIndexAllocation, indexDataSize))
+	{
+#if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
+		++m_correctnessDrawSkippedInvalidIndex;
+#endif
+		++m_droppedDraws[(size_t)DroppedDrawReason::IndexUploadFailed];
+		static uint32 s_indexResidencyFailureLogCount = 0;
+		if (D3D12RuntimeLogCapped(s_indexResidencyFailureLogCount, "index upload-ring residency failure", 32))
+		{
+			cemuLog_log(LogType::Force,
+				"D3D12 UWP: skipping indexed draw because {} decoded index bytes could not be made resident for fence {}.",
+				indexDataSize,
+				(unsigned long long)m_nextFenceValue);
+		}
+		return false;
+	}
+	commandList = GetCurrentCommandSlot().commandList.Get();
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	if (profileThisDraw)
+		m_uwpDescriptorSplitNs[4] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tablesFinished).count();
+#endif
+	state.SwitchProfileStage(*this, UwpCpuDrawStage::DrawRecording);
+	if (hostIndexType != Renderer::INDEX_TYPE::NONE)
+	{
+		D3D12_INDEX_BUFFER_VIEW indexView{};
+		ID3D12Resource* indexResource = d3dIndexAllocation->residentResource;
+		indexView.BufferLocation = indexResource->GetGPUVirtualAddress() +
+			d3dIndexAllocation->residentOffset;
+		indexView.SizeInBytes = indexDataSize;
+		indexView.Format = indexFormat;
+		D3D12TraceEvent("draw_index_buffer", "draw={} pipeline=0x{:016x} allocation={} resource={} gpuVA=0x{:016x} size={} format={} hostIndexType={} hostIndexCount={} baseVertex={} indexMin={} indexMax={}",
+						(unsigned long long)nextDrawId,
+						(unsigned long long)tracePipelineHash,
+						(const void*)d3dIndexAllocation,
+						(const void*)indexResource,
+						(unsigned long long)indexView.BufferLocation,
+						indexView.SizeInBytes,
+						(uint32)indexView.Format,
+						(uint32)hostIndexType,
+						hostIndexCount,
+						baseVertex,
+						indexMin,
+						indexMax);
+		if (D3D12ShouldTrace())
+		{
+			const uint32 previewCount = std::min<uint32>(hostIndexCount, 24);
+			std::string indexValues;
+			const uint8* previewData = d3dIndexAllocation->previewData.data();
+			const size_t previewDataSize = d3dIndexAllocation->previewDataSize;
+			for (uint32 i = 0; i < previewCount; ++i)
+			{
+				uint32 value = 0;
+				if (hostIndexType == Renderer::INDEX_TYPE::U16 && (size_t)i * sizeof(uint16) + sizeof(uint16) <= previewDataSize)
+					memcpy(&value, previewData + (size_t)i * sizeof(uint16), sizeof(uint16));
+				else if (hostIndexType == Renderer::INDEX_TYPE::U32 && (size_t)i * sizeof(uint32) + sizeof(uint32) <= previewDataSize)
+					memcpy(&value, previewData + (size_t)i * sizeof(uint32), sizeof(uint32));
+				if (!indexValues.empty())
+					indexValues.push_back(',');
+				fmt::format_to(std::back_inserter(indexValues), "{}", value);
+			}
+			D3D12TraceEvent("draw_index_preview", "draw={} pipeline=0x{:016x} hostIndexType={} hostIndexCount={} previewCount={} previewBytes={} baseVertex={} indexMin={} indexMax={} values={}",
+							(unsigned long long)nextDrawId,
+							(unsigned long long)tracePipelineHash,
+							(uint32)hostIndexType,
+							hostIndexCount,
+							previewCount,
+							previewDataSize,
+							baseVertex,
+							indexMin,
+							indexMax,
+							indexValues);
+		}
+		SetD3D12IndexBuffer(indexView);
+	}
+	else
+	{
+		D3D12TraceEvent("draw_index_buffer", "draw={} pipeline=0x{:016x} allocation=null nonIndexed=1 hostIndexType={} hostIndexCount={} baseVertex={} count={}",
+						(unsigned long long)nextDrawId,
+						(unsigned long long)tracePipelineHash,
+						(uint32)hostIndexType,
+						hostIndexCount,
+						baseVertex,
+						count);
+	}
+	SetD3D12PrimitiveTopology(d3dPrimitiveTopology);
+	const bool dynamicDepthBias = UsesDynamicDepthBias(rasterizesPointQuads);
+	const float dynamicDepthBiasConstant = RecordRegs().PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET();
+	const float dynamicDepthBiasClamp = RecordRegs().PA_SU_POLY_OFFSET_CLAMP.get_CLAMP();
+	const float dynamicDepthBiasSlope = RecordRegs().PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE() / 16.0f;
+	const auto setDrawOffsetConstant = [&](uint32 constantIndex, uint32 value)
+	{
+		if (m_gameRootDrawConstantsValid && m_gameRootDrawConstants[constantIndex] == value)
+			return;
+		commandList->SetGraphicsRoot32BitConstant(6, value, constantIndex);
+		m_gameRootDrawConstants[constantIndex] = value;
+	};
+	// base vertex/instance offsets are applied in HLSL; IA offsets stay zero
+	const auto issueDraw = [&](uint32 start, uint32 drawCount, uint32 startInstance, uint32 drawInstanceCount)
+	{
+		if (dynamicDepthBias)
+			SetD3D12DepthBias(dynamicDepthBiasConstant, dynamicDepthBiasClamp, dynamicDepthBiasSlope);
+		const bool indexed = hostIndexType != Renderer::INDEX_TYPE::NONE;
+		setDrawOffsetConstant(1, indexed ? baseVertex : baseVertex + start);
+		setDrawOffsetConstant(2, baseInstance + startInstance);
+		if (indexed)
+			commandList->DrawIndexedInstanced(drawCount, drawInstanceCount, start, 0, 0);
+		else
+			commandList->DrawInstanced(drawCount, drawInstanceCount, 0, 0);
+	};
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
+	int geometryProbeIndex = -1;
+	// exclude draws that may submit or restart command lists between query Begin/End
+	const auto& probeDepth = RecordRegs().DB_DEPTH_CONTROL;
+	const bool probeDepthWrite = probeDepth.get_Z_ENABLE() && probeDepth.get_Z_WRITE_ENABLE();
+	const bool probeReadonlyColor = probeDepth.get_Z_ENABLE() && !probeDepthWrite;
+	if (m_geometryProbe && !noRasterizationOutput && !streamoutEnable && !geometryShader &&
+		!usesPointExpansionGS && !useOrderedPrimitiveFallback && !useStencilTwoPass &&
+		primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::TRIANGLES &&
+		hostIndexCount >= 3 && instanceCount != 0 && m_activeFBO &&
+		m_activeFBO->depthBuffer.texture && (probeDepthWrite || probeReadonlyColor) &&
+		m_geometryProbe->WantsSample(tracePipelineHash, probeDepthWrite))
+	{
+		const auto* depthView = m_activeFBO->depthBuffer.texture;
+		std::string metadata = fmt::format(
+			"draw={} pipeline=0x{:016x} vs=0x{:016x} ps=0x{:016x} depthAddr=0x{:08x} indices={} instances={} "
+			"baseVertex={} indexMax={} zWrite={} zFunc={} alpha={} alphaFunc={} alphaRef=0x{:08x} "
+			"targetMask=0x{:08x} psOutputMask=0x{:02x} viewport={},{}:{}x{} depthRange={}..{} "
+			"scissor={},{}-{},{} cullFront={} cullBack={} frontFace={} sources={}",
+			nextDrawId, tracePipelineHash, vertexShader ? vertexShader->baseHash : 0,
+			pixelShader ? pixelShader->baseHash : 0, depthView->baseTexture->physAddress,
+			hostIndexCount, instanceCount, baseVertex, indexMax, probeDepthWrite,
+			(uint32)probeDepth.get_Z_FUNC(),
+			RecordRegs().SX_ALPHA_TEST_CONTROL.get_ALPHA_TEST_ENABLE(),
+			(uint32)RecordRegs().SX_ALPHA_TEST_CONTROL.get_ALPHA_FUNC(),
+			RecordRegs().SX_ALPHA_REF.getRawValue(), effectiveRenderTargetMask,
+			pixelShader ? pixelShader->pixelColorOutputMask : 0,
+			m_currentViewport.TopLeftX, m_currentViewport.TopLeftY,
+			m_currentViewport.Width, m_currentViewport.Height,
+			m_currentViewport.MinDepth, m_currentViewport.MaxDepth,
+			m_currentScissor.left, m_currentScissor.top, m_currentScissor.right, m_currentScissor.bottom,
+			cullState.cullFront, cullState.cullBack, (uint32)polygonControlReg.get_FRONT_FACE(),
+			BuildShaderTextureSourceSummary(vertexShader, geometryShader, pixelShader));
+		metadata += " " + BuildGeometryProbeResourceMetadata(vertexShader, geometryShader, pixelShader);
+		geometryProbeIndex = m_geometryProbe->Begin(commandList, tracePipelineHash, probeDepthWrite,
+			m_activeOcclusionQueries.empty(), metadata);
+	}
+#endif
+	auto setUavTable = [this, commandList](uint32 rootIndex, D3D12_GPU_DESCRIPTOR_HANDLE table)
+	{
+		if (rootIndex < m_gameRootDescriptorTableValid.size() &&
+			m_gameRootDescriptorTableValid[rootIndex] &&
+			m_gameRootDescriptorTables[rootIndex].ptr == table.ptr)
+		{
+			return;
+		}
+		commandList->SetGraphicsRootDescriptorTable(rootIndex, table);
+		if (rootIndex < m_gameRootDescriptorTableValid.size())
+		{
+			m_gameRootDescriptorTables[rootIndex] = table;
+			m_gameRootDescriptorTableValid[rootIndex] = true;
+		}
+	};
+	const auto bindFirstPassUavs = [&]()
+	{
+		if (!useStencilTwoPass || !streamoutEnable)
+			return;
+		setUavTable(10, stencilVsUavTable);
+		setUavTable(11, stencilPsUavTable);
+		setUavTable(12, stencilGsUavTable);
+	};
+	const auto bindNullUavs = [&]()
+	{
+		if (!useStencilTwoPass || !streamoutEnable || !stencilNullUavTable.IsValid())
+			return;
+		setUavTable(10, stencilNullUavTable.gpu);
+		setUavTable(11, stencilNullUavTable.gpu);
+		setUavTable(12, stencilNullUavTable.gpu);
+	};
+	if (useOrderedPrimitiveFallback)
+	{
+		const bool primitiveRestartEnabled = GetD3D12PrimitiveRestartEnabled(RecordRegs(), primitiveMode, hostIndexType);
+		const auto primitiveSpans = BuildD3D12OrderedPrimitiveSpans(
+			d3dPrimitiveTopology,
+			hostIndexCount,
+			hostIndexType,
+			d3dIndexAllocation ? d3dIndexAllocation->GetDecodedData() : nullptr,
+			primitiveRestartEnabled);
+		if (primitiveSpans.empty() && hostIndexCount != 0)
+		{
+			cemuLog_log(LogType::Force,
+				"D3D12 UWP: ordered draw fallback could not split topology {} with {} elements; preserving the original draw.",
+				(uint32)d3dPrimitiveTopology, hostIndexCount);
+			issueDraw(0, hostIndexCount, 0, instanceCount);
+			recordedNativeDraws = instanceCount != 0 ? 1 : 0;
+		}
+		else
+		{
+			const uint64 totalLogicalPrimitives = (uint64)primitiveSpans.size() * instanceCount;
+#if defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
+			m_uwpWorkloadProfile.logicalPrimitives += totalLogicalPrimitives;
+#endif
+			uint64 completedLogicalPrimitives = 0;
+			bool refreshLogicDestination = logicOpNeedsOrderedDestination;
+			for (uint32 instance = 0; instance < instanceCount; ++instance)
+			{
+				for (const auto& span : primitiveSpans)
+				{
+					ID3D12PipelineState* firstPipeline = span.flipWinding ? flippedPipeline : pipeline;
+					SetD3D12PipelineState(firstPipeline);
+					if (useStencilTwoPass)
+						SetD3D12StencilRef(selectedStencilState.frontRef, selectedStencilState.frontRef);
+					bindFirstPassUavs();
+					issueDraw(span.start, span.count, instance, 1);
+					++recordedNativeDraws;
+
+					if (useStencilTwoPass)
+					{
+						SetD3D12PipelineState(span.flipWinding ? backFlippedStencilPipeline : backStencilPipeline);
+						SetD3D12StencilRef(selectedStencilState.backRef, selectedStencilState.backRef);
+						bindNullUavs();
+						issueDraw(span.start, span.count, instance, 1);
+						++recordedNativeDraws;
+					}
+
+					++completedLogicalPrimitives;
+					if (refreshLogicDestination && completedLogicalPrimitives < totalLogicalPrimitives &&
+						!RefreshLogicOpScratchCopiesForDraw(nextDrawId))
+					{
+						cemuLog_logOnce(LogType::Force,
+							"D3D12 UWP: logic-op destination refresh failed; later primitives will use the last valid destination snapshot.");
+						refreshLogicDestination = false;
+					}
+				}
+			}
+			bindFirstPassUavs();
+		}
+	}
+	else if (useStencilTwoPass)
+	{
+		issueDraw(0, hostIndexCount, 0, instanceCount);
+		recordedNativeDraws = instanceCount != 0 ? 1 : 0;
+		SetD3D12PipelineState(backStencilPipeline);
+		SetD3D12StencilRef(selectedStencilState.backRef, selectedStencilState.backRef);
+		bindNullUavs();
+		issueDraw(0, hostIndexCount, 0, instanceCount);
+		if (instanceCount != 0)
+			++recordedNativeDraws;
+		bindFirstPassUavs();
+	}
+	else
+	{
+		issueDraw(0, hostIndexCount, 0, instanceCount);
+		recordedNativeDraws = instanceCount != 0 ? 1 : 0;
+	}
+#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
+	if (geometryProbeIndex >= 0)
+		m_geometryProbe->End(commandList, geometryProbeIndex, m_nextFenceValue);
+#endif
+	return true;
+}
+
+void D3D12Renderer::RetireDrawTail(const DrawTailPacket& packet, DrawTailState& state)
+{
+	const auto& instanceCount = packet.instanceCount;
+	const auto& primitiveMode = packet.primitiveMode;
+	const auto& d3dPrimitiveTopology = packet.d3dPrimitiveTopology;
+	const auto& streamoutEnable = packet.streamoutEnable;
+	const auto& noRasterizationOutput = packet.noRasterizationOutput;
+	const auto& hostIndexType = packet.hostIndexType;
+	const auto& hostIndexCount = packet.hostIndexCount;
+	const auto& vertexShader = packet.vertexShader;
+	const auto& geometryShader = packet.geometryShader;
+	const auto& pixelShader = packet.pixelShader;
+	const auto& effectiveRenderTargetMask = packet.effectiveRenderTargetMask;
+	const auto& identity = packet.identity;
+	const auto& usesPointExpansionGS = packet.usesPointExpansionGS;
+	const auto& useStencilTwoPass = packet.useStencilTwoPass;
+	const auto& useOrderedPrimitiveFallback = packet.useOrderedPrimitiveFallback;
+	auto& nextDrawId = state.nextDrawId;
+	auto& pipeline = state.pipeline;
+	auto& selectedStencilState = state.selectedStencilState;
+	auto& recordedNativeDraws = state.recordedNativeDraws;
+	state.SwitchProfileStage(*this, UwpCpuDrawStage::RetirementReadbackAndSubmit);
+	if (recordedNativeDraws != 0 && !noRasterizationOutput && m_activeFBO)
+	{
+		const uint32 pixelOutputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0u;
+		const auto& attachments = m_activeFBO->GetColorAttachments();
+		for (uint32 i = 0; i < attachments.size() && i < 8; ++i)
+		{
+			const bool shaderWritesTarget = (pixelOutputMask & (1u << i)) != 0;
+			const bool targetWriteEnabled = ((effectiveRenderTargetMask >> (i * 4)) & 0xFu) != 0;
+			if (shaderWritesTarget && targetWriteEnabled && attachments[i].valid && attachments[i].view)
+				MarkTextureViewWritten(attachments[i].view);
+		}
+		if (m_activeFBO->HasDepthStencilAttachment() && m_activeFBO->depthBuffer.texture)
+		{
+			const auto& depthControl = RecordRegs().DB_DEPTH_CONTROL;
+			const bool depthWriteEnabled = depthControl.get_Z_ENABLE() && depthControl.get_Z_WRITE_ENABLE();
+			const bool stencilWriteEnabled = m_activeFBO->depthBuffer.hasStencil &&
+				depthControl.get_STENCIL_ENABLE() &&
+				(selectedStencilState.frontWriteMask | selectedStencilState.backWriteMask) != 0;
+			if (depthWriteEnabled || stencilWriteEnabled)
+			{
+				MarkTextureViewWritten(static_cast<LatteTextureViewD3D12*>(m_activeFBO->depthBuffer.texture),
+					stencilWriteEnabled, depthWriteEnabled);
+			}
+		}
+	}
+	D3D12TraceEventFlush("draw_submit", "draw={} pipeline=0x{:016x} hostIndexType={} hostIndexCount={} instances={} primitive={} d3dTopology={} fbo=0x{:016x} noRaster={} pointGS={} rectOrQuad={} descriptorRollovers={} resourceCacheHitMiss={}/{} samplerCacheHitMiss={}/{}",
+						 (unsigned long long)nextDrawId,
+						 identity.pipelineStateHash,
+						 (uint32)hostIndexType,
+						 hostIndexCount,
+						 instanceCount,
+						 (uint32)primitiveMode,
+						 (uint32)d3dPrimitiveTopology,
+						 m_activeFBO ? m_activeFBO->key : 0,
+						 noRasterizationOutput ? 1 : 0,
+						 usesPointExpansionGS ? 1 : 0,
+						 (primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::RECTS || primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::QUADS) ? 1 : 0,
+						 m_descriptorManager ? m_descriptorManager->GetShaderVisibleRollovers() : 0,
+						 (unsigned long long)m_gameResourceTableCacheHits,
+						 (unsigned long long)m_gameResourceTableCacheMisses,
+						 (unsigned long long)m_gameSamplerTableCacheHits,
+						 (unsigned long long)m_gameSamplerTableCacheMisses);
+	if (D3D12ShouldTrace() && !noRasterizationOutput && m_activeFBO)
+	{
+		const std::string sourceSummary = BuildShaderTextureSourceSummary(vertexShader, geometryShader, pixelShader);
+		const auto& colorAttachments = m_activeFBO->GetColorAttachments();
+		for (uint32 i = 0; i < colorAttachments.size(); ++i)
+		{
+			const auto& attachment = colorAttachments[i];
+			if (!attachment.valid || !attachment.view)
+				continue;
+			RecordTextureLineage("draw", attachment.view, nextDrawId, identity.pipelineStateHash, sourceSummary,
+								 fmt::format("primitive={} d3dTopology={} rtIndex={} hostIndexType={} hostIndexCount={} viewport={},{}:{}x{} scissor={},{}-{},{}",
+											 (uint32)primitiveMode,
+											 (uint32)d3dPrimitiveTopology,
+											 i,
+											 (uint32)hostIndexType,
+											 hostIndexCount,
+											 m_currentViewport.TopLeftX,
+											 m_currentViewport.TopLeftY,
+											 m_currentViewport.Width,
+											 m_currentViewport.Height,
+											 m_currentScissor.left,
+											 m_currentScissor.top,
+											 m_currentScissor.right,
+											 m_currentScissor.bottom));
+		}
+		if (m_activeFBO->HasDepthStencilAttachment() && m_activeFBO->depthBuffer.texture)
+		{
+			const auto& depthControl = RecordRegs().DB_DEPTH_CONTROL;
+			const bool depthWriteEnabled = depthControl.get_Z_ENABLE() && depthControl.get_Z_WRITE_ENABLE();
+			const bool stencilWriteEnabled = m_activeFBO->depthBuffer.hasStencil &&
+				depthControl.get_STENCIL_ENABLE() &&
+				selectedStencilState.writeMask != 0;
+			if (depthWriteEnabled || stencilWriteEnabled)
+			{
+				RecordTextureLineage("draw_depth", static_cast<LatteTextureViewD3D12*>(m_activeFBO->depthBuffer.texture), nextDrawId, identity.pipelineStateHash, sourceSummary,
+									 fmt::format("primitive={} hostIndexType={} hostIndexCount={} zWrite={} stencilWrite={} stencilMask=0x{:02x}",
+												 (uint32)primitiveMode,
+												 (uint32)hostIndexType,
+												 hostIndexCount,
+												 depthWriteEnabled ? 1 : 0,
+												 stencilWriteEnabled ? 1 : 0,
+												 (uint32)selectedStencilState.writeMask));
+			}
+			else
+			{
+				D3D12TraceEvent("draw_depth_readonly",
+								"draw={} pipeline=0x{:016x} primitive={} hostIndexType={} hostIndexCount={} zEnable={} zWrite={} stencilEnable={} stencilMask=0x{:02x}",
+								(unsigned long long)nextDrawId,
+								identity.pipelineStateHash,
+								(uint32)primitiveMode,
+								(uint32)hostIndexType,
+								hostIndexCount,
+								depthControl.get_Z_ENABLE() ? 1 : 0,
+								depthControl.get_Z_WRITE_ENABLE() ? 1 : 0,
+								depthControl.get_STENCIL_ENABLE() ? 1 : 0,
+								(uint32)selectedStencilState.writeMask);
+			}
+		}
+	}
+
+#if defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
+	auto& workload = m_uwpWorkloadProfile;
+	// diagnostic state only, never a rendering predicate
+	static std::array<std::pair<uint64, uint32>, 32> s_orObservedPipelines{};
+	static uint32 s_orObservedPipelineCount = 0;
+	static uint32 s_orPassRecordCount = 0;
+	if (m_logicOpEmulationMode == 2 && useOrderedPrimitiveFallback && m_activeFBO &&
+		s_orPassRecordCount < s_orObservedPipelines.size())
+	{
+		auto observed = std::find_if(s_orObservedPipelines.begin(),
+			s_orObservedPipelines.begin() + s_orObservedPipelineCount,
+			[&](const auto& entry) { return entry.first == identity.pipelineStateHash; });
+		const bool firstObservation = observed == s_orObservedPipelines.begin() + s_orObservedPipelineCount;
+		if (firstObservation || recordedNativeDraws > observed->second)
+		{
+			if (firstObservation)
+				++s_orObservedPipelineCount;
+			*observed = { identity.pipelineStateHash, recordedNativeDraws };
+			const uint32 record = ++s_orPassRecordCount;
+			const auto& lcr = RecordRegs();
+			const auto& depth = lcr.DB_DEPTH_CONTROL;
+			const bool hasDepth = m_activeFBO->HasDepthStencilAttachment();
+			const bool hasStencil = hasDepth && m_activeFBO->GetStencilFormat() != DXGI_FORMAT_UNKNOWN;
+			const uint32 outputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0;
+			const uint32 targetMask = GetD3D12EffectiveRenderTargetMask(lcr);
+			sint32 sourceContainsDiscard = -1;
+			if (pixelShader && pixelShader->strBuf_shaderSource && pixelShader->strBuf_shaderSource->getLen() != 0)
+			{
+				const std::string_view source(pixelShader->strBuf_shaderSource->c_str(), pixelShader->strBuf_shaderSource->getLen());
+				sourceContainsDiscard = source.find("discard") != std::string_view::npos ? 1 : 0;
+			}
+			cemuLog_log(LogType::Force,
+				"D3D12 UWP OR pass: record={} pipeline={:016x} native={} indices={} instances={} primitive={} vs={:016x} ps={:016x} gs={:016x} streamout={} stencilSplit={} depthExport={} sourceDiscard={} customPS={} psOut=0x{:02x} targetMask=0x{:08x} scratchEntries={} activeOcclusionQueries={}.",
+				record, identity.pipelineStateHash, recordedNativeDraws, hostIndexCount, instanceCount, (uint32)primitiveMode,
+				vertexShader ? vertexShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0,
+				geometryShader ? geometryShader->baseHash : 0, streamoutEnable, useStencilTwoPass,
+				pixelShader ? pixelShader->depthMask : false, sourceContainsDiscard,
+				pixelShader ? pixelShader->isCustomShader : false, outputMask, targetMask, m_feedbackScratchCopies.size(),
+				m_activeOcclusionQueries.size());
+			cemuLog_log(LogType::Force,
+				"D3D12 UWP OR raster: record={} viewportValid={} viewport=({}, {}) {}x{} depth={}..{} scissorValid={} scissor=({}, {})-({}, {}) depthAttached={} zEnable={} zWrite={} zFunc={} stencilAttached={} stencilEnable={} backEnable={} stencilFuncF/B={}/{} opsF_fail/zfail/zpass={}/{}/{} opsB={}/{}/{} masksF_read/write=0x{:02x}/0x{:02x} masksB=0x{:02x}/0x{:02x} refsF/B={}/{} alphaTest={} alphaFunc={} alphaRefRaw=0x{:08x}.",
+				record, m_boundViewportValid, m_boundViewport.TopLeftX, m_boundViewport.TopLeftY,
+				m_boundViewport.Width, m_boundViewport.Height, m_boundViewport.MinDepth, m_boundViewport.MaxDepth,
+				m_boundScissorValid, m_boundScissor.left, m_boundScissor.top, m_boundScissor.right, m_boundScissor.bottom,
+				hasDepth, depth.get_Z_ENABLE(), depth.get_Z_WRITE_ENABLE(), (uint32)depth.get_Z_FUNC(),
+				hasStencil, depth.get_STENCIL_ENABLE(), depth.get_BACK_STENCIL_ENABLE(),
+				(uint32)depth.get_STENCIL_FUNC_F(), (uint32)depth.get_STENCIL_FUNC_B(),
+				(uint32)depth.get_STENCIL_FAIL_F(), (uint32)depth.get_STENCIL_ZFAIL_F(), (uint32)depth.get_STENCIL_ZPASS_F(),
+				(uint32)depth.get_STENCIL_FAIL_B(), (uint32)depth.get_STENCIL_ZFAIL_B(), (uint32)depth.get_STENCIL_ZPASS_B(),
+				selectedStencilState.frontReadMask, selectedStencilState.frontWriteMask,
+				selectedStencilState.backReadMask, selectedStencilState.backWriteMask,
+				selectedStencilState.frontRef, selectedStencilState.backRef,
+				lcr.SX_ALPHA_TEST_CONTROL.get_ALPHA_TEST_ENABLE(), (uint32)lcr.SX_ALPHA_TEST_CONTROL.get_ALPHA_FUNC(),
+				lcr.SX_ALPHA_REF.getRawValue());
+			const auto& attachments = m_activeFBO->GetColorAttachments();
+			for (uint32 target = 0; target < attachments.size() && target < 8; ++target)
+			{
+				const auto& attachment = attachments[target];
+				if (!attachment.valid || !attachment.view || (outputMask & (1u << target)) == 0 ||
+					((targetMask >> (target * 4)) & 0xF) == 0)
+					continue;
+				auto* texture = attachment.view->GetBaseImage();
+				if (!texture)
+					continue;
+				const auto& resourceDesc = texture->GetDesc();
+				const auto* scratch = GetLogicOpScratchCopy(target);
+				cemuLog_log(LogType::Force,
+					"D3D12 UWP OR target: record={} target={} resourceFormat={} rtvFormat={} scratchSrvFormat={} resourceSize={}x{} arrayDepth={} mips={} samples={} viewMip={}+{} viewSlice={}+{} scratchSize={}x{} writeMask=0x{:x}.",
+					record, target, (uint32)resourceDesc.Format, (uint32)attachment.format,
+					scratch ? (uint32)scratch->srvDesc.Format : 0,
+					resourceDesc.Width, resourceDesc.Height, resourceDesc.DepthOrArraySize, resourceDesc.MipLevels,
+					resourceDesc.SampleDesc.Count, attachment.view->firstMip, attachment.view->numMip,
+					attachment.view->firstSlice, attachment.view->numSlice,
+					scratch ? scratch->requestedDesc.Width : 0, scratch ? scratch->requestedDesc.Height : 0,
+					(targetMask >> (target * 4)) & 0xF);
+			}
+		}
+	}
+	++workload.guestDraws;
+	workload.nativeDraws += recordedNativeDraws;
+	workload.orderedDraws += useOrderedPrimitiveFallback ? 1u : 0u;
+	workload.stencilDraws += useStencilTwoPass ? 1u : 0u;
+	if (m_logicOpEmulationMode < workload.modeDraws.size())
+	{
+		++workload.modeDraws[m_logicOpEmulationMode];
+		workload.modeNativeDraws[m_logicOpEmulationMode] += recordedNativeDraws;
+	}
+	if (recordedNativeDraws > workload.maxNativeDraws)
+	{
+		workload.maxNativeDraws = recordedNativeDraws;
+		workload.maxDrawPipeline = identity.pipelineStateHash;
+		workload.maxDrawVs = vertexShader ? vertexShader->baseHash : 0;
+		workload.maxDrawPs = pixelShader ? pixelShader->baseHash : 0;
+		workload.maxDrawMode = m_logicOpEmulationMode;
+		workload.maxDrawIndices = hostIndexCount;
+		workload.maxDrawInstances = instanceCount;
+	}
+#endif
+	// the submit budget counts guest draws; ordered replays split one draw into many native draws
+	m_recordedDrawcalls += useOrderedPrimitiveFallback ? std::min<uint32>(recordedNativeDraws, 1u) : recordedNativeDraws;
+	m_gameDrawCallsSubmitted++;
+	if (noRasterizationOutput)
+		m_noRasterStreamoutDraws++;
+	if (usesPointExpansionGS)
+		m_pointExpansionDraws++;
+	if (!noRasterizationOutput)
+		LogActiveRenderTargetStats();
+	if (!noRasterizationOutput)
+		TraceFboAttachments("draw_fbo_attachment_after", "after_draw", m_gameDrawCallsSubmitted, identity.pipelineStateHash, "call=draw_execute");
+	static uint32 s_gameDrawSubmittedLogCount = 0;
+	if (D3D12RuntimeLogCapped(s_gameDrawSubmittedLogCount, "game draw submitted", 96))
+	{
+		cemuLog_log(LogType::Force, "D3D12: submitted game draw #{} hostIndexCount={} hostIndexType={} instances={} pipeline=0x{:016x}.",
+					(unsigned long long)m_gameDrawCallsSubmitted,
+					hostIndexCount,
+					(uint32)hostIndexType,
+					instanceCount,
+					identity.pipelineStateHash);
+	}
+	const bool scratchBudgetReached = IsCommandScratchBudgetReached();
+	if (m_recordedDrawcalls >= m_submitThreshold || scratchBudgetReached)
+		ExecuteCurrentCommandList((m_recordedDrawcalls >= m_submitThreshold ? SubmitDrawBudget : 0u) |
+			(scratchBudgetReached ? SubmitScratchBudget : 0u));
+}
+
+void D3D12Renderer::RecordDrawTail(DrawTailPacket& packet, const uint8* recordDeltaData)
+{
+	m_gpuWatchdog.NoteCall("draw");
+	const uint64 s0Start = UwpProfTick();
+	DrawTailState state;
+	state.s0Mark = s0Start;
+	stdx::scope_exit s0Total([&]() { if (s0Start) { s_uwpRecorderSplit.Add(s_uwpRecorderSplit.total, UwpProfTick() - s0Start); s_uwpRecorderSplit.draws.fetch_add(1, std::memory_order_relaxed); } });
+	if (packet.queueTail)
+		ApplyRecordState(recordDeltaData);
+	for (auto& update : packet.uniformUpdates)
+		ApplyGameUniformUpdate(update);
+	m_logicOpEmulationMode = packet.drawLogicOpMode;
+	m_disableNativeLogicOpForDraw = packet.drawDisableNativeLogicOp;
+	state.Lap(s_uwpRecorderSplit.apply);
+	state.nextDrawId = m_gameDrawCallsSubmitted + 1;
+	stdx::scope_exit unusedScratchFinalizer([&]() { RecycleScratchCopiesForDraw(state.nextDrawId); });
+#if defined(LATTE_UWP_DETAILED_PROFILING)
+	state.profileThisDraw = packet.profileThisDraw;
+	state.profileStarted = packet.profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+#endif
+	stdx::scope_exit tailProfileFinalizer([&]() { state.FinishProfileStage(*this); });
+	stdx::scope_exit s0Emit([&]() { if (state.measureEmit) state.Lap(s_uwpRecorderSplit.emit); });
+	if (!PrepareDrawTail(packet, state) || !EmitDrawTail(packet, state))
+		return;
+	RetireDrawTail(packet, state);
+}
+
+void D3D12Renderer::FinishDrawOnLatte(bool hasPixelShader, bool noRasterizationOutput)
+{
+	// Latte-side bookkeeping once the draw is queued: render targets count as GPU-written, and a readback that
+	// started needs its command list submitted
+	if (hasPixelShader && !noRasterizationOutput)
+		LatteRenderTarget_trackUpdates();
+	if (LatteTextureReadback_Update())
+	{
+		auto submitReadback = [this]() { ExecuteCurrentCommandList(SubmitReadback); };
+		if (ShouldQueueRecording())
+			QueueRecording(submitReadback, RecordOpKind::Command);
+		else
+			submitReadback();
+	}
+}
+
+void D3D12Renderer::PrepareDrawHead(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
 {
 	stdx::scope_exit drawAccounting([&]() { LatteGPUState.drawCallCounter++; });
 	stdx::scope_exit deviceCheck([&]() { CheckDeviceAfterOperation("draw", [&]() {
@@ -517,40 +1662,7 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		}
 	}
 	switchProfileStage(UwpCpuDrawStage::IndexDecode);
-	Renderer::INDEX_TYPE hostIndexType{};
-	uint32 hostIndexCount{};
-	uint32 indexMin{};
-	uint32 indexMax{};
-	Renderer::IndexAllocation indexAllocation;
-	uint32 vertexIdRemapMode = 0;
-	LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMax, hostIndexType, hostIndexCount, indexAllocation);
-	if ((D3D12ShouldTrace() || D3D12ShouldChecksumOutput()) && indexAllocation.mem && hostIndexCount != 0)
-	{
-		const bool primitiveRestartEnabled = GetD3D12PrimitiveRestartEnabled(LatteGPUState.contextNew, primitiveMode, hostIndexType);
-		const uint32 hostRestartIndex = hostIndexType == Renderer::INDEX_TYPE::U16 ?
-			std::numeric_limits<uint16>::max() : std::numeric_limits<uint32>::max();
-		indexMin = std::numeric_limits<uint32>::max();
-		if (hostIndexType == Renderer::INDEX_TYPE::U16)
-		{
-			const auto* indices = static_cast<const uint16*>(indexAllocation.mem);
-			for (uint32 i = 0; i < hostIndexCount; ++i)
-			{
-				if (!primitiveRestartEnabled || indices[i] != static_cast<uint16>(hostRestartIndex))
-					indexMin = std::min<uint32>(indexMin, indices[i]);
-			}
-		}
-		else if (hostIndexType == Renderer::INDEX_TYPE::U32)
-		{
-			const auto* indices = static_cast<const uint32*>(indexAllocation.mem);
-			for (uint32 i = 0; i < hostIndexCount; ++i)
-			{
-				if (!primitiveRestartEnabled || indices[i] != hostRestartIndex)
-					indexMin = std::min(indexMin, indices[i]);
-			}
-		}
-		if (indexMin == std::numeric_limits<uint32>::max())
-			indexMin = 0;
-	}
+	auto [hostIndexType, hostIndexCount, indexMin, indexMax, indexAllocation, vertexIdRemapMode] = DecodeDrawIndices(indexDataMPTR, indexType, count, primitiveMode);
 	switchProfileStage(UwpCpuDrawStage::BufferSync);
 	uint8 stageUniformModifiedMask = 0;
 	if (drawcallContext.isFirst || m_drawNeedsFullBufferSync)
@@ -942,896 +2054,52 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 	profileHeadDone = true;
 #endif
 	uwpHeadLap(HeadCollect);
-	auto recordDraw = [=, this, uniformUpdates = std::move(uniformUpdates)](const uint8* recordDeltaData) mutable
+	DrawTailPacket packet
 	{
-	m_gpuWatchdog.NoteCall("draw");
-	const uint64 s0Start = UwpProfTick();
-	uint64 s0Mark = s0Start;
-	auto s0Lap = [&s0Mark](std::atomic<uint64>& counter) { const uint64 now = UwpProfTick(); s_uwpRecorderSplit.Add(counter, now - s0Mark); s0Mark = now; };
-	stdx::scope_exit s0Total([&]() { if (s0Start) { s_uwpRecorderSplit.Add(s_uwpRecorderSplit.total, UwpProfTick() - s0Start); s_uwpRecorderSplit.draws.fetch_add(1, std::memory_order_relaxed); } });
-	if (queueTail)
-		ApplyRecordState(recordDeltaData);
-	for (auto& update : uniformUpdates)
-		ApplyGameUniformUpdate(update);
-	m_logicOpEmulationMode = drawLogicOpMode;
-	m_disableNativeLogicOpForDraw = drawDisableNativeLogicOp;
-	s0Lap(s_uwpRecorderSplit.apply);
-	// the recording side numbers draws; scratch copies made for this draw are recycled when it is recorded
-	const uint64 nextDrawId = m_gameDrawCallsSubmitted + 1;
-	stdx::scope_exit unusedScratchFinalizer([&]() { RecycleScratchCopiesForDraw(nextDrawId); });
+		baseVertex,
+		baseInstance,
+		instanceCount,
+		count,
+		primitiveMode,
+		d3dPrimitiveTopology,
+		polygonControlReg,
+		cullState,
+		streamoutEnable,
+		noRasterizationOutput,
+		drawLogicOpMode,
+		drawDisableNativeLogicOp,
+		hostIndexType,
+		hostIndexCount,
+		indexMin,
+		indexMax,
+		indexAllocation,
+		vertexIdRemapMode,
+		vertexShader,
+		geometryShader,
+		pixelShader,
+		effectiveRenderTargetMask,
+		identity,
+		tracePipelineHash,
+		usesPointExpansionGS,
+		rasterizesPointQuads,
+		useStencilTwoPass,
+		logicOpNeedsOrderedDestination,
+		useOrderedPrimitiveFallback,
+		needsFlippedOrderedPipeline,
+		firstStencilPass,
+		flippedStencilPass,
+		queueTail,
+		std::move(uniformUpdates),
 #if defined(LATTE_UWP_DETAILED_PROFILING)
-	// the tail measures its own stages (the head's timers are gone when it runs on the recording thread); the
-	// pipeline stage was already counted as reached by the head
-	UwpCpuDrawStage tailProfileStage = UwpCpuDrawStage::PipelineLookup;
-	auto tailProfileStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-	auto finishTailProfileStage = [&]()
-	{
-		if (!profileThisDraw)
-			return;
-		const auto now = std::chrono::steady_clock::now();
-		m_uwpCpuProfileTailTimeNs[(size_t)tailProfileStage] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(now - tailProfileStarted).count();
-		if (tailProfileStage != UwpCpuDrawStage::PipelineLookup)
-			++m_uwpCpuProfileTailSamples[(size_t)tailProfileStage];
-		tailProfileStarted = now;
-	};
-	auto switchProfileStage = [&](UwpCpuDrawStage nextStage)
-	{
-		finishTailProfileStage();
-		tailProfileStage = nextStage;
-	};
-	stdx::scope_exit tailProfileFinalizer([&]() { finishTailProfileStage(); });
-#else
-	auto switchProfileStage = [](UwpCpuDrawStage) {};
+		profileThisDraw,
 #endif
-	// same heuristic as Vulkan: full-viewport quads (<=6 indices) often build persistent textures and Splatoon ink uses 1600x1600 targets, so those stay synchronous
-	m_gamePipelineAsyncPending = false;
-	// bits say why a draw may not be skipped; logged with slow synchronous pipeline builds
-	m_asyncSkipBlockReasons = 0;
-	if (!GetConfig().async_compile)
-		m_asyncSkipBlockReasons |= 1u << 0;
-	if (!m_activeFBO)
-		m_asyncSkipBlockReasons |= 1u << 1;
-	else if (m_activeFBO->m_size.x == 1600 && m_activeFBO->m_size.y == 1600)
-		m_asyncSkipBlockReasons |= 1u << 2;
-	else if (!m_activeFBO->HasDepthStencilAttachment() && count <= 6)
-		m_asyncSkipBlockReasons |= 1u << 3;
-	// a skipped draw would report zero samples or leave stream-out data unwritten, and the game reads both back
-	if (std::any_of(m_activeOcclusionQueries.begin(), m_activeOcclusionQueries.end(),
-		[](const LatteQueryObjectD3D12* query) { return query && query->m_hasActiveQuery; }))
-		m_asyncSkipBlockReasons |= 1u << 4;
-	if ((vertexShader && vertexShader->hasStreamoutBufferWrite) || (geometryShader && geometryShader->hasStreamoutBufferWrite))
-		m_asyncSkipBlockReasons |= 1u << 5;
-	m_allowAsyncShaderSkip = m_asyncSkipBlockReasons == 0;
-	m_gamePipelineShaderCodeMissing = false;
-	s0Mark = UwpProfTick();
-	ID3D12PipelineState* pipeline = GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, firstStencilPass);
-	ID3D12PipelineState* flippedPipeline = needsFlippedOrderedPipeline ?
-		GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, flippedStencilPass) : nullptr;
-	ID3D12PipelineState* backStencilPipeline = useStencilTwoPass ?
-		GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, StencilFallbackPass::Back) : nullptr;
-	ID3D12PipelineState* backFlippedStencilPipeline = useStencilTwoPass && needsFlippedOrderedPipeline ?
-		GetGamePipeline(identity, vertexShader, geometryShader, pixelShader, primitiveMode, noRasterizationOutput, hostIndexType, StencilFallbackPass::BackFlipped) : nullptr;
-	s0Lap(s_uwpRecorderSplit.pso);
-	if (!pipeline ||
-		(needsFlippedOrderedPipeline && !flippedPipeline) ||
-		(useStencilTwoPass && !backStencilPipeline) ||
-		(useStencilTwoPass && needsFlippedOrderedPipeline && !backFlippedStencilPipeline))
-	{
-		if (m_gamePipelineAsyncPending)
-		{
-			// shaders still compiling in the background; expected, counted for the 5 s log
-			++m_uwpAsyncSkips;
-			++m_uwpAsyncSkipsByTarget[m_activeFBO ? ((uint32)m_activeFBO->m_size.x << 16) | (uint32)m_activeFBO->m_size.y : 0];
-			return;
-		}
-#if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
-		++m_correctnessDrawSkippedNoPso;
-#endif
-		++m_droppedDraws[(size_t)(m_gamePipelineShaderCodeMissing ?
-			DroppedDrawReason::MissingShaderCode : DroppedDrawReason::MissingPipeline)];
-		uint64 skipSignature = identity.valid ? identity.pipelineStateHash : 0;
-		skipSignature = std::rotl(skipSignature, 7) ^ (m_activeFBO ? 0x10001ull : 0);
-		skipSignature = std::rotl(skipSignature, 7) ^ (vertexShader ? vertexShader->baseHash : 0);
-		skipSignature = std::rotl(skipSignature, 7) ^ (geometryShader ? geometryShader->baseHash : 0);
-		skipSignature = std::rotl(skipSignature, 7) ^ (pixelShader ? pixelShader->baseHash : 0);
-		skipSignature = std::rotl(skipSignature, 7) ^ 0xD3125C1Bull;
-		if (ShouldLogDrawFailure(skipSignature))
-		{
-			cemuLog_log(LogType::Force, "D3D12: draw skipped because no valid game PSO is available yet (identity={}, fbo={}, vs={:016x}, gs={:016x}, ps={:016x}).",
-						identity.valid ? "valid" : "invalid",
-						m_activeFBO ? "yes" : "no",
-						vertexShader ? vertexShader->baseHash : 0,
-						geometryShader ? geometryShader->baseHash : 0,
-						pixelShader ? pixelShader->baseHash : 0);
-		}
-		D3D12TraceEvent("draw_skip", "reason=no_pso identity={} fbo=0x{:016x} vs=0x{:016x} gs=0x{:016x} ps=0x{:016x} stateHash=0x{:016x}",
-						identity.valid ? 1 : 0,
-						m_activeFBO ? m_activeFBO->key : 0,
-						vertexShader ? vertexShader->baseHash : 0,
-						geometryShader ? geometryShader->baseHash : 0,
-						pixelShader ? pixelShader->baseHash : 0,
-						identity.valid ? identity.pipelineStateHash : 0);
-		return;
-	}
-
-	uint32 isolationRtAddress = 0;
-	if (m_activeFBO && !m_activeFBO->GetColorAttachments().empty())
-	{
-		const auto& rt0 = m_activeFBO->GetColorAttachments()[0];
-		if (rt0.valid && rt0.view && rt0.view->baseTexture)
-			isolationRtAddress = rt0.view->baseTexture->physAddress;
-	}
-	if (D3D12DrawIsolationMatches(nextDrawId,
-								  identity.pipelineStateHash,
-								  vertexShader ? vertexShader->baseHash : 0,
-								  geometryShader ? geometryShader->baseHash : 0,
-								  pixelShader ? pixelShader->baseHash : 0,
-								  isolationRtAddress))
-	{
-		D3D12TraceEventFlush("draw_isolation_skip",
-							 "draw={} latteDraw={} pipeline=0x{:016x} rt0=0x{:08x} fbo=0x{:016x} vs=0x{:016x} gs=0x{:016x} ps=0x{:016x} primitive={} hostIndexType={} hostIndexCount={} count={} viewport={},{}:{}x{} scissor={},{}-{},{}",
-							 (unsigned long long)nextDrawId,
-							 LatteGPUState.drawCallCounter,
-							 identity.pipelineStateHash,
-							 isolationRtAddress,
-							 m_activeFBO ? m_activeFBO->key : 0,
-							 vertexShader ? vertexShader->baseHash : 0,
-							 geometryShader ? geometryShader->baseHash : 0,
-							 pixelShader ? pixelShader->baseHash : 0,
-							 (uint32)primitiveMode,
-							 (uint32)hostIndexType,
-							 hostIndexCount,
-							 count,
-							 m_currentViewport.TopLeftX,
-							 m_currentViewport.TopLeftY,
-							 m_currentViewport.Width,
-							 m_currentViewport.Height,
-							 m_currentScissor.left,
-							 m_currentScissor.top,
-							 m_currentScissor.right,
-							 m_currentScissor.bottom);
-		cemuLog_log(LogType::Force,
-					"D3D12 isolation: skipped draw={} latteDraw={} pipeline=0x{:016x} rt0=0x{:08x} vs={:016x} gs={:016x} ps={:016x} primitive={} hostCount={}.",
-					(unsigned long long)nextDrawId,
-					LatteGPUState.drawCallCounter,
-					identity.pipelineStateHash,
-					isolationRtAddress,
-					vertexShader ? vertexShader->baseHash : 0,
-					geometryShader ? geometryShader->baseHash : 0,
-					pixelShader ? pixelShader->baseHash : 0,
-					(uint32)primitiveMode,
-					hostIndexCount);
-		m_gameDrawCallsSubmitted++;
-		return;
-	}
-
-	auto* d3dIndexAllocation = static_cast<D3D12IndexAllocation*>(indexAllocation.rendererInternal);
-	const DXGI_FORMAT indexFormat = GetD3D12IndexFormat(hostIndexType);
-	const uint32 hostIndexStride = hostIndexType == Renderer::INDEX_TYPE::U16 ? sizeof(uint16) :
-		(hostIndexType == Renderer::INDEX_TYPE::U32 ? sizeof(uint32) : 0);
-	const uint64 indexDataSize64 = (uint64)hostIndexCount * hostIndexStride;
-	const uint32 indexDataSize = indexDataSize64 <= std::numeric_limits<uint32>::max() ?
-		(uint32)indexDataSize64 : 0;
-	bool indexAllocationValid = d3dIndexAllocation != nullptr;
-	if (d3dIndexAllocation)
-		indexAllocationValid = indexDataSize != 0 &&
-			indexDataSize <= d3dIndexAllocation->size &&
-			d3dIndexAllocation->GetDecodedCapacity() >= d3dIndexAllocation->size;
-	if (hostIndexType != Renderer::INDEX_TYPE::NONE &&
-		(!indexAllocationValid || indexFormat == DXGI_FORMAT_UNKNOWN))
-	{
-#if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
-		++m_correctnessDrawSkippedInvalidIndex;
-#endif
-		++m_droppedDraws[(size_t)DroppedDrawReason::InvalidIndexBuffer];
-		static uint32 s_invalidIndexLogCount = 0;
-		if (D3D12RuntimeLogCapped(s_invalidIndexLogCount, "invalid index buffer", 32))
-		{
-			cemuLog_log(LogType::Force, "D3D12: skipping indexed draw because decoded index buffer is unavailable (hostIndexType={} hostIndexCount={} count={} primitive={}).",
-						(uint32)hostIndexType,
-						hostIndexCount,
-						count,
-						(uint32)primitiveMode);
-		}
-		return;
-	}
-
-	switchProfileStage(UwpCpuDrawStage::DescriptorAndFeedbackSetup);
-	if (!noRasterizationOutput)
-		TraceFboAttachments("draw_fbo_attachment_before", "before_draw", nextDrawId, identity.pipelineStateHash, "call=draw_execute stage=pre_state_bind");
-
-	// phase 5 S2b: preparation (feedback detection, descriptor space, tables) runs before any command is recorded;
-	// draws that copy a feedback source need the copies first, so their tables are built after the emission of those
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-	m_uwpProfileThisDraw = profileThisDraw;
-#endif
-	s0Mark = UwpProfTick();
-	FeedbackPlan feedbackPlan;
-	PlanFeedbackForDraw(vertexShader, geometryShader, noRasterizationOutput ? nullptr : pixelShader, !noRasterizationOutput, feedbackPlan);
-	GameDescriptorTables drawTables{};
-	auto prepareTables = [&]()
-	{
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-		const auto preTablesStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-#endif
-		++m_tableKeyMemoEpoch;
-		const uint32 resourceDescriptorGeneration = m_descriptorManager->GetShaderVisibleCbvSrvUavRollovers();
-		const uint32 samplerDescriptorGeneration = m_descriptorManager->GetShaderVisibleSamplerRollovers();
-		const bool hasReusableGameNullResourceTable =
-			m_gameNullResourceTable.IsValid() &&
-			m_gameNullResourceTableGeneration == resourceDescriptorGeneration;
-		const bool hasReusableGameNullUavTable =
-			m_gameNullUavTable.IsValid() &&
-			m_gameNullUavTableGeneration == resourceDescriptorGeneration;
-		uint32 gameResourceDescriptorCount = 0;
-		auto countResourceTableMiss = [this, hasReusableGameNullResourceTable, resourceDescriptorGeneration, &gameResourceDescriptorCount](LatteDecompilerShader* shader)
-		{
-			if (!shader)
-			{
-				if (!hasReusableGameNullResourceTable)
-					gameResourceDescriptorCount += GetGameResourceTableDescriptorCount(nullptr);
-				return;
-			}
-			if (!HasCachedGameResourceTable(shader, resourceDescriptorGeneration))
-				gameResourceDescriptorCount += GetGameResourceTableDescriptorCount(shader);
-		};
-		countResourceTableMiss(vertexShader);
-		countResourceTableMiss(pixelShader);
-		countResourceTableMiss(geometryShader);
-		uint32 gameUavDescriptorCount = 0;
-		bool needsNullUavTable = useStencilTwoPass && streamoutEnable;
-		auto countUavTable = [this, &gameUavDescriptorCount, &needsNullUavTable](LatteDecompilerShader* shader)
-		{
-			const uint32 count = GetGameUavTableDescriptorCount(shader);
-			if (count != 0 && m_streamoutBuffer.resource)
-				gameUavDescriptorCount += count;
-			else
-				needsNullUavTable = true;
-		};
-		countUavTable(vertexShader);
-		countUavTable(pixelShader);
-		countUavTable(geometryShader);
-		if (needsNullUavTable && !hasReusableGameNullUavTable)
-			gameUavDescriptorCount += kGameUavDescriptorCount;
-		uint32 gameSamplerDescriptorCount = 0;
-		auto countSamplerTableMiss = [this, samplerDescriptorGeneration, &gameSamplerDescriptorCount](LatteDecompilerShader* shader)
-		{
-			if (!HasCachedGameSamplerTable(shader, samplerDescriptorGeneration))
-				gameSamplerDescriptorCount += GetGameSamplerTableDescriptorCount(shader);
-		};
-		countSamplerTableMiss(vertexShader);
-		countSamplerTableMiss(pixelShader);
-		countSamplerTableMiss(geometryShader);
-		EnsureShaderVisibleDescriptorSpace(gameResourceDescriptorCount + gameUavDescriptorCount,
-										   gameSamplerDescriptorCount);
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-		const auto tablesStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-		if (profileThisDraw)
-			m_uwpDescriptorSplitNs[3] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(tablesStarted - preTablesStarted).count();
-#endif
-		s0Lap(s_uwpRecorderSplit.tablePrep);
-		t_uwpInDrawTables = true;
-		if (m_gameRootSignature)
-			drawTables = BuildGameDescriptorTables(vertexShader, geometryShader, pixelShader, tracePipelineHash);
-		t_uwpInDrawTables = false;
-		s0Lap(s_uwpRecorderSplit.tables);
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-		if (profileThisDraw)
-			m_uwpDescriptorSplitNs[2] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tablesStarted).count();
-#endif
-	};
-	if (!feedbackPlan.anyCopy)
-		prepareTables();
-
-	// emission
-	if (!m_commandListOpen)
-		ResetCommandList();
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-	const auto feedbackStarted = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-#endif
-	s0Mark = UwpProfTick();
-	EmitFeedbackForDraw(feedbackPlan);
-	s0Lap(s_uwpRecorderSplit.feedback);
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-	if (profileThisDraw)
-	{
-		m_uwpDescriptorSplitNs[0] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - feedbackStarted).count();
-		++m_uwpDescriptorSplitSamples;
-	}
-#endif
-	// Scratch-allocation recovery can submit and reopen on another command slot.
-	if (!m_commandListOpen)
-		ResetCommandList();
-	if (feedbackPlan.anyCopy)
-		prepareTables();
-	auto* commandList = GetCurrentCommandSlot().commandList.Get();
-	SetD3D12PipelineState(pipeline);
-	m_gpuWatchdog.RecordGamePipeline(tracePipelineHash,
-		vertexShader ? vertexShader->baseHash : 0,
-		geometryShader ? geometryShader->baseHash : 0,
-		pixelShader ? pixelShader->baseHash : 0);
-	if (m_commandListOpen && m_gameRootSignature)
-		EmitGameDescriptorTables(drawTables, vertexShader, geometryShader, pixelShader, baseVertex, baseInstance, vertexIdRemapMode, tracePipelineHash);
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-	const auto tablesFinished = profileThisDraw ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-#endif
-	stdx::scope_exit s0Emit([&]() { s0Lap(s_uwpRecorderSplit.emit); });
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-	m_uwpProfileThisDraw = false;
-#endif
-	commandList = GetCurrentCommandSlot().commandList.Get();
-	D3D12DescriptorManager::Allocation stencilNullUavTable;
-	D3D12_GPU_DESCRIPTOR_HANDLE stencilVsUavTable{};
-	D3D12_GPU_DESCRIPTOR_HANDLE stencilPsUavTable{};
-	D3D12_GPU_DESCRIPTOR_HANDLE stencilGsUavTable{};
-	if (useStencilTwoPass && streamoutEnable)
-	{
-		stencilVsUavTable = m_gameRootDescriptorTables[10];
-		stencilPsUavTable = m_gameRootDescriptorTables[11];
-		stencilGsUavTable = m_gameRootDescriptorTables[12];
-		stencilNullUavTable = BuildGameUavTable(nullptr);
-	}
-	if (noRasterizationOutput)
-		SetD3D12RenderTargets(0, nullptr, nullptr);
-	else
-		BindFramebuffer(m_activeFBO);
-	SetD3D12Viewport(m_currentViewport);
-	SetD3D12Scissor(m_currentScissor);
-	const float blendConstantAlpha = RecordRegs().CB_BLEND_ALPHA.get_ALPHA();
-	const bool splatBlendConstantAlpha = !m_alphaBlendFactorSupported &&
-		D3D12BlendConstantNeedsAlphaSplat(RecordRegs(), noRasterizationOutput ? nullptr : m_activeFBO);
-	const float blendFactor[4] =
-	{
-		splatBlendConstantAlpha ? blendConstantAlpha : RecordRegs().CB_BLEND_RED.get_RED(),
-		splatBlendConstantAlpha ? blendConstantAlpha : RecordRegs().CB_BLEND_GREEN.get_GREEN(),
-		splatBlendConstantAlpha ? blendConstantAlpha : RecordRegs().CB_BLEND_BLUE.get_BLUE(),
-		blendConstantAlpha,
-	};
-	SetD3D12BlendFactor(blendFactor);
-	const auto selectedStencilState = GetD3D12SelectedStencilState(RecordRegs(),
-		GetD3D12StencilFaceCullState(cullState, rasterizesPointQuads));
-#if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
-	auto& commandSlot = GetCurrentCommandSlot();
-#endif
-	if (useStencilTwoPass)
-	{
-		SetD3D12StencilRef(selectedStencilState.frontRef, selectedStencilState.frontRef);
-	}
-#if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
-	else if (selectedStencilState.needsIndependentFrontBackState &&
-		m_independentFrontBackStencilSupported && commandSlot.commandList8)
-	{
-		SetD3D12StencilRef(selectedStencilState.frontRef, selectedStencilState.backRef);
-	}
-	else
-#endif
-	{
-		SetD3D12StencilRef(selectedStencilState.ref, selectedStencilState.ref);
-	}
-
 #if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
-	if (priorityStencilDraw && D3D12TraceSink::Get().IsPriorityStencilDraw(nextDrawId))
-	{
-		const auto& depth = RecordRegs().DB_DEPTH_CONTROL;
-		const bool back = depth.get_BACK_STENCIL_ENABLE();
-		bool nativeIndependentRefs = false;
-#if defined(__ID3D12GraphicsCommandList8_INTERFACE_DEFINED__)
-		nativeIndependentRefs = !useStencilTwoPass && selectedStencilState.needsIndependentFrontBackState &&
-			m_independentFrontBackStencilSupported && commandSlot.commandList8;
+		priorityStencilDraw,
 #endif
-		const bool nativeIndependentMasks = nativeIndependentRefs &&
-			(selectedStencilState.frontReadMask != selectedStencilState.backReadMask ||
-			 selectedStencilState.frontWriteMask != selectedStencilState.backWriteMask);
-		D3D12TraceEvent("draw_stencil_state", "draw={} pipeline=0x{:016x} phase=after_om_bind priority=stencil_enabled snapshotKind=cpu_selected_state gpuStateVerified=0 vs=0x{:016x} gs=0x{:016x} ps=0x{:016x} rawDepthControl=0x{:08x} rawStencilF=0x{:08x} rawStencilB=0x{:08x} nativeDepthEnable={} nativeDepthWrite={} nativeDepthFunc={} stencilEnable={} backEnable={} selectedBack={} selectedRef={} selectedRead=0x{:02x} selectedWrite=0x{:02x} frontRef={} frontRead=0x{:02x} frontWrite=0x{:02x} backRef={} backRead=0x{:02x} backWrite=0x{:02x} independentNeeded={} nativeIndependentRefs={} nativeIndependentMasks={} twoPass={} firstPassRef={} nativeFrontOps=func:{}/fail:{}/zfail:{}/pass:{} nativeBackOps=func:{}/fail:{}/zfail:{}/pass:{} rawColorControl=0x{:08x} rawBlend0=0x{:08x} blendFactor={:.9g},{:.9g},{:.9g},{:.9g} effectiveTargetMask=0x{:08x} dsvFormat={} stencilFormat={}",
-			nextDrawId, tracePipelineHash, vertexShader ? vertexShader->baseHash : 0,
-			geometryShader ? geometryShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0,
-			depth.getRawValue(), RecordRegs().DB_STENCILREFMASK.getRawValue(),
-			RecordRegs().DB_STENCILREFMASK_BF.getRawValue(),
-			depth.get_Z_ENABLE(), depth.get_Z_WRITE_ENABLE(), (uint32)GetD3D12CompareFunc(depth.get_Z_FUNC()),
-			depth.get_STENCIL_ENABLE(), back, selectedStencilState.usedBackFace,
-			selectedStencilState.ref, selectedStencilState.readMask, selectedStencilState.writeMask,
-			selectedStencilState.frontRef, selectedStencilState.frontReadMask, selectedStencilState.frontWriteMask,
-			selectedStencilState.backRef, selectedStencilState.backReadMask, selectedStencilState.backWriteMask,
-			selectedStencilState.needsIndependentFrontBackState, nativeIndependentRefs, nativeIndependentMasks,
-			useStencilTwoPass, useStencilTwoPass ? selectedStencilState.frontRef : selectedStencilState.ref,
-			(uint32)GetD3D12CompareFunc(depth.get_STENCIL_FUNC_F()), (uint32)GetD3D12StencilOp(depth.get_STENCIL_FAIL_F()),
-			(uint32)GetD3D12StencilOp(depth.get_STENCIL_ZFAIL_F()), (uint32)GetD3D12StencilOp(depth.get_STENCIL_ZPASS_F()),
-			(uint32)GetD3D12CompareFunc(back ? depth.get_STENCIL_FUNC_B() : depth.get_STENCIL_FUNC_F()),
-			(uint32)GetD3D12StencilOp(back ? depth.get_STENCIL_FAIL_B() : depth.get_STENCIL_FAIL_F()),
-			(uint32)GetD3D12StencilOp(back ? depth.get_STENCIL_ZFAIL_B() : depth.get_STENCIL_ZFAIL_F()),
-			(uint32)GetD3D12StencilOp(back ? depth.get_STENCIL_ZPASS_B() : depth.get_STENCIL_ZPASS_F()),
-			RecordRegs().CB_COLOR_CONTROL.getRawValue(), RecordRegs().CB_BLENDN_CONTROL[0].getRawValue(),
-			blendFactor[0], blendFactor[1], blendFactor[2], blendFactor[3], effectiveRenderTargetMask,
-			(uint32)m_activeFBO->GetDepthFormat(), (uint32)m_activeFBO->GetStencilFormat());
-	}
-#endif
-
-	if (hostIndexType != Renderer::INDEX_TYPE::NONE &&
-		!EnsureIndexResident(*d3dIndexAllocation, indexDataSize))
-	{
-#if defined(CEMU_UWP_D3D12_CORRECTNESS_TELEMETRY)
-		++m_correctnessDrawSkippedInvalidIndex;
-#endif
-		++m_droppedDraws[(size_t)DroppedDrawReason::IndexUploadFailed];
-		static uint32 s_indexResidencyFailureLogCount = 0;
-		if (D3D12RuntimeLogCapped(s_indexResidencyFailureLogCount, "index upload-ring residency failure", 32))
-		{
-			cemuLog_log(LogType::Force,
-				"D3D12 UWP: skipping indexed draw because {} decoded index bytes could not be made resident for fence {}.",
-				indexDataSize,
-				(unsigned long long)m_nextFenceValue);
-		}
-		return;
-	}
-	commandList = GetCurrentCommandSlot().commandList.Get();
-#if defined(LATTE_UWP_DETAILED_PROFILING)
-	if (profileThisDraw)
-		m_uwpDescriptorSplitNs[4] += (uint64)std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - tablesFinished).count();
-#endif
-	switchProfileStage(UwpCpuDrawStage::DrawRecording);
-	if (hostIndexType != Renderer::INDEX_TYPE::NONE)
-	{
-		D3D12_INDEX_BUFFER_VIEW indexView{};
-		ID3D12Resource* indexResource = d3dIndexAllocation->residentResource;
-		indexView.BufferLocation = indexResource->GetGPUVirtualAddress() +
-			d3dIndexAllocation->residentOffset;
-		indexView.SizeInBytes = indexDataSize;
-		indexView.Format = indexFormat;
-		D3D12TraceEvent("draw_index_buffer", "draw={} pipeline=0x{:016x} allocation={} resource={} gpuVA=0x{:016x} size={} format={} hostIndexType={} hostIndexCount={} baseVertex={} indexMin={} indexMax={}",
-						(unsigned long long)nextDrawId,
-						(unsigned long long)tracePipelineHash,
-						(const void*)d3dIndexAllocation,
-						(const void*)indexResource,
-						(unsigned long long)indexView.BufferLocation,
-						indexView.SizeInBytes,
-						(uint32)indexView.Format,
-						(uint32)hostIndexType,
-						hostIndexCount,
-						baseVertex,
-						indexMin,
-						indexMax);
-		if (D3D12ShouldTrace())
-		{
-			const uint32 previewCount = std::min<uint32>(hostIndexCount, 24);
-			std::string indexValues;
-			const uint8* previewData = d3dIndexAllocation->previewData.data();
-			const size_t previewDataSize = d3dIndexAllocation->previewDataSize;
-			for (uint32 i = 0; i < previewCount; ++i)
-			{
-				uint32 value = 0;
-				if (hostIndexType == Renderer::INDEX_TYPE::U16 && (size_t)i * sizeof(uint16) + sizeof(uint16) <= previewDataSize)
-					memcpy(&value, previewData + (size_t)i * sizeof(uint16), sizeof(uint16));
-				else if (hostIndexType == Renderer::INDEX_TYPE::U32 && (size_t)i * sizeof(uint32) + sizeof(uint32) <= previewDataSize)
-					memcpy(&value, previewData + (size_t)i * sizeof(uint32), sizeof(uint32));
-				if (!indexValues.empty())
-					indexValues.push_back(',');
-				fmt::format_to(std::back_inserter(indexValues), "{}", value);
-			}
-			D3D12TraceEvent("draw_index_preview", "draw={} pipeline=0x{:016x} hostIndexType={} hostIndexCount={} previewCount={} previewBytes={} baseVertex={} indexMin={} indexMax={} values={}",
-							(unsigned long long)nextDrawId,
-							(unsigned long long)tracePipelineHash,
-							(uint32)hostIndexType,
-							hostIndexCount,
-							previewCount,
-							previewDataSize,
-							baseVertex,
-							indexMin,
-							indexMax,
-							indexValues);
-		}
-		SetD3D12IndexBuffer(indexView);
-	}
-	else
-	{
-		D3D12TraceEvent("draw_index_buffer", "draw={} pipeline=0x{:016x} allocation=null nonIndexed=1 hostIndexType={} hostIndexCount={} baseVertex={} count={}",
-						(unsigned long long)nextDrawId,
-						(unsigned long long)tracePipelineHash,
-						(uint32)hostIndexType,
-						hostIndexCount,
-						baseVertex,
-						count);
-	}
-	SetD3D12PrimitiveTopology(d3dPrimitiveTopology);
-	const bool dynamicDepthBias = UsesDynamicDepthBias(rasterizesPointQuads);
-	const float dynamicDepthBiasConstant = RecordRegs().PA_SU_POLY_OFFSET_FRONT_OFFSET.get_OFFSET();
-	const float dynamicDepthBiasClamp = RecordRegs().PA_SU_POLY_OFFSET_CLAMP.get_CLAMP();
-	const float dynamicDepthBiasSlope = RecordRegs().PA_SU_POLY_OFFSET_FRONT_SCALE.get_SCALE() / 16.0f;
-	const auto setDrawOffsetConstant = [&](uint32 constantIndex, uint32 value)
-	{
-		if (m_gameRootDrawConstantsValid && m_gameRootDrawConstants[constantIndex] == value)
-			return;
-		commandList->SetGraphicsRoot32BitConstant(6, value, constantIndex);
-		m_gameRootDrawConstants[constantIndex] = value;
 	};
-	// base vertex/instance offsets are applied in HLSL; IA offsets stay zero
-	const auto issueDraw = [&](uint32 start, uint32 drawCount, uint32 startInstance, uint32 drawInstanceCount)
+	auto recordDraw = [this, packet = std::move(packet)](const uint8* recordDeltaData) mutable
 	{
-		if (dynamicDepthBias)
-			SetD3D12DepthBias(dynamicDepthBiasConstant, dynamicDepthBiasClamp, dynamicDepthBiasSlope);
-		const bool indexed = hostIndexType != Renderer::INDEX_TYPE::NONE;
-		setDrawOffsetConstant(1, indexed ? baseVertex : baseVertex + start);
-		setDrawOffsetConstant(2, baseInstance + startInstance);
-		if (indexed)
-			commandList->DrawIndexedInstanced(drawCount, drawInstanceCount, start, 0, 0);
-		else
-			commandList->DrawInstanced(drawCount, drawInstanceCount, 0, 0);
-	};
-	uint32 recordedNativeDraws = 0;
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
-	int geometryProbeIndex = -1;
-	// exclude draws that may submit or restart command lists between query Begin/End
-	const auto& probeDepth = RecordRegs().DB_DEPTH_CONTROL;
-	const bool probeDepthWrite = probeDepth.get_Z_ENABLE() && probeDepth.get_Z_WRITE_ENABLE();
-	const bool probeReadonlyColor = probeDepth.get_Z_ENABLE() && !probeDepthWrite;
-	if (m_geometryProbe && !noRasterizationOutput && !streamoutEnable && !geometryShader &&
-		!usesPointExpansionGS && !useOrderedPrimitiveFallback && !useStencilTwoPass &&
-		primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::TRIANGLES &&
-		hostIndexCount >= 3 && instanceCount != 0 && m_activeFBO &&
-		m_activeFBO->depthBuffer.texture && (probeDepthWrite || probeReadonlyColor) &&
-		m_geometryProbe->WantsSample(tracePipelineHash, probeDepthWrite))
-	{
-		const auto* depthView = m_activeFBO->depthBuffer.texture;
-		std::string metadata = fmt::format(
-			"draw={} pipeline=0x{:016x} vs=0x{:016x} ps=0x{:016x} depthAddr=0x{:08x} indices={} instances={} "
-			"baseVertex={} indexMax={} zWrite={} zFunc={} alpha={} alphaFunc={} alphaRef=0x{:08x} "
-			"targetMask=0x{:08x} psOutputMask=0x{:02x} viewport={},{}:{}x{} depthRange={}..{} "
-			"scissor={},{}-{},{} cullFront={} cullBack={} frontFace={} sources={}",
-			nextDrawId, tracePipelineHash, vertexShader ? vertexShader->baseHash : 0,
-			pixelShader ? pixelShader->baseHash : 0, depthView->baseTexture->physAddress,
-			hostIndexCount, instanceCount, baseVertex, indexMax, probeDepthWrite,
-			(uint32)probeDepth.get_Z_FUNC(),
-			RecordRegs().SX_ALPHA_TEST_CONTROL.get_ALPHA_TEST_ENABLE(),
-			(uint32)RecordRegs().SX_ALPHA_TEST_CONTROL.get_ALPHA_FUNC(),
-			RecordRegs().SX_ALPHA_REF.getRawValue(), effectiveRenderTargetMask,
-			pixelShader ? pixelShader->pixelColorOutputMask : 0,
-			m_currentViewport.TopLeftX, m_currentViewport.TopLeftY,
-			m_currentViewport.Width, m_currentViewport.Height,
-			m_currentViewport.MinDepth, m_currentViewport.MaxDepth,
-			m_currentScissor.left, m_currentScissor.top, m_currentScissor.right, m_currentScissor.bottom,
-			cullState.cullFront, cullState.cullBack, (uint32)polygonControlReg.get_FRONT_FACE(),
-			BuildShaderTextureSourceSummary(vertexShader, geometryShader, pixelShader));
-		metadata += " " + BuildGeometryProbeResourceMetadata(vertexShader, geometryShader, pixelShader);
-		geometryProbeIndex = m_geometryProbe->Begin(commandList, tracePipelineHash, probeDepthWrite,
-			m_activeOcclusionQueries.empty(), metadata);
-	}
-#endif
-	auto setUavTable = [this, commandList](uint32 rootIndex, D3D12_GPU_DESCRIPTOR_HANDLE table)
-	{
-		if (rootIndex < m_gameRootDescriptorTableValid.size() &&
-			m_gameRootDescriptorTableValid[rootIndex] &&
-			m_gameRootDescriptorTables[rootIndex].ptr == table.ptr)
-		{
-			return;
-		}
-		commandList->SetGraphicsRootDescriptorTable(rootIndex, table);
-		if (rootIndex < m_gameRootDescriptorTableValid.size())
-		{
-			m_gameRootDescriptorTables[rootIndex] = table;
-			m_gameRootDescriptorTableValid[rootIndex] = true;
-		}
-	};
-	const auto bindFirstPassUavs = [&]()
-	{
-		if (!useStencilTwoPass || !streamoutEnable)
-			return;
-		setUavTable(10, stencilVsUavTable);
-		setUavTable(11, stencilPsUavTable);
-		setUavTable(12, stencilGsUavTable);
-	};
-	const auto bindNullUavs = [&]()
-	{
-		if (!useStencilTwoPass || !streamoutEnable || !stencilNullUavTable.IsValid())
-			return;
-		setUavTable(10, stencilNullUavTable.gpu);
-		setUavTable(11, stencilNullUavTable.gpu);
-		setUavTable(12, stencilNullUavTable.gpu);
-	};
-	if (useOrderedPrimitiveFallback)
-	{
-		const bool primitiveRestartEnabled = GetD3D12PrimitiveRestartEnabled(RecordRegs(), primitiveMode, hostIndexType);
-		const auto primitiveSpans = BuildD3D12OrderedPrimitiveSpans(
-			d3dPrimitiveTopology,
-			hostIndexCount,
-			hostIndexType,
-			d3dIndexAllocation ? d3dIndexAllocation->GetDecodedData() : nullptr,
-			primitiveRestartEnabled);
-		if (primitiveSpans.empty() && hostIndexCount != 0)
-		{
-			cemuLog_log(LogType::Force,
-				"D3D12 UWP: ordered draw fallback could not split topology {} with {} elements; preserving the original draw.",
-				(uint32)d3dPrimitiveTopology, hostIndexCount);
-			issueDraw(0, hostIndexCount, 0, instanceCount);
-			recordedNativeDraws = instanceCount != 0 ? 1 : 0;
-		}
-		else
-		{
-			const uint64 totalLogicalPrimitives = (uint64)primitiveSpans.size() * instanceCount;
-#if defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
-			m_uwpWorkloadProfile.logicalPrimitives += totalLogicalPrimitives;
-#endif
-			uint64 completedLogicalPrimitives = 0;
-			bool refreshLogicDestination = logicOpNeedsOrderedDestination;
-			for (uint32 instance = 0; instance < instanceCount; ++instance)
-			{
-				for (const auto& span : primitiveSpans)
-				{
-					ID3D12PipelineState* firstPipeline = span.flipWinding ? flippedPipeline : pipeline;
-					SetD3D12PipelineState(firstPipeline);
-					if (useStencilTwoPass)
-						SetD3D12StencilRef(selectedStencilState.frontRef, selectedStencilState.frontRef);
-					bindFirstPassUavs();
-					issueDraw(span.start, span.count, instance, 1);
-					++recordedNativeDraws;
-
-					if (useStencilTwoPass)
-					{
-						SetD3D12PipelineState(span.flipWinding ? backFlippedStencilPipeline : backStencilPipeline);
-						SetD3D12StencilRef(selectedStencilState.backRef, selectedStencilState.backRef);
-						bindNullUavs();
-						issueDraw(span.start, span.count, instance, 1);
-						++recordedNativeDraws;
-					}
-
-					++completedLogicalPrimitives;
-					if (refreshLogicDestination && completedLogicalPrimitives < totalLogicalPrimitives &&
-						!RefreshLogicOpScratchCopiesForDraw(nextDrawId))
-					{
-						cemuLog_logOnce(LogType::Force,
-							"D3D12 UWP: logic-op destination refresh failed; later primitives will use the last valid destination snapshot.");
-						refreshLogicDestination = false;
-					}
-				}
-			}
-			bindFirstPassUavs();
-		}
-	}
-	else if (useStencilTwoPass)
-	{
-		issueDraw(0, hostIndexCount, 0, instanceCount);
-		recordedNativeDraws = instanceCount != 0 ? 1 : 0;
-		SetD3D12PipelineState(backStencilPipeline);
-		SetD3D12StencilRef(selectedStencilState.backRef, selectedStencilState.backRef);
-		bindNullUavs();
-		issueDraw(0, hostIndexCount, 0, instanceCount);
-		if (instanceCount != 0)
-			++recordedNativeDraws;
-		bindFirstPassUavs();
-	}
-	else
-	{
-		issueDraw(0, hostIndexCount, 0, instanceCount);
-		recordedNativeDraws = instanceCount != 0 ? 1 : 0;
-	}
-#if defined(CEMU_UWP_D3D12_DIAGNOSTICS)
-	if (geometryProbeIndex >= 0)
-		m_geometryProbe->End(commandList, geometryProbeIndex, m_nextFenceValue);
-#endif
-	switchProfileStage(UwpCpuDrawStage::RetirementReadbackAndSubmit);
-	if (recordedNativeDraws != 0 && !noRasterizationOutput && m_activeFBO)
-	{
-		const uint32 pixelOutputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0u;
-		const auto& attachments = m_activeFBO->GetColorAttachments();
-		for (uint32 i = 0; i < attachments.size() && i < 8; ++i)
-		{
-			const bool shaderWritesTarget = (pixelOutputMask & (1u << i)) != 0;
-			const bool targetWriteEnabled = ((effectiveRenderTargetMask >> (i * 4)) & 0xFu) != 0;
-			if (shaderWritesTarget && targetWriteEnabled && attachments[i].valid && attachments[i].view)
-				MarkTextureViewWritten(attachments[i].view);
-		}
-		if (m_activeFBO->HasDepthStencilAttachment() && m_activeFBO->depthBuffer.texture)
-		{
-			const auto& depthControl = RecordRegs().DB_DEPTH_CONTROL;
-			const bool depthWriteEnabled = depthControl.get_Z_ENABLE() && depthControl.get_Z_WRITE_ENABLE();
-			const bool stencilWriteEnabled = m_activeFBO->depthBuffer.hasStencil &&
-				depthControl.get_STENCIL_ENABLE() &&
-				(selectedStencilState.frontWriteMask | selectedStencilState.backWriteMask) != 0;
-			if (depthWriteEnabled || stencilWriteEnabled)
-			{
-				MarkTextureViewWritten(static_cast<LatteTextureViewD3D12*>(m_activeFBO->depthBuffer.texture),
-					stencilWriteEnabled, depthWriteEnabled);
-			}
-		}
-	}
-	D3D12TraceEventFlush("draw_submit", "draw={} pipeline=0x{:016x} hostIndexType={} hostIndexCount={} instances={} primitive={} d3dTopology={} fbo=0x{:016x} noRaster={} pointGS={} rectOrQuad={} descriptorRollovers={} resourceCacheHitMiss={}/{} samplerCacheHitMiss={}/{}",
-						 (unsigned long long)nextDrawId,
-						 identity.pipelineStateHash,
-						 (uint32)hostIndexType,
-						 hostIndexCount,
-						 instanceCount,
-						 (uint32)primitiveMode,
-						 (uint32)d3dPrimitiveTopology,
-						 m_activeFBO ? m_activeFBO->key : 0,
-						 noRasterizationOutput ? 1 : 0,
-						 usesPointExpansionGS ? 1 : 0,
-						 (primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::RECTS || primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::QUADS) ? 1 : 0,
-						 m_descriptorManager ? m_descriptorManager->GetShaderVisibleRollovers() : 0,
-						 (unsigned long long)m_gameResourceTableCacheHits,
-						 (unsigned long long)m_gameResourceTableCacheMisses,
-						 (unsigned long long)m_gameSamplerTableCacheHits,
-						 (unsigned long long)m_gameSamplerTableCacheMisses);
-	if (D3D12ShouldTrace() && !noRasterizationOutput && m_activeFBO)
-	{
-		const std::string sourceSummary = BuildShaderTextureSourceSummary(vertexShader, geometryShader, pixelShader);
-		const auto& colorAttachments = m_activeFBO->GetColorAttachments();
-		for (uint32 i = 0; i < colorAttachments.size(); ++i)
-		{
-			const auto& attachment = colorAttachments[i];
-			if (!attachment.valid || !attachment.view)
-				continue;
-			RecordTextureLineage("draw", attachment.view, nextDrawId, identity.pipelineStateHash, sourceSummary,
-								 fmt::format("primitive={} d3dTopology={} rtIndex={} hostIndexType={} hostIndexCount={} viewport={},{}:{}x{} scissor={},{}-{},{}",
-											 (uint32)primitiveMode,
-											 (uint32)d3dPrimitiveTopology,
-											 i,
-											 (uint32)hostIndexType,
-											 hostIndexCount,
-											 m_currentViewport.TopLeftX,
-											 m_currentViewport.TopLeftY,
-											 m_currentViewport.Width,
-											 m_currentViewport.Height,
-											 m_currentScissor.left,
-											 m_currentScissor.top,
-											 m_currentScissor.right,
-											 m_currentScissor.bottom));
-		}
-		if (m_activeFBO->HasDepthStencilAttachment() && m_activeFBO->depthBuffer.texture)
-		{
-			const auto& depthControl = RecordRegs().DB_DEPTH_CONTROL;
-			const bool depthWriteEnabled = depthControl.get_Z_ENABLE() && depthControl.get_Z_WRITE_ENABLE();
-			const bool stencilWriteEnabled = m_activeFBO->depthBuffer.hasStencil &&
-				depthControl.get_STENCIL_ENABLE() &&
-				selectedStencilState.writeMask != 0;
-			if (depthWriteEnabled || stencilWriteEnabled)
-			{
-				RecordTextureLineage("draw_depth", static_cast<LatteTextureViewD3D12*>(m_activeFBO->depthBuffer.texture), nextDrawId, identity.pipelineStateHash, sourceSummary,
-									 fmt::format("primitive={} hostIndexType={} hostIndexCount={} zWrite={} stencilWrite={} stencilMask=0x{:02x}",
-												 (uint32)primitiveMode,
-												 (uint32)hostIndexType,
-												 hostIndexCount,
-												 depthWriteEnabled ? 1 : 0,
-												 stencilWriteEnabled ? 1 : 0,
-												 (uint32)selectedStencilState.writeMask));
-			}
-			else
-			{
-				D3D12TraceEvent("draw_depth_readonly",
-								"draw={} pipeline=0x{:016x} primitive={} hostIndexType={} hostIndexCount={} zEnable={} zWrite={} stencilEnable={} stencilMask=0x{:02x}",
-								(unsigned long long)nextDrawId,
-								identity.pipelineStateHash,
-								(uint32)primitiveMode,
-								(uint32)hostIndexType,
-								hostIndexCount,
-								depthControl.get_Z_ENABLE() ? 1 : 0,
-								depthControl.get_Z_WRITE_ENABLE() ? 1 : 0,
-								depthControl.get_STENCIL_ENABLE() ? 1 : 0,
-								(uint32)selectedStencilState.writeMask);
-			}
-		}
-	}
-
-#if defined(CEMU_UWP_D3D12_WORKLOAD_PROFILE)
-	auto& workload = m_uwpWorkloadProfile;
-	// diagnostic state only, never a rendering predicate
-	static std::array<std::pair<uint64, uint32>, 32> s_orObservedPipelines{};
-	static uint32 s_orObservedPipelineCount = 0;
-	static uint32 s_orPassRecordCount = 0;
-	if (m_logicOpEmulationMode == 2 && useOrderedPrimitiveFallback && m_activeFBO &&
-		s_orPassRecordCount < s_orObservedPipelines.size())
-	{
-		auto observed = std::find_if(s_orObservedPipelines.begin(),
-			s_orObservedPipelines.begin() + s_orObservedPipelineCount,
-			[&](const auto& entry) { return entry.first == identity.pipelineStateHash; });
-		const bool firstObservation = observed == s_orObservedPipelines.begin() + s_orObservedPipelineCount;
-		if (firstObservation || recordedNativeDraws > observed->second)
-		{
-			if (firstObservation)
-				++s_orObservedPipelineCount;
-			*observed = { identity.pipelineStateHash, recordedNativeDraws };
-			const uint32 record = ++s_orPassRecordCount;
-			const auto& lcr = RecordRegs();
-			const auto& depth = lcr.DB_DEPTH_CONTROL;
-			const bool hasDepth = m_activeFBO->HasDepthStencilAttachment();
-			const bool hasStencil = hasDepth && m_activeFBO->GetStencilFormat() != DXGI_FORMAT_UNKNOWN;
-			const uint32 outputMask = pixelShader ? pixelShader->pixelColorOutputMask : 0;
-			const uint32 targetMask = GetD3D12EffectiveRenderTargetMask(lcr);
-			sint32 sourceContainsDiscard = -1;
-			if (pixelShader && pixelShader->strBuf_shaderSource && pixelShader->strBuf_shaderSource->getLen() != 0)
-			{
-				const std::string_view source(pixelShader->strBuf_shaderSource->c_str(), pixelShader->strBuf_shaderSource->getLen());
-				sourceContainsDiscard = source.find("discard") != std::string_view::npos ? 1 : 0;
-			}
-			cemuLog_log(LogType::Force,
-				"D3D12 UWP OR pass: record={} pipeline={:016x} native={} indices={} instances={} primitive={} vs={:016x} ps={:016x} gs={:016x} streamout={} stencilSplit={} depthExport={} sourceDiscard={} customPS={} psOut=0x{:02x} targetMask=0x{:08x} scratchEntries={} activeOcclusionQueries={}.",
-				record, identity.pipelineStateHash, recordedNativeDraws, hostIndexCount, instanceCount, (uint32)primitiveMode,
-				vertexShader ? vertexShader->baseHash : 0, pixelShader ? pixelShader->baseHash : 0,
-				geometryShader ? geometryShader->baseHash : 0, streamoutEnable, useStencilTwoPass,
-				pixelShader ? pixelShader->depthMask : false, sourceContainsDiscard,
-				pixelShader ? pixelShader->isCustomShader : false, outputMask, targetMask, m_feedbackScratchCopies.size(),
-				m_activeOcclusionQueries.size());
-			cemuLog_log(LogType::Force,
-				"D3D12 UWP OR raster: record={} viewportValid={} viewport=({}, {}) {}x{} depth={}..{} scissorValid={} scissor=({}, {})-({}, {}) depthAttached={} zEnable={} zWrite={} zFunc={} stencilAttached={} stencilEnable={} backEnable={} stencilFuncF/B={}/{} opsF_fail/zfail/zpass={}/{}/{} opsB={}/{}/{} masksF_read/write=0x{:02x}/0x{:02x} masksB=0x{:02x}/0x{:02x} refsF/B={}/{} alphaTest={} alphaFunc={} alphaRefRaw=0x{:08x}.",
-				record, m_boundViewportValid, m_boundViewport.TopLeftX, m_boundViewport.TopLeftY,
-				m_boundViewport.Width, m_boundViewport.Height, m_boundViewport.MinDepth, m_boundViewport.MaxDepth,
-				m_boundScissorValid, m_boundScissor.left, m_boundScissor.top, m_boundScissor.right, m_boundScissor.bottom,
-				hasDepth, depth.get_Z_ENABLE(), depth.get_Z_WRITE_ENABLE(), (uint32)depth.get_Z_FUNC(),
-				hasStencil, depth.get_STENCIL_ENABLE(), depth.get_BACK_STENCIL_ENABLE(),
-				(uint32)depth.get_STENCIL_FUNC_F(), (uint32)depth.get_STENCIL_FUNC_B(),
-				(uint32)depth.get_STENCIL_FAIL_F(), (uint32)depth.get_STENCIL_ZFAIL_F(), (uint32)depth.get_STENCIL_ZPASS_F(),
-				(uint32)depth.get_STENCIL_FAIL_B(), (uint32)depth.get_STENCIL_ZFAIL_B(), (uint32)depth.get_STENCIL_ZPASS_B(),
-				selectedStencilState.frontReadMask, selectedStencilState.frontWriteMask,
-				selectedStencilState.backReadMask, selectedStencilState.backWriteMask,
-				selectedStencilState.frontRef, selectedStencilState.backRef,
-				lcr.SX_ALPHA_TEST_CONTROL.get_ALPHA_TEST_ENABLE(), (uint32)lcr.SX_ALPHA_TEST_CONTROL.get_ALPHA_FUNC(),
-				lcr.SX_ALPHA_REF.getRawValue());
-			const auto& attachments = m_activeFBO->GetColorAttachments();
-			for (uint32 target = 0; target < attachments.size() && target < 8; ++target)
-			{
-				const auto& attachment = attachments[target];
-				if (!attachment.valid || !attachment.view || (outputMask & (1u << target)) == 0 ||
-					((targetMask >> (target * 4)) & 0xF) == 0)
-					continue;
-				auto* texture = attachment.view->GetBaseImage();
-				if (!texture)
-					continue;
-				const auto& resourceDesc = texture->GetDesc();
-				const auto* scratch = GetLogicOpScratchCopy(target);
-				cemuLog_log(LogType::Force,
-					"D3D12 UWP OR target: record={} target={} resourceFormat={} rtvFormat={} scratchSrvFormat={} resourceSize={}x{} arrayDepth={} mips={} samples={} viewMip={}+{} viewSlice={}+{} scratchSize={}x{} writeMask=0x{:x}.",
-					record, target, (uint32)resourceDesc.Format, (uint32)attachment.format,
-					scratch ? (uint32)scratch->srvDesc.Format : 0,
-					resourceDesc.Width, resourceDesc.Height, resourceDesc.DepthOrArraySize, resourceDesc.MipLevels,
-					resourceDesc.SampleDesc.Count, attachment.view->firstMip, attachment.view->numMip,
-					attachment.view->firstSlice, attachment.view->numSlice,
-					scratch ? scratch->requestedDesc.Width : 0, scratch ? scratch->requestedDesc.Height : 0,
-					(targetMask >> (target * 4)) & 0xF);
-			}
-		}
-	}
-	++workload.guestDraws;
-	workload.nativeDraws += recordedNativeDraws;
-	workload.orderedDraws += useOrderedPrimitiveFallback ? 1u : 0u;
-	workload.stencilDraws += useStencilTwoPass ? 1u : 0u;
-	if (m_logicOpEmulationMode < workload.modeDraws.size())
-	{
-		++workload.modeDraws[m_logicOpEmulationMode];
-		workload.modeNativeDraws[m_logicOpEmulationMode] += recordedNativeDraws;
-	}
-	if (recordedNativeDraws > workload.maxNativeDraws)
-	{
-		workload.maxNativeDraws = recordedNativeDraws;
-		workload.maxDrawPipeline = identity.pipelineStateHash;
-		workload.maxDrawVs = vertexShader ? vertexShader->baseHash : 0;
-		workload.maxDrawPs = pixelShader ? pixelShader->baseHash : 0;
-		workload.maxDrawMode = m_logicOpEmulationMode;
-		workload.maxDrawIndices = hostIndexCount;
-		workload.maxDrawInstances = instanceCount;
-	}
-#endif
-	// the submit budget counts guest draws; ordered replays split one draw into many native draws
-	m_recordedDrawcalls += useOrderedPrimitiveFallback ? std::min<uint32>(recordedNativeDraws, 1u) : recordedNativeDraws;
-	m_gameDrawCallsSubmitted++;
-	if (noRasterizationOutput)
-		m_noRasterStreamoutDraws++;
-	if (usesPointExpansionGS)
-		m_pointExpansionDraws++;
-	if (!noRasterizationOutput)
-		LogActiveRenderTargetStats();
-	if (!noRasterizationOutput)
-		TraceFboAttachments("draw_fbo_attachment_after", "after_draw", m_gameDrawCallsSubmitted, identity.pipelineStateHash, "call=draw_execute");
-	static uint32 s_gameDrawSubmittedLogCount = 0;
-	if (D3D12RuntimeLogCapped(s_gameDrawSubmittedLogCount, "game draw submitted", 96))
-	{
-		cemuLog_log(LogType::Force, "D3D12: submitted game draw #{} hostIndexCount={} hostIndexType={} instances={} pipeline=0x{:016x}.",
-					(unsigned long long)m_gameDrawCallsSubmitted,
-					hostIndexCount,
-					(uint32)hostIndexType,
-					instanceCount,
-					identity.pipelineStateHash);
-	}
-	const bool scratchBudgetReached = IsCommandScratchBudgetReached();
-	if (m_recordedDrawcalls >= m_submitThreshold || scratchBudgetReached)
-		ExecuteCurrentCommandList((m_recordedDrawcalls >= m_submitThreshold ? SubmitDrawBudget : 0u) |
-			(scratchBudgetReached ? SubmitScratchBudget : 0u));
+		RecordDrawTail(packet, recordDeltaData);
 	};
 	s_uwpDrawClosureBytes = sizeof(recordDraw);
 	uwpHeadLap(HeadClosure);
@@ -1849,19 +2117,13 @@ void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 		recordDraw(nullptr);
 	uwpHeadLap(HeadQueue);
 
-	// Latte-side bookkeeping once the draw is queued: render targets count as GPU-written, and a readback that
-	// started needs its command list submitted
-	if (pixelShader && !noRasterizationOutput)
-		LatteRenderTarget_trackUpdates();
-	if (LatteTextureReadback_Update())
-	{
-		auto submitReadback = [this]() { ExecuteCurrentCommandList(SubmitReadback); };
-		if (ShouldQueueRecording())
-			QueueRecording(submitReadback, RecordOpKind::Command);
-		else
-			submitReadback();
-	}
+	FinishDrawOnLatte(pixelShader != nullptr, noRasterizationOutput);
 	uwpHeadLap(HeadPost);
+}
+
+void D3D12Renderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, const LatteDrawcallContext& drawcallContext)
+{
+	PrepareDrawHead(baseVertex, baseInstance, instanceCount, count, indexDataMPTR, indexType, drawcallContext);
 }
 
 void D3D12Renderer::draw_endSequence()
@@ -2094,7 +2356,7 @@ LatteQueryObject* D3D12Renderer::occlusionQuery_create()
 
 void D3D12Renderer::occlusionQuery_destroy(LatteQueryObject* queryObj)
 {
-	D3D12_QUEUE_RECORDING_KIND(Sync, occlusionQuery_destroy(queryObj));
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Sync, occlusionQuery_destroy(queryObj));
 	auto* d3dQuery = static_cast<LatteQueryObjectD3D12*>(queryObj);
 	m_activeOcclusionQueries.erase(std::remove(m_activeOcclusionQueries.begin(), m_activeOcclusionQueries.end(), d3dQuery), m_activeOcclusionQueries.end());
 	delete d3dQuery;
@@ -2112,7 +2374,7 @@ void D3D12Renderer::occlusionQuery_flush()
 
 void D3D12Renderer::occlusionQuery_updateState()
 {
-	D3D12_QUEUE_RECORDING_KIND(Command, occlusionQuery_updateState());
+	D3D12_QUEUE_RECORDING_KIND_AND_RETURN(Command, occlusionQuery_updateState());
 	ProcessFinishedCommandLists();
 	for (auto* query : m_activeOcclusionQueries)
 	{
